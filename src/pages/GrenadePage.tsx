@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, BadgeCheck, Clipboard, Clock, Crosshair, FileText, MapPinned, Timer } from "lucide-react";
 import MapCanvas from "../components/MapCanvas";
 import GrenadeList from "../components/GrenadeList";
+import ThrowKeyIcon from "../components/ThrowKeyIcon";
 import { getGrenade, getSimilarGrenades, getSpawnPoints, recordGrenadeView, setGrenadeCore } from "../lib/tauri";
 import { formatClock, formatNumber, grenadeLabel } from "../lib/format";
 import { buildSpawnMapPoints, INSTA_LABEL, isInstaGrenade } from "../lib/insta";
@@ -142,7 +143,7 @@ export default function GrenadePage() {
                 return (
                   <span className="throw-preview-key-part" key={`${key}-${index}`}>
                     <span className={`throw-preview-key-icon ${visual.kind}`} data-tip={visual.title}>
-                      <span className={`throw-key-glyph ${visual.glyph}`} aria-hidden="true" />
+                      <ThrowKeyIcon glyph={visual.glyph} />
                       <span>{visual.label}</span>
                     </span>
                     {index < throwKeys.length - 1 ? <span className="throw-preview-plus">+</span> : null}
