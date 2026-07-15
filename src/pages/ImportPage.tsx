@@ -42,7 +42,7 @@ export default function ImportPage({ onImported, lastImport }: Props) {
       if (report.kind === "core_nades") {
         setMessage(`Imported ${formatNumber(report.grenade_count)} Core Nades snapshot`);
       }
-      navigate("/", { replace: true });
+      navigate("/maps", { replace: true });
     } catch (error) {
       setMessage(typeof error === "string" ? error : error instanceof Error ? error.message : "Import failed");
     } finally {

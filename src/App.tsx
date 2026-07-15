@@ -5,7 +5,6 @@ import {
   Check,
   ChevronDown,
   Database,
-  Download,
   FolderOpen,
   Map,
   Pencil,
@@ -28,7 +27,6 @@ import { startWindowActiveTracking } from "./lib/windowActive";
 import type { ImportSummary } from "./types/domain";
 import { version } from "../package.json";
 import HomePage from "./pages/HomePage";
-import ImportPage from "./pages/ImportPage";
 import MapPage from "./pages/MapPage";
 import GrenadePage from "./pages/GrenadePage";
 import Tooltip from "./components/Tooltip";
@@ -59,8 +57,8 @@ function Shell() {
     setActive(active);
     setImports(all);
     setLoading(false);
-    if (!active && !["/", "/maps", "/import"].includes(location.pathname)) {
-      navigate("/import", { replace: true });
+    if (!active && !["/", "/maps"].includes(location.pathname)) {
+      navigate("/maps?import=1", { replace: true });
     }
   }, [location.pathname, navigate]);
 
@@ -92,7 +90,7 @@ function Shell() {
     const next = await deleteImport(activeImport.id);
     setDeleteSnapshotOpen(false);
     await refreshImports();
-    navigate(next ? "/maps" : "/import", { replace: true });
+    navigate(next ? "/maps" : "/maps?import=1", { replace: true });
   };
 
   const handleCoreExport = async () => {
@@ -110,7 +108,6 @@ function Shell() {
   };
 
   const mapsRouteActive = location.pathname === "/" || location.pathname === "/maps" || location.pathname.startsWith("/map/") || location.pathname.startsWith("/grenade/");
-  const importRouteActive = location.pathname === "/import";
 
   if (loading) {
     return (
@@ -130,7 +127,6 @@ function Shell() {
         </button>
         <nav>
           <button className={mapsRouteActive ? "active" : ""} onClick={() => navigate("/maps")}><Map size={17} /><span>Maps</span></button>
-          <button className={importRouteActive ? "active" : ""} onClick={() => navigate("/import")}><Download size={17} /><span>Import</span></button>
         </nav>
         <div className="viewer-nav-footer"><span>Local first</span><small>v{version}</small></div>
       </aside>
@@ -139,7 +135,7 @@ function Shell() {
         <header className="viewer-topbar">
           <div className="viewer-context">
             <span className="viewer-context-dot" />
-            <div><small>Workspace</small><strong>{mapsRouteActive ? "Grenade Library" : "Data Import"}</strong></div>
+            <div><small>Workspace</small><strong>Grenade Library</strong></div>
           </div>
           <div className="topbar-actions">
             {activeImport ? (
@@ -147,7 +143,7 @@ function Shell() {
                 <Database size={14} /><strong>{snapshotDisplayName(activeImport)}</strong><span>{formatNumber(activeImport.grenade_count)} nades</span>
               </div>
             ) : (
-              <button className="btn primary" onClick={() => navigate("/import")}><FolderOpen size={16} />Import data</button>
+              <button className="btn primary" onClick={() => navigate("/maps?import=1")}><FolderOpen size={16} />Import data</button>
             )}
             {imports.length > 0 && activeImport ? (
               <div className="snapshot-picker" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setSnapshotMenuOpen(false); }}>
@@ -192,12 +188,12 @@ function Shell() {
 
         <div className="view-frame viewer-frame">
           <Routes>
-            <Route path="/import" element={<ImportPage onImported={refreshImports} lastImport={imports[0] ?? null} />} />
-            <Route path="/" element={<Navigate to={activeImport ? "/maps" : "/import"} replace />} />
-            <Route path="/maps" element={<HomePage activeImportId={activeImport?.id ?? null} />} />
-            <Route path="/map/:mapName" element={activeImport ? <MapPage activeImportId={activeImport.id} /> : <Navigate to="/import" replace />} />
-            <Route path="/grenade/:id" element={activeImport ? <GrenadePage /> : <Navigate to="/import" replace />} />
-            <Route path="*" element={<Navigate to={activeImport ? "/maps" : "/import"} replace />} />
+            <Route path="/" element={<Navigate to={activeImport ? "/maps" : "/maps?import=1"} replace />} />
+            <Route path="/maps" element={<HomePage activeImportId={activeImport?.id ?? null} onImported={refreshImports} lastImport={imports[0] ?? null} />} />
+            <Route path="/import" element={<Navigate to="/maps?import=1" replace />} />
+            <Route path="/map/:mapName" element={activeImport ? <MapPage activeImportId={activeImport.id} /> : <Navigate to="/maps?import=1" replace />} />
+            <Route path="/grenade/:id" element={activeImport ? <GrenadePage /> : <Navigate to="/maps?import=1" replace />} />
+            <Route path="*" element={<Navigate to={activeImport ? "/maps" : "/maps?import=1"} replace />} />
           </Routes>
         </div>
       </main>

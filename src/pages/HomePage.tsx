@@ -1,16 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { ArrowUpRight, History, Search } from "lucide-react";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { ArrowUpRight, History, Plus, Search, X } from "lucide-react";
 import { assetUrl, getMaps, getRecentlyViewedGrenades } from "../lib/tauri";
 import { formatNumber, grenadeLabel } from "../lib/format";
-import type { MapSummary, ViewedGrenade } from "../types/domain";
+import type { ImportSummary, MapSummary, ViewedGrenade } from "../types/domain";
+import ImportPage from "./ImportPage";
 
 type HomePageProps = {
   activeImportId?: number | null;
+  onImported: () => Promise<void>;
+  lastImport: ImportSummary | null;
 };
 
-export default function HomePage({ activeImportId }: HomePageProps) {
+export default function HomePage({ activeImportId, onImported, lastImport }: HomePageProps) {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [maps, setMaps] = useState<MapSummary[]>([]);
   const [recentlyViewed, setRecentlyViewed] = useState<ViewedGrenade[]>([]);
   const [search, setSearch] = useState("");
@@ -43,6 +47,11 @@ export default function HomePage({ activeImportId }: HomePageProps) {
   }, [maps, search]);
 
   const total = maps.reduce((sum, map) => sum + map.grenade_count, 0);
+  const importOpen = !activeImportId || searchParams.get("import") === "1";
+  const closeImport = () => {
+    if (!activeImportId) return;
+    setSearchParams({}, { replace: true });
+  };
 
   return (
     <div className="home-view">
@@ -54,6 +63,9 @@ export default function HomePage({ activeImportId }: HomePageProps) {
           <div className="stat-line"><span>{formatNumber(maps.length)}</span><small>Maps</small></div>
           <div className="stat-line"><span>{formatNumber(total)}</span><small>Lineups</small></div>
         </div>
+        <button className="library-import-btn" type="button" onClick={() => setSearchParams({ import: "1" })}>
+          <Plus size={15} /> Import library
+        </button>
         <div className="recent-history">
           <div className="recent-history-title">
             <span><History size={14} /> Recently viewed</span>
@@ -100,6 +112,13 @@ export default function HomePage({ activeImportId }: HomePageProps) {
           ))}
         </div>
       </section>
+
+      {importOpen ? (
+        <div className={`library-import-layer ${activeImportId ? "overlay" : "required"}`}>
+          {activeImportId ? <button className="library-import-close" type="button" onClick={closeImport} aria-label="Close import"><X size={18} /></button> : null}
+          <ImportPage onImported={onImported} lastImport={lastImport} />
+        </div>
+      ) : null}
     </div>
   );
 }
