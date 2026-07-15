@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { Crosshair, Minus, Plus, RotateCcw } from "lucide-react";
 import { assetUrl } from "../lib/tauri";
 import { formatNumber, grenadeLabel } from "../lib/format";
@@ -61,7 +61,8 @@ export default function MapCanvas({
 }: Props) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
-  const dragRef = useRef<{ x: number; y: number; tx: number; ty: number } | null>(null);
+  const dragRef = useRef<{ x: number; y: number; tx: number; ty: number; pointerId: number; captured: boolean } | null>(null);
+  const draggedRef = useRef(false);
   const [stageSize, setStageSize] = useState({ width: 0, height: 0 });
   const [view, setView] = useState({ s: 1, tx: 0, ty: 0 });
   const [copied, setCopied] = useState<number | null>(null);
@@ -95,20 +96,42 @@ export default function MapCanvas({
     y: (radarOffsetY + y / 1024 * radarSize) * view.s + view.ty,
   });
   const clampView = (s: number, tx: number, ty: number) => {
-    const limitX = Math.max(0, stageSize.width * (s - 1));
-    const limitY = Math.max(0, stageSize.height * (s - 1));
-    return { s, tx: clamp(tx, -limitX, 0), ty: clamp(ty, -limitY, 0) };
+    if (s <= 1) return { s: 1, tx: 0, ty: 0 };
+    return { s, tx, ty };
   };
   const resetView = () => setView({ s: 1, tx: 0, ty: 0 });
   const zoomAt = (factor: number, x = stageSize.width / 2, y = stageSize.height / 2) => setView((current) => { const s = clamp(current.s * factor, 1, 6); const ratio = s / current.s; return clampView(s, x - (x - current.tx) * ratio, y - (y - current.ty) * ratio); });
   const copySpawn = async (spawn: SpawnPoint, index: number) => { try { await navigator.clipboard.writeText(spawn.command); setCopied(index); window.setTimeout(() => setCopied(null), 1400); } catch { /* clipboard can be unavailable in webviews */ } };
-  const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => { if ((event.target as HTMLElement).closest("[data-map-control]")) return; dragRef.current = { x: event.clientX, y: event.clientY, tx: view.tx, ty: view.ty }; event.currentTarget.setPointerCapture(event.pointerId); };
+  const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if ((event.target as HTMLElement).closest(".map-toolbar-floating, .throw-strip, .throw-preview-popover")) return;
+    draggedRef.current = false;
+    dragRef.current = { x: event.clientX, y: event.clientY, tx: view.tx, ty: view.ty, pointerId: event.pointerId, captured: false };
+  };
   const onPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
     const drag = dragRef.current;
     if (!drag) return;
+    if (Math.hypot(event.clientX - drag.x, event.clientY - drag.y) <= 3 && !drag.captured) return;
+    if (!drag.captured) {
+      draggedRef.current = true;
+      drag.captured = true;
+      event.currentTarget.setPointerCapture(drag.pointerId);
+    }
     const tx = drag.tx + event.clientX - drag.x;
     const ty = drag.ty + event.clientY - drag.y;
     setView((current) => clampView(current.s, tx, ty));
+  };
+  const finishDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current;
+    if (drag?.captured && event.currentTarget.hasPointerCapture(drag.pointerId)) {
+      event.currentTarget.releasePointerCapture(drag.pointerId);
+    }
+    dragRef.current = null;
+    window.setTimeout(() => { draggedRef.current = false; }, 0);
+  };
+  const suppressDraggedClick = (event: ReactMouseEvent<HTMLDivElement>) => {
+    if (!draggedRef.current) return;
+    event.preventDefault();
+    event.stopPropagation();
   };
   const onWheel = (event: React.WheelEvent) => { event.preventDefault(); const rect = stageRef.current?.getBoundingClientRect(); if (rect) zoomAt(event.deltaY < 0 ? 1.12 : 1 / 1.12, event.clientX - rect.left, event.clientY - rect.top); };
   const showPreview = (event: ReactPointerEvent, grenade: GrenadePreview) => { const rect = viewportRef.current?.getBoundingClientRect(); if (rect) setPreview({ grenade, x: event.clientX - rect.left, y: event.clientY - rect.top }); };
@@ -122,7 +145,7 @@ export default function MapCanvas({
       <button onClick={() => zoomAt(1 / 1.18)} aria-label="Zoom out" data-tip="Zoom out"><Minus size={16} /></button>
       <button onClick={resetView} aria-label="Reset view" data-tip="Reset view" className="reset"><RotateCcw size={14} /></button>
     </div>
-    <div ref={viewportRef} className={`map-viewport ${view.s > 1 ? "is-draggable" : ""}`} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={() => { dragRef.current = null; }} onPointerCancel={() => { dragRef.current = null; }} onWheel={onWheel}>
+    <div ref={viewportRef} className={`map-viewport ${view.s > 1 ? "is-draggable" : ""}`} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={finishDrag} onPointerCancel={finishDrag} onClickCapture={suppressDraggedClick} onWheel={onWheel}>
       <div ref={stageRef} className="map-stage" style={stageSize.width && stageSize.height ? { width: stageSize.width, height: stageSize.height } : undefined}>
         <div className="map-world" style={{ transform: `translate(${view.tx}px, ${view.ty}px) scale(${view.s})` }}>
           {image ? <img src={image} alt="map" className="map-image" draggable={false} style={{ width: radarSize, height: radarSize, left: radarOffsetX, top: radarOffsetY }} /> : <div className="map-empty">No map image</div>}
