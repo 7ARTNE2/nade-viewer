@@ -5,6 +5,7 @@ import {
   Check,
   ChevronDown,
   Database,
+  Download,
   FolderOpen,
   Map,
   Pencil,
@@ -108,6 +109,7 @@ function Shell() {
   };
 
   const mapsRouteActive = location.pathname === "/" || location.pathname === "/maps" || location.pathname.startsWith("/map/") || location.pathname.startsWith("/grenade/");
+  const importPanelActive = location.pathname === "/maps" && new URLSearchParams(location.search).get("import") === "1";
 
   if (loading) {
     return (
@@ -128,8 +130,11 @@ function Shell() {
               <span className="topbar-brand-copy"><strong>Nade Viewer</strong><small>v{version}</small></span>
             </button>
             <span className="topbar-divider" />
-            <button className={`topbar-nav-link ${mapsRouteActive ? "active" : ""}`} onClick={() => navigate("/maps")}>
+            <button className={`topbar-nav-link ${mapsRouteActive && !importPanelActive ? "active" : ""}`} onClick={() => navigate("/maps")}>
               <Map size={16} /><span>Maps</span>
+            </button>
+            <button className={`topbar-nav-link ${importPanelActive ? "active" : ""}`} onClick={() => navigate("/maps?import=1")}>
+              <Download size={16} /><span>Import library</span>
             </button>
           </div>
           <div className="topbar-actions">
