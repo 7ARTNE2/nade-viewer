@@ -1,0 +1,138 @@
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
+import { Crosshair, Minus, Plus, RotateCcw } from "lucide-react";
+import { assetUrl } from "../lib/tauri";
+import { formatNumber, grenadeLabel } from "../lib/format";
+import { buildSpawnMapPoints, INSTA_LABEL, isInstaGrenade } from "../lib/insta";
+import { splitThrowKeys, throwKeyVisual } from "../lib/throwKeys";
+import type { GrenadePreview, LandingCluster, SpawnPoint } from "../types/domain";
+
+type Props = {
+  mapImagePath?: string | null;
+  clusters?: LandingCluster[];
+  selectedClusterId?: string | null;
+  grenades?: GrenadePreview[];
+  grenadePointMode?: "throw" | "landing";
+  spawnPoints?: SpawnPoint[];
+  showSpawns?: boolean;
+  onClusterSelect?: (cluster: LandingCluster) => void;
+  onGrenadeOpen?: (id: number) => void;
+};
+
+const typeColor: Record<string, string> = { smoke: "#67e8f9", flash: "#fbbf24", molotov: "#fb7185", HE: "#34d399" };
+const sideColor: Record<string, string> = { T: "#f97316", CT: "#60a5fa", MIX: "#a78bfa", NEUTRAL: "#e5e7eb" };
+const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
+const grenadePoint = (grenade: GrenadePreview, mode: "throw" | "landing") => {
+  const x = mode === "landing" ? grenade.explode_map_x : grenade.start_map_x;
+  const y = mode === "landing" ? grenade.explode_map_y : grenade.start_map_y;
+  return typeof x === "number" && typeof y === "number" ? [x, y] as [number, number] : null;
+};
+const splitCommands = (value?: string | null) => value
+  ? value.replace(/\s+(setang|setpos)\b/gi, "\n$1").split(/[;\n]+/).map((part) => part.trim()).filter(Boolean).slice(0, 3)
+  : [];
+
+type ThrowGroup = { id: string; x: number; y: number; grenades: GrenadePreview[] };
+const groupThrowPoints = (items: GrenadePreview[], mode: "throw" | "landing"): ThrowGroup[] => {
+  const buckets = new Map<string, { x: number; y: number; sx: number; sy: number; grenades: GrenadePreview[] }>();
+  items.forEach((grenade) => {
+    const point = grenadePoint(grenade, mode);
+    if (!point) return;
+    const [x, y] = point;
+    const key = `${Math.floor(x / 11)}:${Math.floor(y / 11)}`;
+    const current = buckets.get(key);
+    if (current && Math.hypot(current.x - x, current.y - y) <= 8) {
+      current.grenades.push(grenade);
+      current.sx += x;
+      current.sy += y;
+      current.x = current.sx / current.grenades.length;
+      current.y = current.sy / current.grenades.length;
+    } else {
+      buckets.set(current ? `${key}:${grenade.id}` : key, { x, y, sx: x, sy: y, grenades: [grenade] });
+    }
+  });
+  return [...buckets.values()].map((group) => {
+    const grenades = [...group.grenades].sort((a, b) => Number(b.is_core) - Number(a.is_core) || b.usage_count - a.usage_count || a.id - b.id);
+    return { id: grenades.map((grenade) => grenade.id).join("-"), x: group.x, y: group.y, grenades };
+  });
+};
+
+export default function MapCanvas({
+  mapImagePath, clusters = [], selectedClusterId, grenades = [], grenadePointMode = "throw",
+  spawnPoints = [], showSpawns = true, onClusterSelect, onGrenadeOpen,
+}: Props) {
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const stageRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef<{ x: number; y: number; tx: number; ty: number } | null>(null);
+  const [stageSize, setStageSize] = useState({ width: 0, height: 0 });
+  const [view, setView] = useState({ s: 1, tx: 0, ty: 0 });
+  const [copied, setCopied] = useState<number | null>(null);
+  const [activeGroupId, setActiveGroupId] = useState<string | null>(null);
+  const [preview, setPreview] = useState<{ grenade: GrenadePreview; x: number; y: number } | null>(null);
+
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    const resize = () => setStageSize({ width: viewport.clientWidth, height: viewport.clientHeight });
+    resize();
+    const observer = new ResizeObserver(resize);
+    observer.observe(viewport);
+    return () => observer.disconnect();
+  }, []);
+
+  const selectedCluster = clusters.find((cluster) => cluster.id === selectedClusterId);
+  const image = assetUrl(mapImagePath);
+  const spawnMapPoints = useMemo(() => buildSpawnMapPoints(spawnPoints), [spawnPoints]);
+  const groups = useMemo(() => groupThrowPoints(grenades, grenadePointMode), [grenades, grenadePointMode]);
+  const activeGroup = groups.find((group) => group.id === activeGroupId);
+  const radarSize = Math.min(stageSize.width, stageSize.height);
+  const radarOffsetX = (stageSize.width - radarSize) / 2;
+  const radarOffsetY = (stageSize.height - radarSize) / 2;
+  const project = (x: number, y: number) => ({
+    left: `${(radarOffsetX + x / 1024 * radarSize) * view.s + view.tx}px`,
+    top: `${(radarOffsetY + y / 1024 * radarSize) * view.s + view.ty}px`,
+  });
+  const projectSvg = (x: number, y: number) => ({
+    x: (radarOffsetX + x / 1024 * radarSize) * view.s + view.tx,
+    y: (radarOffsetY + y / 1024 * radarSize) * view.s + view.ty,
+  });
+  const clampView = (s: number, tx: number, ty: number) => {
+    const limitX = Math.max(0, stageSize.width * (s - 1));
+    const limitY = Math.max(0, stageSize.height * (s - 1));
+    return { s, tx: clamp(tx, -limitX, 0), ty: clamp(ty, -limitY, 0) };
+  };
+  const resetView = () => setView({ s: 1, tx: 0, ty: 0 });
+  const zoomAt = (factor: number, x = stageSize.width / 2, y = stageSize.height / 2) => setView((current) => { const s = clamp(current.s * factor, 1, 6); const ratio = s / current.s; return clampView(s, x - (x - current.tx) * ratio, y - (y - current.ty) * ratio); });
+  const copySpawn = async (spawn: SpawnPoint, index: number) => { try { await navigator.clipboard.writeText(spawn.command); setCopied(index); window.setTimeout(() => setCopied(null), 1400); } catch { /* clipboard can be unavailable in webviews */ } };
+  const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => { if ((event.target as HTMLElement).closest("[data-map-control]")) return; dragRef.current = { x: event.clientX, y: event.clientY, tx: view.tx, ty: view.ty }; event.currentTarget.setPointerCapture(event.pointerId); };
+  const onPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => { if (!dragRef.current) return; setView((current) => clampView(current.s, dragRef.current!.tx + event.clientX - dragRef.current!.x, dragRef.current!.ty + event.clientY - dragRef.current!.y)); };
+  const onWheel = (event: React.WheelEvent) => { event.preventDefault(); const rect = stageRef.current?.getBoundingClientRect(); if (rect) zoomAt(event.deltaY < 0 ? 1.12 : 1 / 1.12, event.clientX - rect.left, event.clientY - rect.top); };
+  const showPreview = (event: ReactPointerEvent, grenade: GrenadePreview) => { const rect = viewportRef.current?.getBoundingClientRect(); if (rect) setPreview({ grenade, x: event.clientX - rect.left, y: event.clientY - rect.top }); };
+  const previewKeys = splitThrowKeys(preview?.grenade.throw_description);
+  const previewCommands = splitCommands(preview?.grenade.coordinates);
+  const previewStyle = preview ? { left: clamp(preview.x + 16, 12, Math.max(12, (viewportRef.current?.clientWidth ?? 0) - 332)), top: clamp(preview.y + 14, 12, Math.max(12, (viewportRef.current?.clientHeight ?? 0) - 232)), "--dot": typeColor[preview.grenade.grenade_type] ?? "#fff" } as CSSProperties : undefined;
+
+  return <div className="map-canvas">
+    <div className="map-toolbar-floating" data-map-control="1">
+      <button onClick={() => zoomAt(1.18)} aria-label="Zoom in" data-tip="Zoom in"><Plus size={16} /></button>
+      <button onClick={() => zoomAt(1 / 1.18)} aria-label="Zoom out" data-tip="Zoom out"><Minus size={16} /></button>
+      <button onClick={resetView} aria-label="Reset view" data-tip="Reset view" className="reset"><RotateCcw size={14} /></button>
+    </div>
+    <div ref={viewportRef} className={`map-viewport ${view.s > 1 ? "is-draggable" : ""}`} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={() => { dragRef.current = null; }} onPointerCancel={() => { dragRef.current = null; }} onWheel={onWheel}>
+      <div ref={stageRef} className="map-stage" style={stageSize.width && stageSize.height ? { width: stageSize.width, height: stageSize.height } : undefined}>
+        <div className="map-world" style={{ transform: `translate(${view.tx}px, ${view.ty}px) scale(${view.s})` }}>
+          {image ? <img src={image} alt="map" className="map-image" draggable={false} style={{ width: radarSize, height: radarSize, left: radarOffsetX, top: radarOffsetY }} /> : <div className="map-empty">No map image</div>}
+          {selectedCluster ? <div className="map-caption"><span>{selectedCluster.count} selected</span><span>{selectedCluster.unique_types.map(grenadeLabel).join(", ")}</span></div> : null}
+        </div>
+        <svg className="trajectory-screen-layer" width={stageSize.width} height={stageSize.height} viewBox={`0 0 ${stageSize.width || 1} ${stageSize.height || 1}`}>
+          {grenades.map((grenade) => { if (!grenade.trajectory_preview?.length) return null; const start = typeof grenade.start_map_x === "number" && typeof grenade.start_map_y === "number" ? projectSvg(grenade.start_map_x, grenade.start_map_y) : null; const first = projectSvg(...grenade.trajectory_preview[0]); return <g key={`trajectory-${grenade.id}`}>{start ? <line className="trajectory-connector" x1={start.x} y1={start.y} x2={first.x} y2={first.y} /> : null}<polyline points={grenade.trajectory_preview.map(([x, y]) => { const point = projectSvg(x, y); return `${point.x},${point.y}`; }).join(" ")} fill="none" stroke={typeColor[grenade.grenade_type] ?? "rgba(255,255,255,.72)"} strokeOpacity=".72" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" /></g>; })}
+        </svg>
+        <div className="absolute-layer marker-layer">
+          {showSpawns && spawnPoints.map((spawn, index) => typeof spawn.map_x === "number" && typeof spawn.map_y === "number" ? <button key={`${spawn.side}-${index}-${spawn.pos_x}-${spawn.pos_y}`} className={`spawn-dot ${spawn.side === "CT" ? "ct" : "t"}`} style={project(spawn.map_x, spawn.map_y)} data-map-control="1" onPointerDown={(event) => event.stopPropagation()} onClick={() => copySpawn(spawn, index)} data-tip={`${spawn.command} / ${spawn.side}`}><span className="spawn-pulse" /><span className={`spawn-core ${copied === index ? "copied" : ""}`} /></button> : null)}
+          {clusters.filter((cluster) => !selectedClusterId || cluster.id === selectedClusterId).map((cluster) => <button key={cluster.id} className={`cluster-dot ${grenadePointMode === "landing" ? "cluster-dot--throw " : ""}${cluster.id === selectedClusterId ? "selected" : ""}`} style={{ ...project(cluster.x, cluster.y), "--dot": sideColor[cluster.side_key] ?? sideColor.NEUTRAL } as CSSProperties} data-map-control="1" onPointerDown={(event) => event.stopPropagation()} onClick={() => onClusterSelect?.(cluster)} data-tip={`${cluster.count} grenades`}><span>{cluster.count}</span></button>)}
+          {groups.map((group) => { const grenade = group.grenades[0]; const matched = grenadePointMode === "throw" && group.grenades.some((item) => isInstaGrenade(item, spawnMapPoints)); const style = { ...project(group.x, group.y), "--dot": typeColor[grenade.grenade_type] ?? "#fff" } as CSSProperties; return group.grenades.length > 1 ? <div key={group.id} className="throw-cluster-wrap" style={style} data-map-control="1"><button className={`throw-dot throw-stack-dot ${group.grenades.some((item) => item.is_core) ? "core" : ""} ${matched ? "spawn-match" : ""}`} onClick={() => setActiveGroupId(activeGroupId === group.id ? null : group.id)} data-tip={`${matched ? `${INSTA_LABEL} / ` : ""}${group.grenades.length} points`}><span>{group.grenades.length}</span></button></div> : <button key={group.id} className={`throw-dot ${grenade.is_core ? "core" : ""} ${matched ? "spawn-match" : ""}`} style={style} data-map-control="1" onPointerDown={(event) => event.stopPropagation()} onPointerEnter={(event) => showPreview(event, grenade)} onPointerMove={(event) => showPreview(event, grenade)} onPointerLeave={() => setPreview(null)} onClick={() => onGrenadeOpen?.(grenade.id)} aria-label={`#${grenade.id} ${grenadeLabel(grenade.grenade_type)}`}><Crosshair size={10} /></button>; })}
+        </div>
+      </div>
+      {activeGroup ? <div className="throw-strip" data-map-control="1" onWheel={(event) => { event.preventDefault(); event.currentTarget.scrollLeft += event.deltaY; }}>{activeGroup.grenades.map((grenade) => <button key={grenade.id} className={`throw-strip-dot ${grenade.is_core ? "core" : ""}`} style={{ "--dot": typeColor[grenade.grenade_type] ?? "#fff" } as CSSProperties} onClick={() => onGrenadeOpen?.(grenade.id)} onPointerEnter={(event) => showPreview(event, grenade)} onPointerLeave={() => setPreview(null)}><Crosshair size={10} /></button>)}</div> : null}
+      {preview ? <div className="throw-preview-popover" style={previewStyle} data-map-control="1"><div className="throw-preview-head"><span className="throw-preview-mark" /><strong>#{preview.grenade.id} {grenadeLabel(preview.grenade.grenade_type)}</strong><span>{preview.grenade.side}</span>{isInstaGrenade(preview.grenade, spawnMapPoints) ? <em className="insta">{INSTA_LABEL}</em> : null}{preview.grenade.is_core ? <em>Core</em> : null}</div>{previewKeys.length ? <div className="throw-preview-keys">{previewKeys.map((key, index) => { const visual = throwKeyVisual(key); return <span className="throw-preview-key-part" key={`${key}-${index}`}><span className={`throw-preview-key-icon ${visual.kind}`} data-tip={visual.title}><span className={`throw-key-glyph ${visual.glyph}`} aria-hidden="true" /><span>{visual.label}</span></span>{index < previewKeys.length - 1 ? <span className="throw-preview-plus">+</span> : null}</span>; })}</div> : <div className="throw-preview-empty">No throw keys</div>}<div className="throw-preview-info"><span className="throw-preview-thrower">{preview.grenade.thrower || "Parsed throw"}</span><span>Airtime: <strong>{typeof preview.grenade.airtime === "number" ? `${preview.grenade.airtime.toFixed(2)}s` : "-"}</strong></span><span>Usage: <strong>{formatNumber(preview.grenade.usage_count)}</strong></span></div>{previewCommands.length ? <div className="throw-preview-command">{previewCommands.map((command) => <span key={command}>{command}</span>)}</div> : null}</div> : null}
+    </div>
+  </div>;
+}

@@ -1,0 +1,958 @@
+{
+  "de_ancient": [
+    {
+      "map_name": "de_ancient",
+      "side": "CT",
+      "pos_x": -512,
+      "pos_y": 1696,
+      "pos_z": 26.84
+    },
+    {
+      "map_name": "de_ancient",
+      "side": "CT",
+      "pos_x": -448,
+      "pos_y": 1728,
+      "pos_z": 30.74
+    },
+    {
+      "map_name": "de_ancient",
+      "side": "CT",
+      "pos_x": -192,
+      "pos_y": 1696,
+      "pos_z": 26.05
+    },
+    {
+      "map_name": "de_ancient",
+      "side": "CT",
+      "pos_x": -352,
+      "pos_y": 1728,
+      "pos_z": 28.81
+    },
+    {
+      "map_name": "de_ancient",
+      "side": "CT",
+      "pos_x": -256,
+      "pos_y": 1728,
+      "pos_z": 25.6
+    },
+    {
+      "map_name": "de_ancient",
+      "side": "T",
+      "pos_x": -392,
+      "pos_y": -2224,
+      "pos_z": -163.26
+    },
+    {
+      "map_name": "de_ancient",
+      "side": "T",
+      "pos_x": -520,
+      "pos_y": -2224,
+      "pos_z": -163.26
+    },
+    {
+      "map_name": "de_ancient",
+      "side": "T",
+      "pos_x": -328,
+      "pos_y": -2288,
+      "pos_z": -163.26
+    },
+    {
+      "map_name": "de_ancient",
+      "side": "T",
+      "pos_x": -584,
+      "pos_y": -2288,
+      "pos_z": -162.42
+    },
+    {
+      "map_name": "de_ancient",
+      "side": "T",
+      "pos_x": -456,
+      "pos_y": -2288,
+      "pos_z": -163.26
+    }
+  ],
+  "de_anubis": [
+    {
+      "map_name": "de_anubis",
+      "side": "CT",
+      "pos_x": -400,
+      "pos_y": 2192,
+      "pos_z": 25.03
+    },
+    {
+      "map_name": "de_anubis",
+      "side": "CT",
+      "pos_x": -608,
+      "pos_y": 2120,
+      "pos_z": 16.06
+    },
+    {
+      "map_name": "de_anubis",
+      "side": "CT",
+      "pos_x": -560,
+      "pos_y": 2192,
+      "pos_z": 25.03
+    },
+    {
+      "map_name": "de_anubis",
+      "side": "CT",
+      "pos_x": -476,
+      "pos_y": 2216,
+      "pos_z": 25.03
+    },
+    {
+      "map_name": "de_anubis",
+      "side": "CT",
+      "pos_x": -360,
+      "pos_y": 2120,
+      "pos_z": 16.06
+    },
+    {
+      "map_name": "de_anubis",
+      "side": "T",
+      "pos_x": -384,
+      "pos_y": -1552,
+      "pos_z": -11.97
+    },
+    {
+      "map_name": "de_anubis",
+      "side": "T",
+      "pos_x": -154,
+      "pos_y": -1503.08,
+      "pos_z": -11.97
+    },
+    {
+      "map_name": "de_anubis",
+      "side": "T",
+      "pos_x": -416,
+      "pos_y": -1696,
+      "pos_z": 2.03
+    },
+    {
+      "map_name": "de_anubis",
+      "side": "T",
+      "pos_x": -144,
+      "pos_y": -1568,
+      "pos_z": -11.97
+    },
+    {
+      "map_name": "de_anubis",
+      "side": "T",
+      "pos_x": -304,
+      "pos_y": -1608,
+      "pos_z": -11.97
+    },
+    {
+      "map_name": "de_anubis",
+      "side": "T",
+      "pos_x": -264,
+      "pos_y": -1560,
+      "pos_z": -11.97
+    },
+    {
+      "map_name": "de_anubis",
+      "side": "T",
+      "pos_x": -192,
+      "pos_y": -1608,
+      "pos_z": -11.97
+    },
+    {
+      "map_name": "de_anubis",
+      "side": "T",
+      "pos_x": -328,
+      "pos_y": -1528,
+      "pos_z": -11.97
+    },
+    {
+      "map_name": "de_anubis",
+      "side": "T",
+      "pos_x": -416,
+      "pos_y": -1608,
+      "pos_z": 2.03
+    },
+    {
+      "map_name": "de_anubis",
+      "side": "T",
+      "pos_x": -234,
+      "pos_y": -1503.08,
+      "pos_z": -11.97
+    },
+    {
+      "map_name": "de_anubis",
+      "side": "T",
+      "pos_x": -128,
+      "pos_y": -1632,
+      "pos_z": -0.96
+    }
+  ],
+  "de_cache": [
+    {
+      "map_name": "de_cache",
+      "side": "CT",
+      "pos_x": -1400.28,
+      "pos_y": 706.82,
+      "pos_z": 1614.03
+    },
+    {
+      "map_name": "de_cache",
+      "side": "CT",
+      "pos_x": -1400.28,
+      "pos_y": 874.82,
+      "pos_z": 1614.03
+    },
+    {
+      "map_name": "de_cache",
+      "side": "CT",
+      "pos_x": -1488.28,
+      "pos_y": 706.82,
+      "pos_z": 1614.03
+    },
+    {
+      "map_name": "de_cache",
+      "side": "CT",
+      "pos_x": -1600.28,
+      "pos_y": 954.82,
+      "pos_z": 1614.03
+    },
+    {
+      "map_name": "de_cache",
+      "side": "CT",
+      "pos_x": -1648.28,
+      "pos_y": 706.82,
+      "pos_z": 1614.03
+    },
+    {
+      "map_name": "de_cache",
+      "side": "CT",
+      "pos_x": -1488.28,
+      "pos_y": 874.82,
+      "pos_z": 1614.03
+    },
+    {
+      "map_name": "de_cache",
+      "side": "CT",
+      "pos_x": -1600.28,
+      "pos_y": 794.82,
+      "pos_z": 1614.03
+    },
+    {
+      "map_name": "de_cache",
+      "side": "CT",
+      "pos_x": -1524.28,
+      "pos_y": 794.82,
+      "pos_z": 1614.03
+    },
+    {
+      "map_name": "de_cache",
+      "side": "CT",
+      "pos_x": -1560.28,
+      "pos_y": 874.82,
+      "pos_z": 1614.03
+    },
+    {
+      "map_name": "de_cache",
+      "side": "CT",
+      "pos_x": -1560.28,
+      "pos_y": 706.82,
+      "pos_z": 1614.03
+    },
+    {
+      "map_name": "de_cache",
+      "side": "CT",
+      "pos_x": -1600.28,
+      "pos_y": 618.82,
+      "pos_z": 1614.03
+    },
+    {
+      "map_name": "de_cache",
+      "side": "CT",
+      "pos_x": -1648.28,
+      "pos_y": 874.82,
+      "pos_z": 1614.03
+    },
+    {
+      "map_name": "de_cache",
+      "side": "CT",
+      "pos_x": -1448.28,
+      "pos_y": 794.82,
+      "pos_z": 1614.03
+    },
+    {
+      "map_name": "de_cache",
+      "side": "CT",
+      "pos_x": -1524.28,
+      "pos_y": 970.82,
+      "pos_z": 1614.03
+    },
+    {
+      "map_name": "de_cache",
+      "side": "T",
+      "pos_x": 3094.27,
+      "pos_y": -152.58,
+      "pos_z": 1608.03
+    },
+    {
+      "map_name": "de_cache",
+      "side": "T",
+      "pos_x": 2916.77,
+      "pos_y": 69.42,
+      "pos_z": 1608.03
+    },
+    {
+      "map_name": "de_cache",
+      "side": "T",
+      "pos_x": 3041.77,
+      "pos_y": -21.08,
+      "pos_z": 1608.03
+    },
+    {
+      "map_name": "de_cache",
+      "side": "T",
+      "pos_x": 3019.27,
+      "pos_y": 225.42,
+      "pos_z": 1616.03
+    },
+    {
+      "map_name": "de_cache",
+      "side": "T",
+      "pos_x": 3077.77,
+      "pos_y": 135.92,
+      "pos_z": 1616.03
+    }
+  ],
+  "de_dust2": [
+    {
+      "map_name": "de_dust2",
+      "side": "CT",
+      "pos_x": 351.39,
+      "pos_y": 2352.94,
+      "pos_z": -120.47
+    },
+    {
+      "map_name": "de_dust2",
+      "side": "CT",
+      "pos_x": 160.12,
+      "pos_y": 2369.68,
+      "pos_z": -119.92
+    },
+    {
+      "map_name": "de_dust2",
+      "side": "CT",
+      "pos_x": 334.37,
+      "pos_y": 2433.73,
+      "pos_z": -120.36
+    },
+    {
+      "map_name": "de_dust2",
+      "side": "CT",
+      "pos_x": 182.25,
+      "pos_y": 2439.01,
+      "pos_z": -120.97
+    },
+    {
+      "map_name": "de_dust2",
+      "side": "CT",
+      "pos_x": 258.16,
+      "pos_y": 2480.55,
+      "pos_z": -121.08
+    },
+    {
+      "map_name": "de_dust2",
+      "side": "T",
+      "pos_x": -857.51,
+      "pos_y": -738.36,
+      "pos_z": 122.09
+    },
+    {
+      "map_name": "de_dust2",
+      "side": "T",
+      "pos_x": -1015,
+      "pos_y": -808,
+      "pos_z": 116.08
+    },
+    {
+      "map_name": "de_dust2",
+      "side": "T",
+      "pos_x": -696.84,
+      "pos_y": -806.62,
+      "pos_z": 116.71
+    },
+    {
+      "map_name": "de_dust2",
+      "side": "T",
+      "pos_x": -1076,
+      "pos_y": -843,
+      "pos_z": 116.79
+    },
+    {
+      "map_name": "de_dust2",
+      "side": "T",
+      "pos_x": -1141,
+      "pos_y": -808,
+      "pos_z": 116.69
+    },
+    {
+      "map_name": "de_dust2",
+      "side": "T",
+      "pos_x": -760.66,
+      "pos_y": -836.17,
+      "pos_z": 117.07
+    },
+    {
+      "map_name": "de_dust2",
+      "side": "T",
+      "pos_x": -980,
+      "pos_y": -754,
+      "pos_z": 120.18
+    },
+    {
+      "map_name": "de_dust2",
+      "side": "T",
+      "pos_x": -493,
+      "pos_y": -808,
+      "pos_z": 108.56
+    },
+    {
+      "map_name": "de_dust2",
+      "side": "T",
+      "pos_x": -332,
+      "pos_y": -754,
+      "pos_z": 78.88
+    },
+    {
+      "map_name": "de_dust2",
+      "side": "T",
+      "pos_x": -367,
+      "pos_y": -808,
+      "pos_z": 83.74
+    },
+    {
+      "map_name": "de_dust2",
+      "side": "T",
+      "pos_x": -822.37,
+      "pos_y": -795.64,
+      "pos_z": 117.26
+    },
+    {
+      "map_name": "de_dust2",
+      "side": "T",
+      "pos_x": -533,
+      "pos_y": -754,
+      "pos_z": 113.85
+    },
+    {
+      "map_name": "de_dust2",
+      "side": "T",
+      "pos_x": -1181,
+      "pos_y": -754,
+      "pos_z": 120.18
+    },
+    {
+      "map_name": "de_dust2",
+      "side": "T",
+      "pos_x": -428,
+      "pos_y": -843,
+      "pos_z": 95.3
+    },
+    {
+      "map_name": "de_dust2",
+      "side": "T",
+      "pos_x": -657.27,
+      "pos_y": -755.88,
+      "pos_z": 119.88
+    }
+  ],
+  "de_inferno": [
+    {
+      "map_name": "de_inferno",
+      "side": "CT",
+      "pos_x": 2397,
+      "pos_y": 2079,
+      "pos_z": 132.77
+    },
+    {
+      "map_name": "de_inferno",
+      "side": "CT",
+      "pos_x": 2493,
+      "pos_y": 2090,
+      "pos_z": 132.55
+    },
+    {
+      "map_name": "de_inferno",
+      "side": "CT",
+      "pos_x": 2456.83,
+      "pos_y": 2153.16,
+      "pos_z": 132.08
+    },
+    {
+      "map_name": "de_inferno",
+      "side": "CT",
+      "pos_x": 2472.35,
+      "pos_y": 2005.97,
+      "pos_z": 134.51
+    },
+    {
+      "map_name": "de_inferno",
+      "side": "CT",
+      "pos_x": 2292.06,
+      "pos_y": 2027.69,
+      "pos_z": 135.96
+    },
+    {
+      "map_name": "de_inferno",
+      "side": "CT",
+      "pos_x": 2353,
+      "pos_y": 1977,
+      "pos_z": 135.52
+    },
+    {
+      "map_name": "de_inferno",
+      "side": "T",
+      "pos_x": -1586.52,
+      "pos_y": 440.79,
+      "pos_z": -63.97
+    },
+    {
+      "map_name": "de_inferno",
+      "side": "T",
+      "pos_x": -1657.23,
+      "pos_y": 419.58,
+      "pos_z": -63.97
+    },
+    {
+      "map_name": "de_inferno",
+      "side": "T",
+      "pos_x": -1675.62,
+      "pos_y": 351.7,
+      "pos_z": -63.97
+    },
+    {
+      "map_name": "de_inferno",
+      "side": "T",
+      "pos_x": -1662.18,
+      "pos_y": 288.76,
+      "pos_z": -63.97
+    },
+    {
+      "map_name": "de_inferno",
+      "side": "T",
+      "pos_x": -1520.06,
+      "pos_y": 430.89,
+      "pos_z": -63.97
+    }
+  ],
+  "de_mirage": [
+    {
+      "map_name": "de_mirage",
+      "side": "CT",
+      "pos_x": -1656,
+      "pos_y": -1800,
+      "pos_z": -267.21
+    },
+    {
+      "map_name": "de_mirage",
+      "side": "CT",
+      "pos_x": -1720,
+      "pos_y": -1896,
+      "pos_z": -267.6
+    },
+    {
+      "map_name": "de_mirage",
+      "side": "CT",
+      "pos_x": -1656,
+      "pos_y": -1976,
+      "pos_z": -267.46
+    },
+    {
+      "map_name": "de_mirage",
+      "side": "CT",
+      "pos_x": -1776,
+      "pos_y": -1800,
+      "pos_z": -263.97
+    },
+    {
+      "map_name": "de_mirage",
+      "side": "CT",
+      "pos_x": -1776,
+      "pos_y": -1976,
+      "pos_z": -263.97
+    },
+    {
+      "map_name": "de_mirage",
+      "side": "T",
+      "pos_x": 1216,
+      "pos_y": -307,
+      "pos_z": -164.81
+    },
+    {
+      "map_name": "de_mirage",
+      "side": "T",
+      "pos_x": 1136,
+      "pos_y": -160,
+      "pos_z": -164.43
+    },
+    {
+      "map_name": "de_mirage",
+      "side": "T",
+      "pos_x": 1136,
+      "pos_y": 32,
+      "pos_z": -164.79
+    },
+    {
+      "map_name": "de_mirage",
+      "side": "T",
+      "pos_x": 1216,
+      "pos_y": -115,
+      "pos_z": -163.97
+    },
+    {
+      "map_name": "de_mirage",
+      "side": "T",
+      "pos_x": 1216,
+      "pos_y": -211,
+      "pos_z": -163.97
+    },
+    {
+      "map_name": "de_mirage",
+      "side": "T",
+      "pos_x": 1296,
+      "pos_y": -352,
+      "pos_z": -167.97
+    },
+    {
+      "map_name": "de_mirage",
+      "side": "T",
+      "pos_x": 1296,
+      "pos_y": 32,
+      "pos_z": -167.97
+    },
+    {
+      "map_name": "de_mirage",
+      "side": "T",
+      "pos_x": 1136,
+      "pos_y": -64,
+      "pos_z": -164.5
+    },
+    {
+      "map_name": "de_mirage",
+      "side": "T",
+      "pos_x": 1216,
+      "pos_y": -16,
+      "pos_z": -163.97
+    },
+    {
+      "map_name": "de_mirage",
+      "side": "T",
+      "pos_x": 1136,
+      "pos_y": -256,
+      "pos_z": -164.84
+    }
+  ],
+  "de_nuke": [
+    {
+      "map_name": "de_nuke",
+      "side": "CT",
+      "pos_x": 2585,
+      "pos_y": -344,
+      "pos_z": -351.97
+    },
+    {
+      "map_name": "de_nuke",
+      "side": "CT",
+      "pos_x": 2584,
+      "pos_y": -504,
+      "pos_z": -351.97
+    },
+    {
+      "map_name": "de_nuke",
+      "side": "CT",
+      "pos_x": 2512,
+      "pos_y": -504,
+      "pos_z": -343.37
+    },
+    {
+      "map_name": "de_nuke",
+      "side": "CT",
+      "pos_x": 2552,
+      "pos_y": -424,
+      "pos_z": -351.97
+    },
+    {
+      "map_name": "de_nuke",
+      "side": "CT",
+      "pos_x": 2504,
+      "pos_y": -344,
+      "pos_z": -351.97
+    },
+    {
+      "map_name": "de_nuke",
+      "side": "T",
+      "pos_x": -1878,
+      "pos_y": -980,
+      "pos_z": -415.97
+    },
+    {
+      "map_name": "de_nuke",
+      "side": "T",
+      "pos_x": -1947.01,
+      "pos_y": -965.11,
+      "pos_z": -415.97
+    },
+    {
+      "map_name": "de_nuke",
+      "side": "T",
+      "pos_x": -1832,
+      "pos_y": -1160,
+      "pos_z": -415.97
+    },
+    {
+      "map_name": "de_nuke",
+      "side": "T",
+      "pos_x": -1874,
+      "pos_y": -1076,
+      "pos_z": -415.97
+    },
+    {
+      "map_name": "de_nuke",
+      "side": "T",
+      "pos_x": -1808,
+      "pos_y": -1025,
+      "pos_z": -415.97
+    },
+    {
+      "map_name": "de_nuke",
+      "side": "T",
+      "pos_x": -1947.01,
+      "pos_y": -1102.11,
+      "pos_z": -415.97
+    },
+    {
+      "map_name": "de_nuke",
+      "side": "T",
+      "pos_x": -1808,
+      "pos_y": -1089,
+      "pos_z": -415.97
+    },
+    {
+      "map_name": "de_nuke",
+      "side": "T",
+      "pos_x": -1929,
+      "pos_y": -1025,
+      "pos_z": -415.97
+    }
+  ],
+  "de_overpass": [
+    {
+      "map_name": "de_overpass",
+      "side": "CT",
+      "pos_x": -2343,
+      "pos_y": 797,
+      "pos_z": 476.03
+    },
+    {
+      "map_name": "de_overpass",
+      "side": "CT",
+      "pos_x": -2273,
+      "pos_y": 770,
+      "pos_z": 476.03
+    },
+    {
+      "map_name": "de_overpass",
+      "side": "CT",
+      "pos_x": -2190,
+      "pos_y": 817,
+      "pos_z": 476.03
+    },
+    {
+      "map_name": "de_overpass",
+      "side": "CT",
+      "pos_x": -2275,
+      "pos_y": 842,
+      "pos_z": 476.03
+    },
+    {
+      "map_name": "de_overpass",
+      "side": "CT",
+      "pos_x": -2199,
+      "pos_y": 740,
+      "pos_z": 476.03
+    },
+    {
+      "map_name": "de_overpass",
+      "side": "T",
+      "pos_x": -1327,
+      "pos_y": -3262,
+      "pos_z": 272.69
+    },
+    {
+      "map_name": "de_overpass",
+      "side": "T",
+      "pos_x": -1448,
+      "pos_y": -3076,
+      "pos_z": 265.16
+    },
+    {
+      "map_name": "de_overpass",
+      "side": "T",
+      "pos_x": -1271,
+      "pos_y": -3262,
+      "pos_z": 266.18
+    },
+    {
+      "map_name": "de_overpass",
+      "side": "T",
+      "pos_x": -1395,
+      "pos_y": -3190,
+      "pos_z": 272.24
+    },
+    {
+      "map_name": "de_overpass",
+      "side": "T",
+      "pos_x": -1391,
+      "pos_y": -3262,
+      "pos_z": 280.14
+    },
+    {
+      "map_name": "de_overpass",
+      "side": "T",
+      "pos_x": -1363,
+      "pos_y": -3122,
+      "pos_z": 260.62
+    },
+    {
+      "map_name": "de_overpass",
+      "side": "T",
+      "pos_x": -1510.4,
+      "pos_y": -3053.88,
+      "pos_z": 281.1
+    },
+    {
+      "map_name": "de_overpass",
+      "side": "T",
+      "pos_x": -1422.39,
+      "pos_y": -3129.73,
+      "pos_z": 268.43
+    },
+    {
+      "map_name": "de_overpass",
+      "side": "T",
+      "pos_x": -1499,
+      "pos_y": -3126,
+      "pos_z": 276.9
+    },
+    {
+      "map_name": "de_overpass",
+      "side": "T",
+      "pos_x": -1331,
+      "pos_y": -3190,
+      "pos_z": 264.8
+    },
+    {
+      "map_name": "de_overpass",
+      "side": "T",
+      "pos_x": -1463,
+      "pos_y": -3190,
+      "pos_z": 280.15
+    }
+  ],
+  "de_train": [
+    {
+      "map_name": "de_train",
+      "side": "CT",
+      "pos_x": 1456,
+      "pos_y": -1328,
+      "pos_z": -327.97
+    },
+    {
+      "map_name": "de_train",
+      "side": "CT",
+      "pos_x": 1542,
+      "pos_y": -1336,
+      "pos_z": -327.92
+    },
+    {
+      "map_name": "de_train",
+      "side": "CT",
+      "pos_x": 1496,
+      "pos_y": -1424,
+      "pos_z": -327.74
+    },
+    {
+      "map_name": "de_train",
+      "side": "CT",
+      "pos_x": 1462,
+      "pos_y": -1226,
+      "pos_z": -327.95
+    },
+    {
+      "map_name": "de_train",
+      "side": "CT",
+      "pos_x": 1342,
+      "pos_y": -1431,
+      "pos_z": -327.25
+    },
+    {
+      "map_name": "de_train",
+      "side": "CT",
+      "pos_x": 1378,
+      "pos_y": -1244,
+      "pos_z": -327.73
+    },
+    {
+      "map_name": "de_train",
+      "side": "CT",
+      "pos_x": 1600,
+      "pos_y": -1440,
+      "pos_z": -327.96
+    },
+    {
+      "map_name": "de_train",
+      "side": "CT",
+      "pos_x": 1552,
+      "pos_y": -1232,
+      "pos_z": -327.76
+    },
+    {
+      "map_name": "de_train",
+      "side": "T",
+      "pos_x": -1925,
+      "pos_y": 1394,
+      "pos_z": -171.97
+    },
+    {
+      "map_name": "de_train",
+      "side": "T",
+      "pos_x": -1955,
+      "pos_y": 1326,
+      "pos_z": -171.97
+    },
+    {
+      "map_name": "de_train",
+      "side": "T",
+      "pos_x": -1850,
+      "pos_y": 1256,
+      "pos_z": -171.97
+    },
+    {
+      "map_name": "de_train",
+      "side": "T",
+      "pos_x": -2000,
+      "pos_y": 1434.23,
+      "pos_z": -171.97
+    },
+    {
+      "map_name": "de_train",
+      "side": "T",
+      "pos_x": -2033,
+      "pos_y": 1362.23,
+      "pos_z": -171.97
+    },
+    {
+      "map_name": "de_train",
+      "side": "T",
+      "pos_x": -1916,
+      "pos_y": 1456.23,
+      "pos_z": -171.97
+    }
+  ]
+}

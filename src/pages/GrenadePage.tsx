@@ -1,0 +1,194 @@
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import { ArrowLeft, BadgeCheck, Clipboard, Clock, Crosshair, FileText, MapPinned, Timer } from "lucide-react";
+import MapCanvas from "../components/MapCanvas";
+import GrenadeList from "../components/GrenadeList";
+import { getGrenade, getSimilarGrenades, getSpawnPoints, recordGrenadeView, setGrenadeCore } from "../lib/tauri";
+import { formatClock, formatNumber, grenadeLabel } from "../lib/format";
+import { buildSpawnMapPoints, INSTA_LABEL, isInstaGrenade } from "../lib/insta";
+import { splitThrowKeys, throwKeyVisual } from "../lib/throwKeys";
+import type { GrenadeDetail, GrenadePreview, SpawnPoint } from "../types/domain";
+
+const detailTypeColor: Record<string, string> = {
+  smoke: "#67e8f9",
+  flash: "#fbbf24",
+  molotov: "#fb7185",
+  HE: "#34d399",
+};
+
+const detailTypeRgb: Record<string, string> = {
+  smoke: "103, 232, 249",
+  flash: "251, 191, 36",
+  molotov: "251, 113, 133",
+  HE: "52, 211, 153",
+};
+
+export default function GrenadePage() {
+  const { id = "" } = useParams();
+  const navigate = useNavigate();
+  const grenadeId = Number(id);
+  const [grenade, setGrenade] = useState<GrenadeDetail | null>(null);
+  const [similar, setSimilar] = useState<GrenadePreview[]>([]);
+  const [spawnPoints, setSpawnPoints] = useState<SpawnPoint[]>([]);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (!Number.isFinite(grenadeId)) return;
+    let cancelled = false;
+    getGrenade(grenadeId).then((detail) => {
+      if (cancelled) return;
+      setGrenade(detail);
+      recordGrenadeView(detail.id).catch(() => undefined);
+
+      Promise.all([getSimilarGrenades(grenadeId, 10), getSpawnPoints(detail.map, "Any")]).then(([list, spawns]) => {
+        if (cancelled) return;
+        setSimilar(list);
+        setSpawnPoints(spawns);
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [grenadeId]);
+
+  const previewPoint = useMemo(() => (grenade ? [{ ...grenade }] : []), [grenade]);
+  const spawnMapPoints = useMemo(() => buildSpawnMapPoints(spawnPoints), [spawnPoints]);
+  const isInsta = grenade ? isInstaGrenade(grenade, spawnMapPoints) : false;
+  const throwKeys = splitThrowKeys(grenade?.throw_description);
+  const detailAccent = grenade ? detailTypeColor[grenade.grenade_type] ?? "#e5e7eb" : "#e5e7eb";
+  const detailAccentRgb = grenade ? detailTypeRgb[grenade.grenade_type] ?? "229, 231, 235" : "229, 231, 235";
+
+  const copy = async (text?: string | null) => {
+    if (!text) return;
+    await navigator.clipboard.writeText(text);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 900);
+  };
+
+  const goBack = () => {
+    if (!grenade) return;
+    const historyState = window.history.state as { idx?: number } | null;
+    if (typeof historyState?.idx === "number" && historyState.idx > 0) {
+      navigate(-1);
+      return;
+    }
+    navigate(`/map/${encodeURIComponent(grenade.map)}`, { replace: true });
+  };
+
+  const handleCoreToggle = async (id: number, isCore: boolean) => {
+    await setGrenadeCore(id, isCore);
+    setSimilar((list) => list.map((item) => (item.id === id ? { ...item, is_core: isCore } : item)));
+    setGrenade((current) => (current && current.id === id ? { ...current, is_core: isCore } : current));
+  };
+
+  if (!grenade) {
+    return (
+      <div className="detail-loading">
+        <div className="loader-ring" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="grenade-detail">
+      <section className="detail-map-panel">
+        <div className="map-toolbar">
+          <button className="icon-btn" onClick={goBack}>
+            <ArrowLeft size={16} />
+          </button>
+          <div className="map-heading">
+            <strong>Grenade #{grenade.id}</strong>
+            <span>{grenade.map} / {grenadeLabel(grenade.grenade_type)}</span>
+          </div>
+        </div>
+        <MapCanvas mapImagePath={grenade.map_image_path} grenades={previewPoint} spawnPoints={spawnPoints} />
+      </section>
+
+      <aside className="detail-inspector" style={{ "--dot": detailAccent, "--detail-rgb": detailAccentRgb } as React.CSSProperties}>
+        <div className="detail-title-row">
+          <span className={`type-pill ${String(grenade.grenade_type).toLowerCase()}`}>{grenadeLabel(grenade.grenade_type)}</span>
+          <span className="side-mini">{grenade.side}</span>
+          <strong>{grenade.thrower || "Parsed grenade"}</strong>
+          {isInsta ? <span className="insta-badge">{INSTA_LABEL}</span> : null}
+          <button className={`core-action detail-core ${grenade.is_core ? "active" : ""}`} onClick={() => handleCoreToggle(grenade.id, !grenade.is_core)}>
+            <BadgeCheck size={14} />
+            {grenade.is_core ? "In Core" : "Add to Core"}
+          </button>
+        </div>
+
+        <div className="metric-grid">
+          <div><Timer size={14} /><span>Airtime</span><strong>{typeof grenade.airtime === "number" ? `${grenade.airtime.toFixed(2)}s` : "-"}</strong></div>
+          <div><Clock size={14} /><span>Round</span><strong>{formatClock(grenade.round_time_seconds)}</strong></div>
+          <div><Crosshair size={14} /><span>Usage</span><strong>{formatNumber(grenade.usage_count)}</strong></div>
+          <div><MapPinned size={14} /><span>Tickrate</span><strong>{grenade.tickrate ?? "-"}</strong></div>
+        </div>
+
+        <div className="info-block">
+          <div className="block-title">Throw keys</div>
+          {throwKeys.length ? (
+            <div className="throw-preview-keys detail-throw-keys">
+              {throwKeys.map((key, index) => {
+                const visual = throwKeyVisual(key);
+                return (
+                  <span className="throw-preview-key-part" key={`${key}-${index}`}>
+                    <span className={`throw-preview-key-icon ${visual.kind}`} data-tip={visual.title}>
+                      <span className={`throw-key-glyph ${visual.glyph}`} aria-hidden="true" />
+                      <span>{visual.label}</span>
+                    </span>
+                    {index < throwKeys.length - 1 ? <span className="throw-preview-plus">+</span> : null}
+                  </span>
+                );
+              })}
+            </div>
+          ) : (
+            <code>-</code>
+          )}
+        </div>
+
+        <div className="info-block">
+          <div className="block-title">
+            Coordinates
+            <button className="micro-btn" onClick={() => copy(grenade.coordinates)}>
+              <Clipboard size={13} />
+              {copied ? "Copied" : "Copy"}
+            </button>
+          </div>
+          <code>{grenade.coordinates || "-"}</code>
+        </div>
+
+        <div className="info-block">
+          <div className="block-title">Demo metadata</div>
+          <div className="kv-list">
+            <span>Throw tick</span><strong>{grenade.throw_tick ?? "-"}</strong>
+            <span>Lineup tick</span><strong>{grenade.lineup_tick ?? "-"}</strong>
+            <span>Demo</span><strong className="truncate"><FileText size={12} />{grenade.demo_filename || "-"}</strong>
+          </div>
+        </div>
+
+        <div className="info-block">
+          <div className="block-title">
+            Usage throwers
+            {grenade.usage_throwers.length ? <span className="block-count">{grenade.usage_throwers.length}</span> : null}
+          </div>
+          {grenade.usage_throwers.length ? (
+            <div className="thrower-list">
+              {grenade.usage_throwers.map((thrower, index) => (
+                <span key={`${thrower}-${index}`} data-tip={thrower}>
+                  <strong>{thrower.slice(0, 2).toUpperCase()}</strong>
+                  {thrower}
+                </span>
+              ))}
+            </div>
+          ) : (
+            <div className="empty-inline">-</div>
+          )}
+        </div>
+
+        <div className="info-block">
+          <div className="block-title">Similar grenades</div>
+          <GrenadeList grenades={similar} compact spawnPoints={spawnPoints} onCoreToggle={handleCoreToggle} emptyLabel="No similar grenades." />
+        </div>
+      </aside>
+    </div>
+  );
+}
