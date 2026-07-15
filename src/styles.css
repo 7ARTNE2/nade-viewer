@@ -101,3 +101,33 @@
 .library-import-close{position:absolute;z-index:5;top:18px;right:18px;display:grid;width:36px;height:36px;place-items:center;border:1px solid var(--line);border-radius:9px;background:var(--surface-2);color:var(--muted);cursor:pointer}
 .library-import-close:hover{border-color:#46505d;color:var(--text)}
 @media(max-width:520px){.library-import-close{top:10px;right:10px}.library-import-layer{padding-bottom:68px}}
+
+/* Single-section application navigation lives in the top bar. */
+.app-shell.topnav-shell{display:block;width:100%;height:100%}
+.topnav-shell .viewer-main{width:100%;height:100%}
+.topnav-shell .viewer-topbar{padding:0 16px}
+.topbar-navigation{display:flex;min-width:0;align-items:center;gap:12px}
+.topbar-brand{display:flex;align-items:center;gap:9px;padding:0;border:0;background:none;text-align:left;cursor:pointer}
+.topbar-brand .viewer-brand-mark{width:32px;height:32px;border-radius:8px;font-size:10px}
+.topbar-brand-copy{display:grid;gap:2px}
+.topbar-brand-copy strong{font:600 11px Orbitron;white-space:nowrap}
+.topbar-brand-copy small{color:var(--dim);font-size:8px;letter-spacing:.08em}
+.topbar-divider{width:1px;height:25px;background:var(--line)}
+.topbar-nav-link{display:flex;height:34px;align-items:center;gap:7px;padding:0 11px;border:1px solid transparent;border-radius:8px;background:none;color:var(--muted);font-size:11px;font-weight:700;cursor:pointer}
+.topbar-nav-link:hover{background:var(--surface);color:var(--text)}
+.topbar-nav-link.active{border-color:rgba(var(--acid-rgb),.17);background:rgba(var(--acid-rgb),.07);color:var(--acid)}
+
+@media(max-width:760px){
+  .topnav-shell .viewer-topbar{padding:0 10px}
+  .topbar-actions{margin-left:auto}
+}
+@media(max-width:520px){
+  .topnav-shell{display:block!important}
+  .topnav-shell .viewer-main{height:100%;grid-template-rows:54px minmax(0,1fr)}
+  .topnav-shell .view-frame{padding-bottom:0}
+  .topnav-shell .library-import-layer{padding-bottom:0}
+  .topbar-brand-copy{display:none}
+  .topbar-navigation{gap:8px}
+  .topbar-divider{height:22px}
+  .topbar-nav-link{padding:0 8px}
+}

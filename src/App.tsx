@@ -119,23 +119,18 @@ function Shell() {
   }
 
   return (
-    <div className="app-shell viewer-shell">
-      <aside className="viewer-nav">
-        <button className="viewer-brand" onClick={() => navigate("/maps")} aria-label="Nade Viewer home">
-          <span className="viewer-brand-mark">NV</span>
-          <span><strong>Nade Viewer</strong><small>CS2 utility library</small></span>
-        </button>
-        <nav>
-          <button className={mapsRouteActive ? "active" : ""} onClick={() => navigate("/maps")}><Map size={17} /><span>Maps</span></button>
-        </nav>
-        <div className="viewer-nav-footer"><span>Local first</span><small>v{version}</small></div>
-      </aside>
-
+    <div className="app-shell viewer-shell topnav-shell">
       <main className="app-main viewer-main">
         <header className="viewer-topbar">
-          <div className="viewer-context">
-            <span className="viewer-context-dot" />
-            <div><small>Workspace</small><strong>Grenade Library</strong></div>
+          <div className="topbar-navigation">
+            <button className="topbar-brand" onClick={() => navigate("/maps")} aria-label="Nade Viewer home">
+              <span className="viewer-brand-mark">NV</span>
+              <span className="topbar-brand-copy"><strong>Nade Viewer</strong><small>v{version}</small></span>
+            </button>
+            <span className="topbar-divider" />
+            <button className={`topbar-nav-link ${mapsRouteActive ? "active" : ""}`} onClick={() => navigate("/maps")}>
+              <Map size={16} /><span>Maps</span>
+            </button>
           </div>
           <div className="topbar-actions">
             {activeImport ? (
