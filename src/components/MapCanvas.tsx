@@ -103,7 +103,13 @@ export default function MapCanvas({
   const zoomAt = (factor: number, x = stageSize.width / 2, y = stageSize.height / 2) => setView((current) => { const s = clamp(current.s * factor, 1, 6); const ratio = s / current.s; return clampView(s, x - (x - current.tx) * ratio, y - (y - current.ty) * ratio); });
   const copySpawn = async (spawn: SpawnPoint, index: number) => { try { await navigator.clipboard.writeText(spawn.command); setCopied(index); window.setTimeout(() => setCopied(null), 1400); } catch { /* clipboard can be unavailable in webviews */ } };
   const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => { if ((event.target as HTMLElement).closest("[data-map-control]")) return; dragRef.current = { x: event.clientX, y: event.clientY, tx: view.tx, ty: view.ty }; event.currentTarget.setPointerCapture(event.pointerId); };
-  const onPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => { if (!dragRef.current) return; setView((current) => clampView(current.s, dragRef.current!.tx + event.clientX - dragRef.current!.x, dragRef.current!.ty + event.clientY - dragRef.current!.y)); };
+  const onPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current;
+    if (!drag) return;
+    const tx = drag.tx + event.clientX - drag.x;
+    const ty = drag.ty + event.clientY - drag.y;
+    setView((current) => clampView(current.s, tx, ty));
+  };
   const onWheel = (event: React.WheelEvent) => { event.preventDefault(); const rect = stageRef.current?.getBoundingClientRect(); if (rect) zoomAt(event.deltaY < 0 ? 1.12 : 1 / 1.12, event.clientX - rect.left, event.clientY - rect.top); };
   const showPreview = (event: ReactPointerEvent, grenade: GrenadePreview) => { const rect = viewportRef.current?.getBoundingClientRect(); if (rect) setPreview({ grenade, x: event.clientX - rect.left, y: event.clientY - rect.top }); };
   const previewKeys = splitThrowKeys(preview?.grenade.throw_description);
