@@ -79,6 +79,7 @@
 
 .map-caption{font-size:10px}
 .cluster-dot span{font-size:11px}
+.throw-stack-dot span{display:flex;width:100%;height:100%;align-items:center;justify-content:center;line-height:1;text-align:center}
 .throw-preview-popover{width:340px;padding:15px}
 .throw-preview-head{font-size:10px}
 .throw-preview-head strong{font-size:12px}
@@ -135,3 +136,13 @@
   .topbar-divider{height:22px}
   .topbar-nav-link{padding:0 8px}
 }
+
+.operation-error-chip{color:#ff9ca3;font-size:9px;white-space:nowrap}
+.fatal-error-view,.detail-load-error{display:grid;width:100%;height:100%;place-items:center;padding:24px;background:var(--bg)}
+.fatal-error-card{display:grid;width:min(440px,100%);justify-items:start;gap:12px;padding:28px;border:1px solid var(--line);border-radius:14px;background:var(--surface)}
+.fatal-error-icon{display:grid;width:42px;height:42px;place-items:center;border-radius:10px;background:rgba(255,94,104,.1);color:var(--red)}
+.fatal-error-card h1{margin:0;font:600 18px Orbitron}
+.fatal-error-card p,.detail-load-error p{margin:0;color:var(--muted);font-size:11px;line-height:1.6}
+.detail-load-error{align-content:center;justify-items:center;gap:12px;text-align:center}
+.detail-load-error strong{font:600 15px Orbitron}
+.topnav-shell .view-frame{min-height:0;overflow:hidden}

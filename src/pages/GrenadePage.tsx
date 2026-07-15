@@ -31,25 +31,34 @@ export default function GrenadePage() {
   const [similar, setSimilar] = useState<GrenadePreview[]>([]);
   const [spawnPoints, setSpawnPoints] = useState<SpawnPoint[]>([]);
   const [copied, setCopied] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!Number.isFinite(grenadeId)) return;
+    if (!Number.isInteger(grenadeId) || grenadeId <= 0) {
+      navigate("/maps", { replace: true });
+      return;
+    }
     let cancelled = false;
-    getGrenade(grenadeId).then((detail) => {
-      if (cancelled) return;
-      setGrenade(detail);
-      recordGrenadeView(detail.id).catch(() => undefined);
-
-      Promise.all([getSimilarGrenades(grenadeId, 10), getSpawnPoints(detail.map, "Any")]).then(([list, spawns]) => {
+    setLoadError(null);
+    getGrenade(grenadeId)
+      .then(async (detail) => {
         if (cancelled) return;
-        setSimilar(list);
-        setSpawnPoints(spawns);
+        setGrenade({ ...detail, usage_throwers: Array.isArray(detail.usage_throwers) ? detail.usage_throwers : [] });
+        recordGrenadeView(detail.id).catch(() => undefined);
+        const [list, spawns] = await Promise.all([getSimilarGrenades(grenadeId, 10), getSpawnPoints(detail.map, "Any")]);
+        if (cancelled) return;
+        setSimilar(Array.isArray(list) ? list : []);
+        setSpawnPoints(Array.isArray(spawns) ? spawns : []);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        console.error(error);
+        setLoadError("This grenade is no longer available in the active library.");
       });
-    });
     return () => {
       cancelled = true;
     };
-  }, [grenadeId]);
+  }, [grenadeId, navigate]);
 
   const previewPoint = useMemo(() => (grenade ? [{ ...grenade }] : []), [grenade]);
   const spawnMapPoints = useMemo(() => buildSpawnMapPoints(spawnPoints), [spawnPoints]);
@@ -82,6 +91,7 @@ export default function GrenadePage() {
   };
 
   if (!grenade) {
+    if (loadError) return <div className="detail-load-error"><strong>Unable to open grenade</strong><p>{loadError}</p><button className="btn primary" onClick={() => navigate("/maps")}>Back to maps</button></div>;
     return (
       <div className="detail-loading">
         <div className="loader-ring" />

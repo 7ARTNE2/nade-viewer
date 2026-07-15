@@ -29,8 +29,8 @@ export default function HomePage({ activeImportId, onImported, lastImport }: Hom
     ])
       .then(([nextMaps, nextRecentlyViewed]) => {
         if (mapsRequestRef.current === requestId) {
-          setMaps(nextMaps);
-          setRecentlyViewed(nextRecentlyViewed);
+          setMaps(Array.isArray(nextMaps) ? nextMaps : []);
+          setRecentlyViewed(Array.isArray(nextRecentlyViewed) ? nextRecentlyViewed : []);
         }
       })
       .catch(() => {
@@ -43,7 +43,7 @@ export default function HomePage({ activeImportId, onImported, lastImport }: Hom
 
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return q ? maps.filter((map) => map.label.toLowerCase().includes(q) || map.name.toLowerCase().includes(q)) : maps;
+    return q ? maps.filter((map) => String(map.label ?? "").toLowerCase().includes(q) || String(map.name ?? "").toLowerCase().includes(q)) : maps;
   }, [maps, search]);
 
   const total = maps.reduce((sum, map) => sum + map.grenade_count, 0);
@@ -102,7 +102,7 @@ export default function HomePage({ activeImportId, onImported, lastImport }: Hom
           {visible.map((map) => (
             <button key={map.name} className="map-tile" onClick={() => navigate(`/map/${encodeURIComponent(map.name)}`)}>
               <div className="map-orb">
-                {map.preview_image_path ? <img src={assetUrl(map.preview_image_path)} alt="" /> : <span>{map.label.slice(0, 2)}</span>}
+                {map.preview_image_path ? <img src={assetUrl(map.preview_image_path)} alt="" /> : <span>{String(map.label || map.name || "??").slice(0, 2)}</span>}
               </div>
               <div className="map-tile-footer">
                 <span><strong>{map.label}</strong><small>{formatNumber(map.grenade_count)} lineups</small></span>

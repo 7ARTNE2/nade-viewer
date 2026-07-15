@@ -100,7 +100,13 @@ function writeStoredMapViewState(key: string, state: StoredMapViewState) {
 export default function MapPage({ activeImportId }: MapPageProps) {
   const { mapName = "" } = useParams();
   const navigate = useNavigate();
-  const decodedMap = decodeURIComponent(mapName);
+  const decodedMap = useMemo(() => {
+    try {
+      return decodeURIComponent(mapName);
+    } catch {
+      return mapName;
+    }
+  }, [mapName]);
   const stateStorageKey = useMemo(() => mapViewStorageKey(activeImportId, decodedMap), [activeImportId, decodedMap]);
   const initialViewStateRef = useRef<StoredMapViewState | null | undefined>(undefined);
   if (initialViewStateRef.current === undefined) {
@@ -271,7 +277,13 @@ export default function MapPage({ activeImportId }: MapPageProps) {
     setSelectedCluster(cluster);
     setGrenades([]);
     setMapGrenades([]);
-    await Promise.all([loadClusterGrenades(cluster, 0), loadClusterMapGrenades(cluster)]);
+    try {
+      await Promise.all([loadClusterGrenades(cluster, 0), loadClusterMapGrenades(cluster)]);
+    } catch (error) {
+      console.error(error);
+      setGrenades([]);
+      setMapGrenades([]);
+    }
   };
 
   const clusters = overview?.clusters ?? [];
@@ -480,7 +492,7 @@ export default function MapPage({ activeImportId }: MapPageProps) {
             />
             {pendingSiteMinUsage !== null && pendingSiteMinUsage !== siteMinUsage ? (
               <div className="setting-actions">
-                <button onClick={applySiteSettings}>Apply</button>
+                <button onClick={() => applySiteSettings().catch(console.error)}>Apply</button>
                 <button onClick={() => setPendingSiteMinUsage(null)}>Cancel</button>
               </div>
             ) : null}
@@ -498,7 +510,7 @@ export default function MapPage({ activeImportId }: MapPageProps) {
                 key={cluster.id}
                 className={selectedCluster?.id === cluster.id ? "selected" : ""}
                 style={{ "--cluster-rgb": clusterAccentRgb[cluster.side_key] ?? clusterAccentRgb.NEUTRAL } as React.CSSProperties}
-                onClick={() => selectCluster(cluster)}
+                onClick={() => selectCluster(cluster).catch(console.error)}
               >
                 <span className={`cluster-side ${cluster.side_key.toLowerCase()}`}>{cluster.side_key}</span>
                 <strong>{cluster.count}</strong>

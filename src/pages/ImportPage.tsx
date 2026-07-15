@@ -27,8 +27,13 @@ export default function ImportPage({ onImported, lastImport }: Props) {
   }, [busy]);
 
   const choose = async () => {
-    const selected = await selectImportFile();
-    if (selected) setPath(selected);
+    try {
+      const selected = await selectImportFile();
+      if (selected) setPath(selected);
+    } catch (error) {
+      console.error(error);
+      setMessage("Unable to open the file picker");
+    }
   };
 
   const runImport = async (nextPath = path) => {

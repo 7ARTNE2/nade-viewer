@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import {
   AlertTriangle,
@@ -52,14 +52,19 @@ function Shell() {
   const [editingSnapshotId, setEditingSnapshotId] = useState<number | null>(null);
   const [editingLabel, setEditingLabel] = useState("");
   const [deleteSnapshotOpen, setDeleteSnapshotOpen] = useState(false);
+  const importsRequestRef = useRef(0);
+  const [operationError, setOperationError] = useState<string | null>(null);
 
   const refreshImports = useCallback(async () => {
-    const [active, all] = await Promise.all([getActiveImport(), listImports()]);
-    setActive(active);
-    setImports(all);
-    setLoading(false);
-    if (!active && !["/", "/maps"].includes(location.pathname)) {
-      navigate("/maps?import=1", { replace: true });
+    const requestId = ++importsRequestRef.current;
+    try {
+      const [active, all] = await Promise.all([getActiveImport(), listImports()]);
+      if (importsRequestRef.current !== requestId) return;
+      setActive(active);
+      setImports(Array.isArray(all) ? all : []);
+      if (!active && !["/", "/maps"].includes(location.pathname)) navigate("/maps?import=1", { replace: true });
+    } finally {
+      if (importsRequestRef.current === requestId) setLoading(false);
     }
   }, [location.pathname, navigate]);
 
@@ -70,12 +75,19 @@ function Shell() {
   useEffect(() => startWindowActiveTracking(), []);
 
   const switchImport = async (id: number) => {
-    const next = await setActiveImport(id);
-    setActive(next);
-    setImports(await listImports());
-    setSnapshotMenuOpen(false);
-    setEditingSnapshotId(null);
-    navigate("/maps");
+    setOperationError(null);
+    try {
+      const next = await setActiveImport(id);
+      const all = await listImports();
+      setActive(next);
+      setImports(Array.isArray(all) ? all : []);
+      setSnapshotMenuOpen(false);
+      setEditingSnapshotId(null);
+      navigate("/maps");
+    } catch (error) {
+      console.error(error);
+      setOperationError("Could not switch library");
+    }
   };
 
   const saveSnapshotLabel = async (snapshot: ImportSummary) => {
@@ -88,10 +100,16 @@ function Shell() {
 
   const confirmDeleteSnapshot = async () => {
     if (!activeImport) return;
-    const next = await deleteImport(activeImport.id);
-    setDeleteSnapshotOpen(false);
-    await refreshImports();
-    navigate(next ? "/maps" : "/maps?import=1", { replace: true });
+    setOperationError(null);
+    try {
+      const next = await deleteImport(activeImport.id);
+      setDeleteSnapshotOpen(false);
+      await refreshImports();
+      navigate(next ? "/maps" : "/maps?import=1", { replace: true });
+    } catch (error) {
+      console.error(error);
+      setOperationError("Could not delete library");
+    }
   };
 
   const handleCoreExport = async () => {
@@ -181,6 +199,7 @@ function Shell() {
             ) : null}
             {activeImport ? <button className="icon-btn core-transfer" onClick={handleCoreExport} disabled={coreTransferBusy} data-tip="Export Core Nades"><Upload size={15} /></button> : null}
             {coreTransferStatus ? <span className="core-status-chip">{coreTransferStatus}</span> : null}
+            {operationError ? <span className="operation-error-chip">{operationError}</span> : null}
             {activeImport ? <button className="icon-btn danger" onClick={() => setDeleteSnapshotOpen(true)} data-tip="Delete active library"><Trash2 size={15} /></button> : null}
             <button className="icon-btn" onClick={() => window.location.reload()} data-tip="Refresh"><RotateCw size={15} /></button>
           </div>
