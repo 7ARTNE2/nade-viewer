@@ -247,9 +247,8 @@ function Shell() {
             await completeOnboarding();
             setOnboardingOpen(false);
           }}
-          onStart={() => {
-            navigate("/maps?import=1");
-          }}
+          onShowImport={() => navigate("/maps?import=1")}
+          onShowMaps={() => navigate("/maps")}
           activeImport={Boolean(activeImport)}
           pathname={location.pathname}
         />

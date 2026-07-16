@@ -3,7 +3,8 @@ import { useEffect, useLayoutEffect, useState } from "react";
 
 type OnboardingModalProps = {
   onComplete: () => Promise<void>;
-  onStart: () => void;
+  onShowImport: () => void;
+  onShowMaps: () => void;
   activeImport: boolean;
   pathname: string;
 };
@@ -12,13 +13,13 @@ type TourStep = { selector: string; eyebrow: string; title: string; copy: string
 
 const steps: TourStep[] = [
   { selector: '[data-tour="import-choose-file"]', eyebrow: "Step 1: import", title: "Choose your grenade library", copy: "Select grenade_index.json or a Core Nades JSON file. The import stays local on this device." },
-  { selector: '[data-tour="map-tile"]', eyebrow: "Step 2: maps", title: "Open a map", copy: "Each tile opens the lineups available for that map. Choose any map to continue." },
+  { selector: '[data-tour="map-tile"][data-map-key="dust2"]', eyebrow: "Step 2: Dust II", title: "Open Dust II", copy: "The walkthrough uses de_dust2 as its example map. Select this tile to continue." },
   { selector: '[data-tour="map-filters"]', eyebrow: "Step 3: filters", title: "Narrow down lineups", copy: "Filter by grenade type and side, or search for a thrower, demo, or console command." },
   { selector: '[data-tour="map-canvas"]', eyebrow: "Step 4: tactical map", title: "Read the map", copy: "Scroll to zoom and drag to pan. The Map legend explains marker colors, trajectories, and spawn points." },
   { selector: '[data-tour="cluster-list"]', eyebrow: "Step 5: lineups", title: "Select a cluster", copy: "Choose a landing or throw cluster to load its individual grenades. Open any grenade from the list for full details." },
 ];
 
-export default function OnboardingModal({ onComplete, onStart, activeImport, pathname }: OnboardingModalProps) {
+export default function OnboardingModal({ onComplete, onShowImport, onShowMaps, activeImport, pathname }: OnboardingModalProps) {
   const [started, setStarted] = useState(false);
   const [step, setStep] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -29,7 +30,8 @@ export default function OnboardingModal({ onComplete, onStart, activeImport, pat
   useEffect(() => {
     if (!started) return;
     if (activeImport && pathname === "/maps") setStep(1);
-    if (pathname.startsWith("/map/")) setStep((value) => Math.max(value, 2));
+    const mapName = decodeURIComponent(pathname.split("/").pop() ?? "").toLowerCase().replace(/^de_/, "");
+    if (pathname.startsWith("/map/") && mapName === "dust2") setStep((value) => Math.max(value, 2));
   }, [activeImport, pathname, started]);
 
   useLayoutEffect(() => {
@@ -63,13 +65,17 @@ export default function OnboardingModal({ onComplete, onStart, activeImport, pat
         {!started ? <div className="onboarding-icon"><Database size={23} /></div> : null}
         <div className="eyebrow">{started ? target?.eyebrow : "Your local playbook"}</div>
         <h1 id="onboarding-title">{started ? target?.title : "Welcome to Nade Viewer"}</h1>
-        <p>{started ? target?.copy : "This short guided tour points to the controls as you use them, so you can learn the viewer with your own grenade library."}</p>
+        <p>{started && !rect && step === 1 ? "This library does not include de_dust2. Import a library with Dust II to follow the example walkthrough, or skip the tutorial." : started ? target?.copy : activeImport ? "A grenade library is already loaded. The tour will start with the map selection screen and use Dust II as its example." : "Start by importing a library. Then the tour will show map selection and the Dust II workspace step by step."}</p>
         {error ? <div className="onboarding-error">{error}</div> : null}
         <div className="onboarding-actions">
           <button className="onboarding-skip" type="button" disabled={busy} onClick={() => run(onComplete)}>Skip tutorial</button>
           <div className="onboarding-actions-right">
             {!started ? (
-              <button className="btn primary" type="button" autoFocus disabled={busy} onClick={() => { setStarted(true); onStart(); }}>Start tour<ArrowRight size={15} /></button>
+              <button className="btn primary" type="button" autoFocus disabled={busy} onClick={() => { setStarted(true); if (activeImport) { setStep(1); onShowMaps(); } else { onShowImport(); } }}>Start tour<ArrowRight size={15} /></button>
+            ) : step === 0 ? (
+              <button className="btn primary" type="button" disabled={busy || !activeImport} onClick={() => { setStep(1); onShowMaps(); }}>Choose Dust II<ArrowRight size={15} /></button>
+            ) : step === 1 ? (
+              <button className="btn primary" type="button" disabled>Open Dust II to continue</button>
             ) : step < steps.length - 1 ? (
               <button className="btn primary" type="button" disabled={busy} onClick={() => setStep((value) => value + 1)}>Next tip<ArrowRight size={15} /></button>
             ) : (
