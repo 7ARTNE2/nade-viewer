@@ -36,6 +36,7 @@ import MapPage from "./pages/MapPage";
 import GrenadePage from "./pages/GrenadePage";
 import Tooltip from "./components/Tooltip";
 import OnboardingModal from "./components/OnboardingModal";
+import { useI18n } from "./i18n";
 
 function importFileName(path: string) {
   return path.split(/[\\/]/).filter(Boolean).pop() || path;
@@ -46,6 +47,7 @@ function snapshotDisplayName(snapshot: ImportSummary) {
 }
 
 function Shell() {
+  const { locale, setLocale, tr } = useI18n();
   const navigate = useNavigate();
   const location = useLocation();
   const [activeImport, setActive] = useState<ImportSummary | null>(null);
@@ -98,7 +100,7 @@ function Shell() {
       navigate("/maps");
     } catch (error) {
       console.error(error);
-      setOperationError("Could not switch library");
+      setOperationError(tr("Could not switch library", "Не удалось переключить библиотеку"));
     }
   };
 
@@ -120,7 +122,7 @@ function Shell() {
       navigate(next ? "/maps" : "/maps?import=1", { replace: true });
     } catch (error) {
       console.error(error);
-      setOperationError("Could not delete library");
+      setOperationError(tr("Could not delete library", "Не удалось удалить библиотеку"));
     }
   };
 
@@ -132,7 +134,7 @@ function Shell() {
       if (report) setCoreTransferStatus(`${formatNumber(report.grenade_count)} saved`);
     } catch (error) {
       console.error(error);
-      setCoreTransferStatus("Export failed");
+      setCoreTransferStatus(tr("Export failed", "Ошибка экспорта"));
     } finally {
       setCoreTransferBusy(false);
     }
@@ -161,23 +163,27 @@ function Shell() {
             </button>
             <span className="topbar-divider" />
             <button className={`topbar-nav-link ${mapsRouteActive && !importPanelActive ? "active" : ""}`} onClick={() => navigate("/maps")}>
-              <Map size={16} /><span>Maps</span>
+              <Map size={16} /><span>{tr("Maps", "Карты")}</span>
             </button>
             <button className={`topbar-nav-link ${importPanelActive ? "active" : ""}`} onClick={() => navigate("/maps?import=1")}>
-              <Download size={16} /><span>Import library</span>
+              <Download size={16} /><span>{tr("Import library", "Импорт")}</span>
             </button>
             <button className="topbar-nav-link" onClick={() => restartTutorial().catch((error) => { console.error(error); setOperationError("Could not restart tutorial"); })}>
-              <GraduationCap size={16} /><span>Tutorial</span>
+              <GraduationCap size={16} /><span>{tr("Tutorial", "Обучение")}</span>
             </button>
+            <div className="language-switch" aria-label={tr("Language", "Язык")}>
+              <button className={locale === "en" ? "active" : ""} onClick={() => setLocale("en")}>EN</button>
+              <button className={locale === "ru" ? "active" : ""} onClick={() => setLocale("ru")}>RU</button>
+            </div>
           </div>
           <div className="topbar-actions">
             {activeImport ? (
               <div className="snapshot-picker" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setSnapshotMenuOpen(false); }}>
                 <button className={`snapshot-trigger active-library-trigger ${snapshotMenuOpen ? "active" : ""}`} onClick={() => setSnapshotMenuOpen((open) => !open)} aria-expanded={snapshotMenuOpen} data-tip={activeImport.source_path} data-tip-pos="bottom">
                   <Database size={14} />
-                  <span className="active-library-id">Library #{activeImport.id}</span>
+                  <span className="active-library-id">{tr("Library", "Библиотека")} #{activeImport.id}</span>
                   <strong>{snapshotDisplayName(activeImport)}</strong>
-                  <span className="active-library-count">{formatNumber(activeImport.grenade_count)} nades</span>
+                  <span className="active-library-count">{formatNumber(activeImport.grenade_count)} {tr("nades", "гранат")}</span>
                   <ChevronDown size={14} />
                 </button>
                 {snapshotMenuOpen ? (
@@ -196,8 +202,8 @@ function Shell() {
                           ) : (
                             <>
                               <button className="snapshot-option-main" type="button" onClick={() => item.id === activeImport.id ? setSnapshotMenuOpen(false) : switchImport(item.id)}>
-                                <span className="snapshot-main"><strong>{snapshotDisplayName(item)}</strong><small>{formatNumber(item.grenade_count)} grenades</small></span>
-                                {item.id === activeImport.id ? <span className="snapshot-current">Active</span> : null}
+                                <span className="snapshot-main"><strong>{snapshotDisplayName(item)}</strong><small>{formatNumber(item.grenade_count)} {tr("grenades", "гранат")}</small></span>
+                                {item.id === activeImport.id ? <span className="snapshot-current">{tr("Active", "Активна")}</span> : null}
                               </button>
                               <button className="snapshot-rename-btn" type="button" onClick={() => { setEditingSnapshotId(item.id); setEditingLabel(item.label?.trim() || ""); }}><Pencil size={13} /></button>
                             </>
@@ -209,13 +215,13 @@ function Shell() {
                 ) : null}
               </div>
             ) : (
-              <button className="btn primary" onClick={() => navigate("/maps?import=1")}><FolderOpen size={16} />Import data</button>
+              <button className="btn primary" onClick={() => navigate("/maps?import=1")}><FolderOpen size={16} />{tr("Import data", "Импортировать")}</button>
             )}
-            {activeImport ? <button className="icon-btn core-transfer" onClick={handleCoreExport} disabled={coreTransferBusy} data-tip="Export Core Nades"><Upload size={15} /></button> : null}
+            {activeImport ? <button className="icon-btn core-transfer" onClick={handleCoreExport} disabled={coreTransferBusy} data-tip={tr("Export Core Nades", "Экспорт Core Nades")}><Upload size={15} /></button> : null}
             {coreTransferStatus ? <span className="core-status-chip">{coreTransferStatus}</span> : null}
             {operationError ? <span className="operation-error-chip">{operationError}</span> : null}
-            {activeImport ? <button className="icon-btn danger" onClick={() => setDeleteSnapshotOpen(true)} data-tip="Delete active library"><Trash2 size={15} /></button> : null}
-            <button className="icon-btn" onClick={() => window.location.reload()} data-tip="Refresh"><RotateCw size={15} /></button>
+            {activeImport ? <button className="icon-btn danger" onClick={() => setDeleteSnapshotOpen(true)} data-tip={tr("Delete active library", "Удалить активную библиотеку")}><Trash2 size={15} /></button> : null}
+            <button className="icon-btn" onClick={() => window.location.reload()} data-tip={tr("Refresh", "Обновить")}><RotateCw size={15} /></button>
           </div>
         </header>
 
@@ -235,9 +241,9 @@ function Shell() {
         <div className="modal-scrim" role="presentation" onMouseDown={() => setDeleteSnapshotOpen(false)}>
           <div className="snapshot-delete-dialog" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}>
             <div className="snapshot-delete-mark"><AlertTriangle size={19} /></div>
-            <div className="snapshot-delete-copy"><div className="eyebrow">Delete library</div><h2>{snapshotDisplayName(activeImport)}</h2><p>Library #{activeImport.id} and {formatNumber(activeImport.grenade_count)} grenade rows will be removed.</p></div>
-            <div className="snapshot-delete-meta"><span>Source</span><strong>{importFileName(activeImport.source_path)}</strong><span>Imported</span><strong>{compactDate(activeImport.imported_at)}</strong></div>
-            <div className="snapshot-delete-actions"><button className="btn" onClick={() => setDeleteSnapshotOpen(false)}>Cancel</button><button className="btn danger-action" onClick={confirmDeleteSnapshot}><Trash2 size={15} />Delete</button></div>
+            <div className="snapshot-delete-copy"><div className="eyebrow">{tr("Delete library", "Удаление библиотеки")}</div><h2>{snapshotDisplayName(activeImport)}</h2><p>{tr(`Library #${activeImport.id} and ${formatNumber(activeImport.grenade_count)} grenade rows will be removed.`, `Библиотека #${activeImport.id} и ${formatNumber(activeImport.grenade_count)} записей будут удалены.`)}</p></div>
+            <div className="snapshot-delete-meta"><span>{tr("Source", "Источник")}</span><strong>{importFileName(activeImport.source_path)}</strong><span>{tr("Imported", "Импортирована")}</span><strong>{compactDate(activeImport.imported_at)}</strong></div>
+            <div className="snapshot-delete-actions"><button className="btn" onClick={() => setDeleteSnapshotOpen(false)}>{tr("Cancel", "Отмена")}</button><button className="btn danger-action" onClick={confirmDeleteSnapshot}><Trash2 size={15} />{tr("Delete", "Удалить")}</button></div>
           </div>
         </div>
       ) : null}

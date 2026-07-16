@@ -4,6 +4,7 @@ import { CheckCircle2, Database, FileJson, FolderOpen, History, ShieldCheck, Upl
 import { getImportStatus, importJson, selectImportFile } from "../lib/tauri";
 import { compactDate, formatNumber } from "../lib/format";
 import type { ImportStatus, ImportSummary } from "../types/domain";
+import { useI18n } from "../i18n";
 
 type Props = {
   onImported: () => Promise<void>;
@@ -11,6 +12,7 @@ type Props = {
 };
 
 export default function ImportPage({ onImported, lastImport }: Props) {
+  const { tr } = useI18n();
   const navigate = useNavigate();
   const [path, setPath] = useState("");
   const [status, setStatus] = useState<ImportStatus>({ running: false, stage: "idle", current: 0, total: 0, message: "Ready" });
@@ -32,7 +34,7 @@ export default function ImportPage({ onImported, lastImport }: Props) {
       if (selected) setPath(selected);
     } catch (error) {
       console.error(error);
-      setMessage("Unable to open the file picker");
+      setMessage(tr("Unable to open the file picker", "Не удалось открыть выбор файла"));
     }
   };
 
@@ -49,7 +51,7 @@ export default function ImportPage({ onImported, lastImport }: Props) {
       }
       navigate("/maps", { replace: true });
     } catch (error) {
-      setMessage(typeof error === "string" ? error : error instanceof Error ? error.message : "Import failed");
+      setMessage(typeof error === "string" ? error : error instanceof Error ? error.message : tr("Import failed", "Ошибка импорта"));
     } finally {
       setBusy(false);
     }
@@ -69,33 +71,33 @@ export default function ImportPage({ onImported, lastImport }: Props) {
       <section className="import-panel">
         <div className="import-copy">
           <div className="import-orbit"><FileJson size={32} /></div>
-          <div className="eyebrow">Library setup</div>
-          <h1>Bring your<br />lineups in.</h1>
-          <p className="muted wide">Load a grenade index or a curated Core Nades collection. Everything stays on this device.</p>
+          <div className="eyebrow">{tr("Library setup", "Настройка библиотеки")}</div>
+          <h1>{tr("Bring your lineups in.", "Импортируйте раскидки.")}</h1>
+          <p className="muted wide">{tr("Load a grenade index or a curated Core Nades collection. Everything stays on this device.", "Загрузите индекс гранат или коллекцию Core Nades. Все данные останутся на этом устройстве.")}</p>
           <div className="import-features">
-            <span><ShieldCheck size={16} /> Local SQLite storage</span>
-            <span><CheckCircle2 size={16} /> Format detected automatically</span>
+            <span><ShieldCheck size={16} /> {tr("Local SQLite storage", "Локальное хранилище SQLite")}</span>
+            <span><CheckCircle2 size={16} /> {tr("Format detected automatically", "Автоопределение формата")}</span>
           </div>
         </div>
 
         <div className="import-action-card">
           <div className={`drop-zone ${busy ? "working" : ""}`}>
             <Database size={24} />
-            <strong>{busy ? status.message : message ?? "Drop JSON file here"}</strong>
-            <span>{busy ? `${progress}% complete` : "grenade_index.json or Core Nades JSON"}</span>
+            <strong>{busy ? status.message : message ?? tr("Drop JSON file here", "Перетащите JSON-файл сюда")}</strong>
+            <span>{busy ? tr(`${progress}% complete`, `Выполнено ${progress}%`) : "grenade_index.json or Core Nades JSON"}</span>
           </div>
 
           {busy ? <div className="progress-shell"><div className="progress-bar" style={{ width: `${Math.max(progress, 6)}%` }} /></div> : null}
 
           <div className="file-picker-row">
-            <button className="btn primary" data-tour="import-choose-file" onClick={choose} disabled={busy}><FolderOpen size={17} />Choose file</button>
-            <input value={path} onChange={(event) => setPath(event.target.value)} placeholder="Path to JSON file" disabled={busy} />
-            <button className="btn" onClick={() => runImport()} disabled={busy || !path.trim()}><Upload size={17} />Import</button>
+            <button className="btn primary" data-tour="import-choose-file" onClick={choose} disabled={busy}><FolderOpen size={17} />{tr("Choose file", "Выбрать файл")}</button>
+            <input value={path} onChange={(event) => setPath(event.target.value)} placeholder={tr("Path to JSON file", "Путь к JSON-файлу")} disabled={busy} />
+            <button className="btn" onClick={() => runImport()} disabled={busy || !path.trim()}><Upload size={17} />{tr("Import", "Импорт")}</button>
           </div>
 
           {lastImport ? (
             <button className="last-import" onClick={() => setPath(lastImport.source_path)} disabled={busy}>
-              <History size={15} /><span>Use recent source</span><strong>{formatNumber(lastImport.grenade_count)} lineups</strong><small>{compactDate(lastImport.imported_at)}</small>
+              <History size={15} /><span>{tr("Use recent source", "Недавний источник")}</span><strong>{formatNumber(lastImport.grenade_count)} {tr("lineups", "раскидок")}</strong><small>{compactDate(lastImport.imported_at)}</small>
             </button>
           ) : null}
         </div>

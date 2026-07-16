@@ -4,6 +4,7 @@ import { ArrowRight, BadgeCheck, Check, Clipboard, Timer } from "lucide-react";
 import { grenadeLabel } from "../lib/format";
 import { buildSpawnMapPoints, INSTA_LABEL, isInstaGrenade } from "../lib/insta";
 import type { GrenadePreview, SpawnPoint } from "../types/domain";
+import { useI18n } from "../i18n";
 
 type Props = {
   grenades: GrenadePreview[];
@@ -14,7 +15,8 @@ type Props = {
   emptyLabel?: string;
 };
 
-export default function GrenadeList({ grenades, compact, showCopy, spawnPoints = [], onCoreToggle, emptyLabel = "Select a landing cluster to load grenades." }: Props) {
+export default function GrenadeList({ grenades, compact, showCopy, spawnPoints = [], onCoreToggle, emptyLabel }: Props) {
+  const { tr } = useI18n();
   const navigate = useNavigate();
   const [copiedId, setCopiedId] = useState<number | null>(null);
   const spawnMapPoints = useMemo(() => buildSpawnMapPoints(spawnPoints), [spawnPoints]);
@@ -28,7 +30,7 @@ export default function GrenadeList({ grenades, compact, showCopy, spawnPoints =
   };
 
   if (!grenades.length) {
-    return <div className="empty-note">{emptyLabel}</div>;
+    return <div className="empty-note">{emptyLabel ?? tr("Select a landing cluster to load grenades.", "Выберите кластер приземления, чтобы загрузить гранаты.")}</div>;
   }
 
   return (
@@ -60,22 +62,22 @@ export default function GrenadeList({ grenades, compact, showCopy, spawnPoints =
                     copyGrenadeText(g);
                   }}
                   disabled={!g.coordinates && !g.throw_description}
-                  aria-label="Copy grenade coordinates"
-                  data-tip={copiedId === g.id ? "Copied" : "Copy coordinates"}
+                  aria-label={tr("Copy grenade coordinates", "Копировать координаты гранаты")}
+                  data-tip={copiedId === g.id ? tr("Copied", "Скопировано") : tr("Copy coordinates", "Копировать координаты")}
                 >
                   {copiedId === g.id ? <Check size={13} /> : <Clipboard size={13} />}
-                  <span>{copiedId === g.id ? "Copied" : "Copy"}</span>
+                  <span>{copiedId === g.id ? tr("Copied", "Скопировано") : tr("Copy", "Копировать")}</span>
                 </button>
               ) : null}
             </span>
             <span className="side-mini">{g.side}</span>
             <span className="nade-main">
               <span className="nade-title-line">
-                <strong>{g.thrower || `Grenade #${g.id}`}</strong>
+                <strong>{g.thrower || `${tr("Grenade", "Граната")} #${g.id}`}</strong>
                 {isInsta ? <span className="insta-badge">{INSTA_LABEL}</span> : null}
                 {g.is_core ? <span className="core-badge">Core</span> : null}
               </span>
-              <small>{g.throw_description || g.coordinates || "No command metadata"}</small>
+              <small>{g.throw_description || g.coordinates || tr("No command metadata", "Нет данных команды")}</small>
             </span>
             <span className="nade-action-stack">
               <button
@@ -85,11 +87,11 @@ export default function GrenadeList({ grenades, compact, showCopy, spawnPoints =
                   event.stopPropagation();
                   onCoreToggle?.(g.id, !g.is_core);
                 }}
-                aria-label={g.is_core ? "Remove from Core" : "Add to Core"}
-                data-tip={g.is_core ? "In Core" : "Add to Core"}
+                aria-label={g.is_core ? tr("Remove from Core", "Удалить из Core") : tr("Add to Core", "Добавить в Core")}
+                data-tip={g.is_core ? tr("In Core", "В Core") : tr("Add to Core", "Добавить в Core")}
               >
                 <BadgeCheck size={14} />
-                <span>{g.is_core ? "In Core" : "Add to Core"}</span>
+                <span>{g.is_core ? tr("In Core", "В Core") : tr("Add to Core", "Добавить в Core")}</span>
               </button>
               <span className="row-meta">
                 {typeof g.airtime === "number" ? (

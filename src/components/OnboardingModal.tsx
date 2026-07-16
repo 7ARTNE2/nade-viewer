@@ -1,5 +1,6 @@
 import { ArrowRight, Check, Database } from "lucide-react";
 import { useEffect, useLayoutEffect, useState } from "react";
+import { useI18n } from "../i18n";
 
 type OnboardingModalProps = {
   onComplete: () => Promise<void>;
@@ -20,6 +21,7 @@ const steps: TourStep[] = [
 ];
 
 export default function OnboardingModal({ onComplete, onShowImport, onShowMaps, activeImport, pathname }: OnboardingModalProps) {
+  const { locale, tr } = useI18n();
   const [started, setStarted] = useState(false);
   const [step, setStep] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -63,23 +65,23 @@ export default function OnboardingModal({ onComplete, onShowImport, onShowMaps, 
       {rect ? <div className="onboarding-highlight" style={{ left: rect.left - 5, top: rect.top - 5, width: rect.width + 10, height: rect.height + 10 }} /> : null}
       <section className="onboarding-dialog" role="dialog" aria-modal={!started} aria-labelledby="onboarding-title" style={started && rect ? { left: Math.min(Math.max(16, rect.left), window.innerWidth - 420), top: Math.min(rect.bottom + 14, window.innerHeight - 250) } : undefined}>
         {!started ? <div className="onboarding-icon"><Database size={23} /></div> : null}
-        <div className="eyebrow">{started ? target?.eyebrow : "Your local playbook"}</div>
-        <h1 id="onboarding-title">{started ? target?.title : "Welcome to Nade Viewer"}</h1>
-        <p>{started && !rect && step === 1 ? "This library does not include de_dust2. Import a library with Dust II to follow the example walkthrough, or skip the tutorial." : started ? target?.copy : activeImport ? "A grenade library is already loaded. The tour will start with the map selection screen and use Dust II as its example." : "Start by importing a library. Then the tour will show map selection and the Dust II workspace step by step."}</p>
+        <div className="eyebrow">{started && locale === "ru" ? ["Шаг 1: импорт", "Шаг 2: Dust II", "Шаг 3: фильтры", "Шаг 4: тактическая карта", "Шаг 5: раскидки"][step] : started ? target?.eyebrow : tr("Your local playbook", "Ваш локальный плейбук")}</div>
+        <h1 id="onboarding-title">{started && locale === "ru" ? ["Выберите библиотеку гранат", "Откройте Dust II", "Настройте фильтры", "Изучите карту", "Выберите кластер"][step] : started ? target?.title : tr("Welcome to Nade Viewer", "Добро пожаловать в Nade Viewer")}</h1>
+        <p>{started && !rect && step === 1 ? tr("This library does not include de_dust2. Import a library with Dust II to follow the example walkthrough, or skip the tutorial.", "В этой библиотеке нет de_dust2. Импортируйте базу с Dust II или пропустите обучение.") : started && locale === "ru" ? ["Выберите grenade_index.json или JSON Core Nades. Данные останутся на устройстве.", "Для примера используется de_dust2. Выберите эту карту.", "Фильтруйте по типу гранаты и стороне или ищите игрока, демо и команду.", "Колесо меняет масштаб, перетаскивание двигает карту. Легенда объясняет маркеры и траектории.", "Выберите кластер броска или приземления, затем откройте гранату для подробностей."][step] : started ? target?.copy : activeImport ? tr("A grenade library is already loaded. The tour will start with the map selection screen and use Dust II as its example.", "Библиотека уже загружена. Обучение начнется с выбора карты на примере Dust II.") : tr("Start by importing a library. Then the tour will show map selection and the Dust II workspace step by step.", "Сначала импортируйте библиотеку. Затем обучение покажет выбор карты и интерфейс Dust II.")}</p>
         {error ? <div className="onboarding-error">{error}</div> : null}
         <div className="onboarding-actions">
-          <button className="onboarding-skip" type="button" disabled={busy} onClick={() => run(onComplete)}>Skip tutorial</button>
+          <button className="onboarding-skip" type="button" disabled={busy} onClick={() => run(onComplete)}>{tr("Skip tutorial", "Пропустить")}</button>
           <div className="onboarding-actions-right">
             {!started ? (
-              <button className="btn primary" type="button" autoFocus disabled={busy} onClick={() => { setStarted(true); if (activeImport) { setStep(1); onShowMaps(); } else { onShowImport(); } }}>Start tour<ArrowRight size={15} /></button>
+              <button className="btn primary" type="button" autoFocus disabled={busy} onClick={() => { setStarted(true); if (activeImport) { setStep(1); onShowMaps(); } else { onShowImport(); } }}>{tr("Start tour", "Начать обучение")}<ArrowRight size={15} /></button>
             ) : step === 0 ? (
-              <button className="btn primary" type="button" disabled={busy || !activeImport} onClick={() => { setStep(1); onShowMaps(); }}>Choose Dust II<ArrowRight size={15} /></button>
+              <button className="btn primary" type="button" disabled={busy || !activeImport} onClick={() => { setStep(1); onShowMaps(); }}>{tr("Choose Dust II", "Выбрать Dust II")}<ArrowRight size={15} /></button>
             ) : step === 1 ? (
-              <button className="btn primary" type="button" disabled>Open Dust II to continue</button>
+              <button className="btn primary" type="button" disabled>{tr("Open Dust II to continue", "Откройте Dust II")}</button>
             ) : step < steps.length - 1 ? (
-              <button className="btn primary" type="button" disabled={busy} onClick={() => setStep((value) => value + 1)}>Next tip<ArrowRight size={15} /></button>
+              <button className="btn primary" type="button" disabled={busy} onClick={() => setStep((value) => value + 1)}>{tr("Next tip", "Далее")}<ArrowRight size={15} /></button>
             ) : (
-              <button className="btn primary" type="button" disabled={busy} onClick={() => run(onComplete)}>Finish<Check size={15} /></button>
+              <button className="btn primary" type="button" disabled={busy} onClick={() => run(onComplete)}>{tr("Finish", "Завершить")}<Check size={15} /></button>
             )}
           </div>
         </div>

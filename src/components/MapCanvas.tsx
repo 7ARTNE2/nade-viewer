@@ -6,6 +6,7 @@ import { buildSpawnMapPoints, INSTA_LABEL, isInstaGrenade } from "../lib/insta";
 import { splitThrowKeys, throwKeyVisual } from "../lib/throwKeys";
 import ThrowKeyIcon from "./ThrowKeyIcon";
 import type { GrenadePreview, LandingCluster, SpawnPoint } from "../types/domain";
+import { useI18n } from "../i18n";
 
 type Props = {
   mapImagePath?: string | null;
@@ -60,6 +61,7 @@ export default function MapCanvas({
   mapImagePath, clusters = [], selectedClusterId, grenades = [], grenadePointMode = "throw",
   spawnPoints = [], showSpawns = true, onClusterSelect, onGrenadeOpen,
 }: Props) {
+  const { tr } = useI18n();
   const viewportRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ x: number; y: number; tx: number; ty: number; s: number; moved: boolean } | null>(null);
@@ -187,27 +189,27 @@ export default function MapCanvas({
 
   return <div className="map-canvas" data-tour="map-canvas">
     <div className="map-toolbar-floating" data-map-control="1">
-      <button onClick={() => zoomAt(1.18)} aria-label="Zoom in" data-tip="Zoom in"><Plus size={16} /></button>
-      <button onClick={() => zoomAt(1 / 1.18)} aria-label="Zoom out" data-tip="Zoom out"><Minus size={16} /></button>
-      <button onClick={resetView} aria-label="Reset view" data-tip="Reset view" className="reset"><RotateCcw size={14} /></button>
+      <button onClick={() => zoomAt(1.18)} aria-label={tr("Zoom in", "Приблизить")} data-tip={tr("Zoom in", "Приблизить")}><Plus size={16} /></button>
+      <button onClick={() => zoomAt(1 / 1.18)} aria-label={tr("Zoom out", "Отдалить")} data-tip={tr("Zoom out", "Отдалить")}><Minus size={16} /></button>
+      <button onClick={resetView} aria-label={tr("Reset view", "Сбросить вид")} data-tip={tr("Reset view", "Сбросить вид")} className="reset"><RotateCcw size={14} /></button>
     </div>
     <details className="map-legend" data-map-control="1">
-      <summary>Map legend</summary>
+      <summary>{tr("Map legend", "Легенда карты")}</summary>
       <div className="map-legend-content">
-        <span><i className="legend-dot t" /> T-side cluster</span>
-        <span><i className="legend-dot ct" /> CT-side cluster</span>
-        <span><i className="legend-line" /> Trajectory</span>
+        <span><i className="legend-dot t" /> {tr("T-side cluster", "Кластер T")}</span>
+        <span><i className="legend-dot ct" /> {tr("CT-side cluster", "Кластер CT")}</span>
+        <span><i className="legend-line" /> {tr("Trajectory", "Траектория")}</span>
         <span><i className="legend-dot smoke" /> Smoke</span>
         <span><i className="legend-dot flash" /> Flash</span>
         <span><i className="legend-dot molotov" /> Molotov</span>
         <span><i className="legend-dot he" /> HE</span>
-        <span><i className="legend-spawn" /> Spawn: click to copy</span>
+        <span><i className="legend-spawn" /> {tr("Spawn: click to copy", "Спавн: нажмите для копирования")}</span>
       </div>
     </details>
     <div ref={viewportRef} className={`map-viewport ${view.s > 1 ? "is-draggable" : ""}`} onMouseDownCapture={onMouseDown} onClickCapture={suppressDraggedClick} onDragStart={(event) => event.preventDefault()} onWheel={onWheel}>
       <div ref={stageRef} className="map-stage" style={stageSize.width && stageSize.height ? { width: stageSize.width, height: stageSize.height } : undefined}>
         <div className="map-world" style={{ transform: `translate(${view.tx}px, ${view.ty}px) scale(${view.s})` }}>
-          {image ? <img src={image} alt="map" className="map-image" draggable={false} style={{ width: radarSize, height: radarSize, left: radarOffsetX, top: radarOffsetY }} /> : <div className="map-empty">No map image</div>}
+          {image ? <img src={image} alt="map" className="map-image" draggable={false} style={{ width: radarSize, height: radarSize, left: radarOffsetX, top: radarOffsetY }} /> : <div className="map-empty">{tr("No map image", "Нет изображения карты")}</div>}
           {selectedCluster ? <div className="map-caption"><span>{selectedCluster.count} selected</span><span>{selectedCluster.unique_types.map(grenadeLabel).join(", ")}</span></div> : null}
         </div>
         <svg className="trajectory-screen-layer" width={stageSize.width} height={stageSize.height} viewBox={`0 0 ${stageSize.width || 1} ${stageSize.height || 1}`}>

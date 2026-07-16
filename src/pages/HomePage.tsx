@@ -5,6 +5,7 @@ import { assetUrl, getMaps, getRecentlyViewedGrenades } from "../lib/tauri";
 import { formatNumber, grenadeLabel } from "../lib/format";
 import type { ImportSummary, MapSummary, ViewedGrenade } from "../types/domain";
 import ImportPage from "./ImportPage";
+import { useI18n } from "../i18n";
 
 type HomePageProps = {
   activeImportId?: number | null;
@@ -13,6 +14,7 @@ type HomePageProps = {
 };
 
 export default function HomePage({ activeImportId, onImported, lastImport }: HomePageProps) {
+  const { tr } = useI18n();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [maps, setMaps] = useState<MapSummary[]>([]);
@@ -56,19 +58,19 @@ export default function HomePage({ activeImportId, onImported, lastImport }: Hom
   return (
     <div className="home-view">
       <section className="home-sidebar">
-        <div className="eyebrow">Grenade database</div>
-        <h1>Choose<br />a map</h1>
-        <p className="muted">Explore lineups by landing zone, throw position and trajectory.</p>
+        <div className="eyebrow">{tr("Grenade database", "База гранат")}</div>
+        <h1>{tr("Choose a map", "Выберите карту")}</h1>
+        <p className="muted">{tr("Explore lineups by landing zone, throw position and trajectory.", "Изучайте раскидки по точке приземления, позиции броска и траектории.")}</p>
         <div className="library-stats">
-          <div className="stat-line"><span>{formatNumber(maps.length)}</span><small>Maps</small></div>
-          <div className="stat-line"><span>{formatNumber(total)}</span><small>Lineups</small></div>
+          <div className="stat-line"><span>{formatNumber(maps.length)}</span><small>{tr("Maps", "Карты")}</small></div>
+          <div className="stat-line"><span>{formatNumber(total)}</span><small>{tr("Lineups", "Раскидки")}</small></div>
         </div>
         <button className="library-import-btn" type="button" onClick={() => setSearchParams({ import: "1" })}>
-          <Plus size={15} /> Import library
+          <Plus size={15} /> {tr("Import library", "Импорт библиотеки")}
         </button>
         <div className="recent-history">
           <div className="recent-history-title">
-            <span><History size={14} /> Recently viewed</span>
+            <span><History size={14} /> {tr("Recently viewed", "Недавно просмотренные")}</span>
             {recentlyViewed.length ? <small>{formatNumber(recentlyViewed.length)}</small> : null}
           </div>
           {recentlyViewed.length ? (
@@ -85,17 +87,17 @@ export default function HomePage({ activeImportId, onImported, lastImport }: Hom
               ))}
             </div>
           ) : (
-            <div className="recent-history-empty">No grenade views yet.</div>
+            <div className="recent-history-empty">{tr("No grenade views yet.", "Просмотренных гранат пока нет.")}</div>
           )}
         </div>
       </section>
 
       <section className="map-grid-section">
         <div className="library-heading">
-          <div><span className="eyebrow">Map pool</span><strong>{visible.length} available</strong></div>
+          <div><span className="eyebrow">{tr("Map pool", "Набор карт")}</span><strong>{visible.length} {tr("available", "доступно")}</strong></div>
           <div className="search-box">
             <Search size={16} />
-            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Find a map" />
+            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={tr("Find a map", "Найти карту")} />
           </div>
         </div>
         <div className="map-grid">
@@ -105,7 +107,7 @@ export default function HomePage({ activeImportId, onImported, lastImport }: Hom
                 {map.preview_image_path ? <img src={assetUrl(map.preview_image_path)} alt="" /> : <span>{String(map.label || map.name || "??").slice(0, 2)}</span>}
               </div>
               <div className="map-tile-footer">
-                <span><strong>{map.label}</strong><small>{formatNumber(map.grenade_count)} lineups</small></span>
+                  <span><strong>{map.label}</strong><small>{formatNumber(map.grenade_count)} {tr("lineups", "раскидок")}</small></span>
                 <ArrowUpRight size={17} />
               </div>
             </button>
@@ -115,7 +117,7 @@ export default function HomePage({ activeImportId, onImported, lastImport }: Hom
 
       {importOpen ? (
         <div className={`library-import-layer ${activeImportId ? "overlay" : "required"}`}>
-          {activeImportId ? <button className="library-import-close" type="button" onClick={closeImport} aria-label="Close import"><X size={18} /></button> : null}
+          {activeImportId ? <button className="library-import-close" type="button" onClick={closeImport} aria-label={tr("Close import", "Закрыть импорт")}><X size={18} /></button> : null}
           <ImportPage onImported={onImported} lastImport={lastImport} />
         </div>
       ) : null}

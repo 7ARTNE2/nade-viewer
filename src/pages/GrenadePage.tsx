@@ -9,6 +9,7 @@ import { formatClock, formatNumber, grenadeLabel } from "../lib/format";
 import { buildSpawnMapPoints, INSTA_LABEL, isInstaGrenade } from "../lib/insta";
 import { splitThrowKeys, throwKeyVisual } from "../lib/throwKeys";
 import type { GrenadeDetail, GrenadePreview, SpawnPoint } from "../types/domain";
+import { useI18n } from "../i18n";
 
 const detailTypeColor: Record<string, string> = {
   smoke: "#67e8f9",
@@ -25,6 +26,7 @@ const detailTypeRgb: Record<string, string> = {
 };
 
 export default function GrenadePage() {
+  const { tr } = useI18n();
   const { id = "" } = useParams();
   const navigate = useNavigate();
   const grenadeId = Number(id);
@@ -92,7 +94,7 @@ export default function GrenadePage() {
   };
 
   if (!grenade) {
-    if (loadError) return <div className="detail-load-error"><strong>Unable to open grenade</strong><p>{loadError}</p><button className="btn primary" onClick={() => navigate("/maps")}>Back to maps</button></div>;
+    if (loadError) return <div className="detail-load-error"><strong>{tr("Unable to open grenade", "Не удалось открыть гранату")}</strong><p>{loadError}</p><button className="btn primary" onClick={() => navigate("/maps")}>{tr("Back to maps", "К картам")}</button></div>;
     return (
       <div className="detail-loading">
         <div className="loader-ring" />
@@ -108,7 +110,7 @@ export default function GrenadePage() {
             <ArrowLeft size={16} />
           </button>
           <div className="map-heading">
-            <strong>Grenade #{grenade.id}</strong>
+            <strong>{tr("Grenade", "Граната")} #{grenade.id}</strong>
             <span>{grenade.map} / {grenadeLabel(grenade.grenade_type)}</span>
           </div>
         </div>
@@ -119,23 +121,23 @@ export default function GrenadePage() {
         <div className="detail-title-row">
           <span className={`type-pill ${String(grenade.grenade_type).toLowerCase()}`}>{grenadeLabel(grenade.grenade_type)}</span>
           <span className="side-mini">{grenade.side}</span>
-          <strong>{grenade.thrower || "Parsed grenade"}</strong>
+          <strong>{grenade.thrower || tr("Parsed grenade", "Распознанная граната")}</strong>
           {isInsta ? <span className="insta-badge">{INSTA_LABEL}</span> : null}
           <button className={`core-action detail-core ${grenade.is_core ? "active" : ""}`} onClick={() => handleCoreToggle(grenade.id, !grenade.is_core)}>
             <BadgeCheck size={14} />
-            {grenade.is_core ? "In Core" : "Add to Core"}
+            {grenade.is_core ? tr("In Core", "В Core") : tr("Add to Core", "Добавить в Core")}
           </button>
         </div>
 
         <div className="metric-grid">
-          <div><Timer size={14} /><span>Airtime</span><strong>{typeof grenade.airtime === "number" ? `${grenade.airtime.toFixed(2)}s` : "-"}</strong></div>
-          <div><Clock size={14} /><span>Round</span><strong>{formatClock(grenade.round_time_seconds)}</strong></div>
-          <div><Crosshair size={14} /><span>Usage</span><strong>{formatNumber(grenade.usage_count)}</strong></div>
+          <div><Timer size={14} /><span>{tr("Airtime", "Время полета")}</span><strong>{typeof grenade.airtime === "number" ? `${grenade.airtime.toFixed(2)}s` : "-"}</strong></div>
+          <div><Clock size={14} /><span>{tr("Round", "Раунд")}</span><strong>{formatClock(grenade.round_time_seconds)}</strong></div>
+          <div><Crosshair size={14} /><span>{tr("Usage", "Использования")}</span><strong>{formatNumber(grenade.usage_count)}</strong></div>
           <div><MapPinned size={14} /><span>Tickrate</span><strong>{grenade.tickrate ?? "-"}</strong></div>
         </div>
 
         <div className="info-block">
-          <div className="block-title">Throw keys</div>
+          <div className="block-title">{tr("Throw keys", "Клавиши броска")}</div>
           {throwKeys.length ? (
             <div className="throw-preview-keys detail-throw-keys">
               {throwKeys.map((key, index) => {
@@ -158,27 +160,27 @@ export default function GrenadePage() {
 
         <div className="info-block">
           <div className="block-title">
-            Coordinates
+            {tr("Coordinates", "Координаты")}
             <button className="micro-btn" onClick={() => copy(grenade.coordinates)}>
               <Clipboard size={13} />
-              {copied ? "Copied" : "Copy"}
+              {copied ? tr("Copied", "Скопировано") : tr("Copy", "Копировать")}
             </button>
           </div>
           <code>{grenade.coordinates || "-"}</code>
         </div>
 
         <div className="info-block">
-          <div className="block-title">Demo metadata</div>
+          <div className="block-title">{tr("Demo metadata", "Данные демо")}</div>
           <div className="kv-list">
-            <span>Throw tick</span><strong>{grenade.throw_tick ?? "-"}</strong>
-            <span>Lineup tick</span><strong>{grenade.lineup_tick ?? "-"}</strong>
-            <span>Demo</span><strong className="truncate"><FileText size={12} />{grenade.demo_filename || "-"}</strong>
+            <span>{tr("Throw tick", "Тик броска")}</span><strong>{grenade.throw_tick ?? "-"}</strong>
+            <span>{tr("Lineup tick", "Тик подготовки")}</span><strong>{grenade.lineup_tick ?? "-"}</strong>
+            <span>{tr("Demo", "Демо")}</span><strong className="demo-filename"><FileText size={12} />{grenade.demo_filename || "-"}</strong>
           </div>
         </div>
 
         <div className="info-block usage-throwers-block">
           <div className="block-title">
-            Usage throwers
+            {tr("Usage throwers", "Использовали игроки")}
             {grenade.usage_throwers.length ? <span className="block-count">{grenade.usage_throwers.length}</span> : null}
           </div>
           {grenade.usage_throwers.length ? (
@@ -195,8 +197,8 @@ export default function GrenadePage() {
         </div>
 
         <div className="info-block">
-          <div className="block-title">Similar grenades</div>
-          <GrenadeList grenades={similar} compact showCopy spawnPoints={spawnPoints} onCoreToggle={handleCoreToggle} emptyLabel="No similar grenades." />
+          <div className="block-title">{tr("Similar grenades", "Похожие гранаты")}</div>
+          <GrenadeList grenades={similar} compact showCopy spawnPoints={spawnPoints} onCoreToggle={handleCoreToggle} emptyLabel={tr("No similar grenades.", "Похожих гранат нет.")} />
         </div>
       </aside>
     </div>

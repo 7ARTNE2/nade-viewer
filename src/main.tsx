@@ -3,12 +3,13 @@ import ReactDOM from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import App from "./App";
 import AppErrorBoundary from "./components/AppErrorBoundary";
+import { I18nProvider } from "./i18n";
 import "./styles.css";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <BrowserRouter>
-      <AppErrorBoundary><App /></AppErrorBoundary>
+      <I18nProvider><AppErrorBoundary><App /></AppErrorBoundary></I18nProvider>
     </BrowserRouter>
   </React.StrictMode>,
 );

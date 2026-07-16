@@ -6,6 +6,7 @@ import GrenadeList from "../components/GrenadeList";
 import { getClusterGrenades, getMapOverview, getSiteSettings, getSpawnPoints, getThrowClusterGrenades, getThrowOverview, setGrenadeCore, updateSiteSettings } from "../lib/tauri";
 import { formatNumber, grenadeLabel } from "../lib/format";
 import type { GrenadePreview, LandingCluster, MapFilters, MapOverview, SpawnPoint } from "../types/domain";
+import { useI18n } from "../i18n";
 
 const grenadeTypes = ["all", "smoke", "flash", "molotov", "HE"];
 const sides = ["Any", "T", "CT"];
@@ -98,6 +99,7 @@ function writeStoredMapViewState(key: string, state: StoredMapViewState) {
 }
 
 export default function MapPage({ activeImportId }: MapPageProps) {
+  const { tr } = useI18n();
   const { mapName = "" } = useParams();
   const navigate = useNavigate();
   const decodedMap = useMemo(() => {
@@ -381,7 +383,7 @@ export default function MapPage({ activeImportId }: MapPageProps) {
           </button>
           <div className="map-heading">
             <strong>{overview?.map.label ?? decodedMap}</strong>
-            <span>{loading ? "Loading overview" : `${formatNumber(overview?.grenade_count ?? 0)} filtered grenades`}</span>
+            <span>{loading ? tr("Loading overview", "Загрузка обзора") : `${formatNumber(overview?.grenade_count ?? 0)} ${tr("filtered grenades", "гранат по фильтру")}`}</span>
           </div>
           <div className="toolbar-spacer" />
           <button className={`toggle core-toolbar-toggle ${filters.is_core ? "active" : ""}`} onClick={() => setFilters((state) => ({ ...state, is_core: !state.is_core }))}>
@@ -390,15 +392,15 @@ export default function MapPage({ activeImportId }: MapPageProps) {
           </button>
           <button className={`toggle ${showSpawns ? "active" : ""}`} onClick={() => setShowSpawns((value) => !value)}>
             <LocateFixed size={15} />
-            Spawns
+            {tr("Spawns", "Спавны")}
           </button>
           <button
             className={`toggle throw-toolbar-toggle ${grenadeMode === "throw" ? "active" : ""}`}
             onClick={() => switchGrenadeMode(grenadeMode === "throw" ? "landing" : "throw")}
-            data-tip="Group by throw position"
+            data-tip={tr("Group by throw position", "Группировать по позиции броска")}
           >
             <Send size={15} />
-            Throw
+            {tr("Throw", "Бросок")}
           </button>
           {hasLowerRadar ? (
             <div className="radar-switch" aria-label="Radar level">
@@ -442,11 +444,11 @@ export default function MapPage({ activeImportId }: MapPageProps) {
           <div className="section-title">
             <span>
               <Filter size={15} />
-              Filters
+               {tr("Filters", "Фильтры")}
             </span>
-            <button className="micro-btn filter-reset-btn" type="button" onClick={resetFilters} disabled={!canResetFilters} data-tip="Reset filters">
+            <button className="micro-btn filter-reset-btn" type="button" onClick={resetFilters} disabled={!canResetFilters} data-tip={tr("Reset filters", "Сбросить фильтры")}>
               <RotateCcw size={13} />
-              Reset
+              {tr("Reset", "Сбросить")}
             </button>
           </div>
           <div className="segmented">
@@ -456,7 +458,7 @@ export default function MapPage({ activeImportId }: MapPageProps) {
                 className={`filter-btn filter-${String(type).toLowerCase()} ${filters.grenade_type === type ? "active" : ""}`}
                 onClick={() => setFilters((state) => ({ ...state, grenade_type: type }))}
               >
-                {type === "all" ? "All" : grenadeLabel(type)}
+                {type === "all" ? tr("All", "Все") : grenadeLabel(type)}
               </button>
             ))}
           </div>
@@ -469,15 +471,15 @@ export default function MapPage({ activeImportId }: MapPageProps) {
           </div>
           <label className="mini-field">
             <Search size={14} />
-            <input value={filters.search ?? ""} onChange={(event) => setFilters((state) => ({ ...state, search: event.target.value }))} placeholder="Thrower, demo, command" />
+            <input value={filters.search ?? ""} onChange={(event) => setFilters((state) => ({ ...state, search: event.target.value }))} placeholder={tr("Thrower, demo, command", "Игрок, демо, команда")} />
           </label>
         </div>
 
         <div className="panel-section inspector-visibility">
-          <div className="section-title">Visibility rules</div>
+          <div className="section-title">{tr("Visibility rules", "Правила видимости")}</div>
           <div className="setting-card">
             <div className="setting-row">
-              <span>Public min usage</span>
+              <span>{tr("Public min usage", "Минимум использований")}</span>
               <strong>{siteValue}</strong>
             </div>
             <input
@@ -492,8 +494,8 @@ export default function MapPage({ activeImportId }: MapPageProps) {
             />
             {pendingSiteMinUsage !== null && pendingSiteMinUsage !== siteMinUsage ? (
               <div className="setting-actions">
-                <button onClick={() => applySiteSettings().catch(console.error)}>Apply</button>
-                <button onClick={() => setPendingSiteMinUsage(null)}>Cancel</button>
+                <button onClick={() => applySiteSettings().catch(console.error)}>{tr("Apply", "Применить")}</button>
+                <button onClick={() => setPendingSiteMinUsage(null)}>{tr("Cancel", "Отмена")}</button>
               </div>
             ) : null}
           </div>
@@ -501,7 +503,7 @@ export default function MapPage({ activeImportId }: MapPageProps) {
 
         <div className="panel-section cluster-panel inspector-clusters" data-tour="cluster-list">
           <div className="section-title">
-            {grenadeMode === "throw" ? "Throw clusters" : "Landing clusters"}
+            {grenadeMode === "throw" ? tr("Throw clusters", "Кластеры бросков") : tr("Landing clusters", "Кластеры приземления")}
             <span className="section-count">{clusters.length ? `${clusterPage + 1}/${clusterPageCount}` : "0"}</span>
           </div>
           <div className="cluster-list">
@@ -533,7 +535,7 @@ export default function MapPage({ activeImportId }: MapPageProps) {
 
         <div className="panel-section grenade-panel inspector-grenades">
           <div className="section-title">
-            Selected grenades
+            {tr("Selected grenades", "Выбранные гранаты")}
             {selectedCluster ? <span className="section-count">{formatNumber(selectedCluster.count)}</span> : null}
           </div>
           <GrenadeList
@@ -542,7 +544,7 @@ export default function MapPage({ activeImportId }: MapPageProps) {
             showCopy
             spawnPoints={visibleSpawns}
             onCoreToggle={handleCoreToggle}
-            emptyLabel={grenadeLoading ? "Loading grenades." : filters.is_core ? "No Core Nades in this cluster." : undefined}
+            emptyLabel={grenadeLoading ? tr("Loading grenades.", "Загрузка гранат.") : filters.is_core ? tr("No Core Nades in this cluster.", "В этом кластере нет Core Nades.") : undefined}
           />
           {selectedCluster && selectedCluster.count > grenadePageSize ? (
             <div className="panel-pager">
