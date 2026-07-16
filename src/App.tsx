@@ -12,6 +12,7 @@ import {
   RotateCw,
   Sparkles,
   Trash2,
+  GraduationCap,
   Upload,
   X,
 } from "lucide-react";
@@ -19,9 +20,12 @@ import {
   deleteImport,
   exportCoreNades,
   getActiveImport,
+  getOnboardingState,
   listImports,
+  resetOnboarding,
   setActiveImport,
   updateImportLabel,
+  completeOnboarding,
 } from "./lib/tauri";
 import { compactDate, formatNumber } from "./lib/format";
 import { startWindowActiveTracking } from "./lib/windowActive";
@@ -31,6 +35,7 @@ import HomePage from "./pages/HomePage";
 import MapPage from "./pages/MapPage";
 import GrenadePage from "./pages/GrenadePage";
 import Tooltip from "./components/Tooltip";
+import OnboardingModal from "./components/OnboardingModal";
 
 function importFileName(path: string) {
   return path.split(/[\\/]/).filter(Boolean).pop() || path;
@@ -52,16 +57,23 @@ function Shell() {
   const [editingSnapshotId, setEditingSnapshotId] = useState<number | null>(null);
   const [editingLabel, setEditingLabel] = useState("");
   const [deleteSnapshotOpen, setDeleteSnapshotOpen] = useState(false);
+  const [onboardingOpen, setOnboardingOpen] = useState(false);
   const importsRequestRef = useRef(0);
   const [operationError, setOperationError] = useState<string | null>(null);
+
+  const restartTutorial = async () => {
+    await resetOnboarding();
+    window.location.reload();
+  };
 
   const refreshImports = useCallback(async () => {
     const requestId = ++importsRequestRef.current;
     try {
-      const [active, all] = await Promise.all([getActiveImport(), listImports()]);
+      const [active, all, onboarding] = await Promise.all([getActiveImport(), listImports(), getOnboardingState()]);
       if (importsRequestRef.current !== requestId) return;
       setActive(active);
       setImports(Array.isArray(all) ? all : []);
+      setOnboardingOpen(!onboarding.completed);
       if (!active && !["/", "/maps"].includes(location.pathname)) navigate("/maps?import=1", { replace: true });
     } finally {
       if (importsRequestRef.current === requestId) setLoading(false);
@@ -154,6 +166,9 @@ function Shell() {
             <button className={`topbar-nav-link ${importPanelActive ? "active" : ""}`} onClick={() => navigate("/maps?import=1")}>
               <Download size={16} /><span>Import library</span>
             </button>
+            <button className="topbar-nav-link" onClick={() => restartTutorial().catch((error) => { console.error(error); setOperationError("Could not restart tutorial"); })}>
+              <GraduationCap size={16} /><span>Tutorial</span>
+            </button>
           </div>
           <div className="topbar-actions">
             {activeImport ? (
@@ -225,6 +240,19 @@ function Shell() {
             <div className="snapshot-delete-actions"><button className="btn" onClick={() => setDeleteSnapshotOpen(false)}>Cancel</button><button className="btn danger-action" onClick={confirmDeleteSnapshot}><Trash2 size={15} />Delete</button></div>
           </div>
         </div>
+      ) : null}
+      {onboardingOpen ? (
+        <OnboardingModal
+          onComplete={async () => {
+            await completeOnboarding();
+            setOnboardingOpen(false);
+          }}
+          onStart={() => {
+            navigate("/maps?import=1");
+          }}
+          activeImport={Boolean(activeImport)}
+          pathname={location.pathname}
+        />
       ) : null}
       <Tooltip />
     </div>

@@ -9,6 +9,7 @@ import type {
   MapFilters,
   MapOverview,
   MapSummary,
+  OnboardingState,
   SiteSettings,
   SpawnPoint,
   ViewedGrenade,
@@ -108,4 +109,16 @@ export function getSiteSettings() {
 
 export function updateSiteSettings(publicMinUsageCount: number) {
   return invoke<SiteSettings>("update_site_settings", { publicMinUsageCount });
+}
+
+export function getOnboardingState() {
+  return invoke<OnboardingState>("get_onboarding_state");
+}
+
+export function completeOnboarding() {
+  return invoke<OnboardingState>("complete_onboarding");
+}
+
+export function resetOnboarding() {
+  return invoke<OnboardingState>("reset_onboarding");
 }

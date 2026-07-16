@@ -150,6 +150,11 @@ struct SiteSettings {
     public_min_usage_count: i64,
 }
 
+#[derive(Serialize)]
+struct OnboardingState {
+    completed: bool,
+}
+
 #[derive(Serialize, Deserialize)]
 struct CoreNadesFile {
     version: i64,
@@ -359,6 +364,9 @@ pub fn run() {
             get_spawn_points,
             get_site_settings,
             update_site_settings,
+            get_onboarding_state,
+            complete_onboarding,
+            reset_onboarding,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Nade Viewer");
@@ -843,6 +851,18 @@ fn public_min_usage_count(conn: &Connection) -> AppResult<i64> {
         .unwrap_or(1)
         .clamp(1, 50);
     Ok(value)
+}
+
+fn onboarding_completed(conn: &Connection) -> AppResult<bool> {
+    Ok(conn
+        .query_row(
+            "SELECT value FROM app_meta WHERE key='onboarding_completed'",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?
+        .as_deref()
+        == Some("1"))
 }
 
 fn open_conn(state: &AppState) -> AppResult<Connection> {
@@ -2127,6 +2147,32 @@ fn update_site_settings(
     Ok(SiteSettings {
         public_min_usage_count: value,
     })
+}
+
+#[tauri::command]
+fn get_onboarding_state(state: tauri::State<'_, AppState>) -> AppResult<OnboardingState> {
+    let conn = open_conn(&state)?;
+    Ok(OnboardingState {
+        completed: onboarding_completed(&conn)?,
+    })
+}
+
+#[tauri::command]
+fn complete_onboarding(state: tauri::State<'_, AppState>) -> AppResult<OnboardingState> {
+    let conn = open_conn(&state)?;
+    conn.execute(
+        "INSERT INTO app_meta(key, value) VALUES ('onboarding_completed', '1')
+         ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+        [],
+    )?;
+    Ok(OnboardingState { completed: true })
+}
+
+#[tauri::command]
+fn reset_onboarding(state: tauri::State<'_, AppState>) -> AppResult<OnboardingState> {
+    let conn = open_conn(&state)?;
+    conn.execute("DELETE FROM app_meta WHERE key='onboarding_completed'", [])?;
+    Ok(OnboardingState { completed: false })
 }
 
 #[tauri::command]

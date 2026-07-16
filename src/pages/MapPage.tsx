@@ -375,7 +375,7 @@ export default function MapPage({ activeImportId }: MapPageProps) {
   return (
     <div className="map-workspace">
       <section className="map-main-panel">
-        <div className="map-toolbar">
+          <div className="map-toolbar" data-tour="map-workspace-toolbar">
           <button className="icon-btn" onClick={() => navigate("/maps")}>
             <ArrowLeft size={16} />
           </button>
@@ -438,7 +438,7 @@ export default function MapPage({ activeImportId }: MapPageProps) {
       </section>
 
       <aside className="inspector">
-        <div className="panel-section compact-filter inspector-filter">
+        <div className="panel-section compact-filter inspector-filter" data-tour="map-filters">
           <div className="section-title">
             <span>
               <Filter size={15} />
@@ -499,7 +499,7 @@ export default function MapPage({ activeImportId }: MapPageProps) {
           </div>
         </div>
 
-        <div className="panel-section cluster-panel inspector-clusters">
+        <div className="panel-section cluster-panel inspector-clusters" data-tour="cluster-list">
           <div className="section-title">
             {grenadeMode === "throw" ? "Throw clusters" : "Landing clusters"}
             <span className="section-count">{clusters.length ? `${clusterPage + 1}/${clusterPageCount}` : "0"}</span>

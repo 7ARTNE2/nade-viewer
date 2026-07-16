@@ -24,6 +24,10 @@ export type SiteSettings = {
   public_min_usage_count: number;
 };
 
+export type OnboardingState = {
+  completed: boolean;
+};
+
 export type CoreNadesExportReport = {
   path: string;
   grenade_count: number;

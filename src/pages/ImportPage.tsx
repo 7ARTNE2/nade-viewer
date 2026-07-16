@@ -88,7 +88,7 @@ export default function ImportPage({ onImported, lastImport }: Props) {
           {busy ? <div className="progress-shell"><div className="progress-bar" style={{ width: `${Math.max(progress, 6)}%` }} /></div> : null}
 
           <div className="file-picker-row">
-            <button className="btn primary" onClick={choose} disabled={busy}><FolderOpen size={17} />Choose file</button>
+            <button className="btn primary" data-tour="import-choose-file" onClick={choose} disabled={busy}><FolderOpen size={17} />Choose file</button>
             <input value={path} onChange={(event) => setPath(event.target.value)} placeholder="Path to JSON file" disabled={busy} />
             <button className="btn" onClick={() => runImport()} disabled={busy || !path.trim()}><Upload size={17} />Import</button>
           </div>

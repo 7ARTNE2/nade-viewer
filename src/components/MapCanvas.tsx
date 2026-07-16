@@ -185,12 +185,25 @@ export default function MapCanvas({
   const previewCommands = splitCommands(preview?.grenade.coordinates);
   const previewStyle = preview ? { left: clamp(preview.x + 16, 12, Math.max(12, (viewportRef.current?.clientWidth ?? 0) - 332)), top: clamp(preview.y + 14, 12, Math.max(12, (viewportRef.current?.clientHeight ?? 0) - 232)), "--dot": typeColor[preview.grenade.grenade_type] ?? "#fff" } as CSSProperties : undefined;
 
-  return <div className="map-canvas">
+  return <div className="map-canvas" data-tour="map-canvas">
     <div className="map-toolbar-floating" data-map-control="1">
       <button onClick={() => zoomAt(1.18)} aria-label="Zoom in" data-tip="Zoom in"><Plus size={16} /></button>
       <button onClick={() => zoomAt(1 / 1.18)} aria-label="Zoom out" data-tip="Zoom out"><Minus size={16} /></button>
       <button onClick={resetView} aria-label="Reset view" data-tip="Reset view" className="reset"><RotateCcw size={14} /></button>
     </div>
+    <details className="map-legend" data-map-control="1">
+      <summary>Map legend</summary>
+      <div className="map-legend-content">
+        <span><i className="legend-dot t" /> T-side cluster</span>
+        <span><i className="legend-dot ct" /> CT-side cluster</span>
+        <span><i className="legend-line" /> Trajectory</span>
+        <span><i className="legend-dot smoke" /> Smoke</span>
+        <span><i className="legend-dot flash" /> Flash</span>
+        <span><i className="legend-dot molotov" /> Molotov</span>
+        <span><i className="legend-dot he" /> HE</span>
+        <span><i className="legend-spawn" /> Spawn: click to copy</span>
+      </div>
+    </details>
     <div ref={viewportRef} className={`map-viewport ${view.s > 1 ? "is-draggable" : ""}`} onMouseDownCapture={onMouseDown} onClickCapture={suppressDraggedClick} onDragStart={(event) => event.preventDefault()} onWheel={onWheel}>
       <div ref={stageRef} className="map-stage" style={stageSize.width && stageSize.height ? { width: stageSize.width, height: stageSize.height } : undefined}>
         <div className="map-world" style={{ transform: `translate(${view.tx}px, ${view.ty}px) scale(${view.s})` }}>
