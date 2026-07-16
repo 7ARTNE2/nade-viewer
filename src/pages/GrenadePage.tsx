@@ -176,7 +176,7 @@ export default function GrenadePage() {
           </div>
         </div>
 
-        <div className="info-block">
+        <div className="info-block usage-throwers-block">
           <div className="block-title">
             Usage throwers
             {grenade.usage_throwers.length ? <span className="block-count">{grenade.usage_throwers.length}</span> : null}

@@ -184,6 +184,9 @@
 .snapshot-picker .snapshot-main small{color:var(--orange)}
 .snapshot-picker .snapshot-current{color:var(--acid)}
 .snapshot-picker .snapshot-rename-btn{color:var(--orange)}
+.usage-throwers-block .block-count{border:1px solid rgba(var(--acid-rgb),.2);background:rgba(var(--acid-rgb),.1);color:var(--acid)}
+.usage-throwers-block .thrower-list>span{border-color:rgba(101,167,255,.18);background:rgba(101,167,255,.06);color:#b9d6ff}
+.usage-throwers-block .thrower-list>span:hover{border-color:rgba(var(--acid-rgb),.38);background:rgba(var(--acid-rgb),.09);color:var(--acid)}
 
 @media(max-width:760px){
   .topnav-shell .viewer-topbar{padding:0 10px}
