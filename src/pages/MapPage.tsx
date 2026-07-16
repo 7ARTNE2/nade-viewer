@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, BadgeCheck, Bomb, ChevronLeft, ChevronRight, Filter, LocateFixed, RotateCcw, Search, Send } from "lucide-react";
+import { ArrowLeft, BadgeCheck, ChevronLeft, ChevronRight, Filter, LocateFixed, RotateCcw, Search, Send, Shapes } from "lucide-react";
 import MapCanvas, { type IconTheme } from "../components/MapCanvas";
 import GrenadeList from "../components/GrenadeList";
 import { getClusterGrenades, getMapOverview, getSiteSettings, getSpawnPoints, getThrowClusterGrenades, getThrowOverview, setGrenadeCore, updateSiteSettings } from "../lib/tauri";
@@ -401,7 +401,7 @@ export default function MapPage({ activeImportId }: MapPageProps) {
             data-tip={tr("Toggle grenade point icons", "Переключить значки точек")}
             aria-label={tr("Toggle grenade point icons", "Переключить значки точек")}
           >
-            <Bomb size={15} />
+            <Shapes size={15} />
             {tr("Icons", "Значки")}
           </button>
           <button className={`toggle core-toolbar-toggle ${filters.is_core ? "active" : ""}`} onClick={() => setFilters((state) => ({ ...state, is_core: !state.is_core }))}>
