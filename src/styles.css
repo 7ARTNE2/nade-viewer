@@ -200,7 +200,7 @@
 .onboarding-actions-right{display:flex;gap:8px}
 .onboarding-skip{padding:7px 0;border:0;background:none;color:var(--dim);font-size:10px;font-weight:700;cursor:pointer}
 .onboarding-skip:hover{color:var(--text)}
-.map-legend{position:absolute;z-index:7;right:12px;bottom:12px;width:182px;border:1px solid var(--line);border-radius:8px;background:rgba(11,14,18,.9);color:var(--muted);font-size:9px;box-shadow:0 8px 28px rgba(0,0,0,.34)}
+.map-legend{position:absolute;z-index:7;bottom:12px;left:12px;width:182px;border:1px solid var(--line);border-radius:8px;background:rgba(11,14,18,.9);color:var(--muted);font-size:9px;box-shadow:0 8px 28px rgba(0,0,0,.34)}
 .map-legend summary{padding:8px 9px;color:var(--text);font-size:9px;font-weight:800;cursor:pointer;list-style:none}
 .map-legend summary:after{float:right;color:var(--acid);content:"+"}
 .map-legend[open] summary:after{content:"-"}
@@ -230,7 +230,7 @@
   .onboarding-actions{align-items:flex-end;flex-direction:column-reverse}
   .onboarding-actions-right{width:100%}
   .onboarding-actions-right .btn{flex:1}
-  .map-legend{right:8px;bottom:8px}
+  .map-legend{bottom:8px;left:8px}
 }
 
 .operation-error-chip{color:#ff9ca3;font-size:9px;white-space:nowrap}
