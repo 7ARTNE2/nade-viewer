@@ -157,16 +157,13 @@ function Shell() {
           </div>
           <div className="topbar-actions">
             {activeImport ? (
-              <div className="import-chip" data-tip={activeImport.source_path} data-tip-pos="bottom">
-                <Database size={14} /><strong>{snapshotDisplayName(activeImport)}</strong><span>{formatNumber(activeImport.grenade_count)} nades</span>
-              </div>
-            ) : (
-              <button className="btn primary" onClick={() => navigate("/maps?import=1")}><FolderOpen size={16} />Import data</button>
-            )}
-            {imports.length > 0 && activeImport ? (
               <div className="snapshot-picker" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setSnapshotMenuOpen(false); }}>
-                <button className={`snapshot-trigger ${snapshotMenuOpen ? "active" : ""}`} onClick={() => setSnapshotMenuOpen((open) => !open)} aria-expanded={snapshotMenuOpen}>
-                  <span>Library #{activeImport.id}</span><ChevronDown size={14} />
+                <button className={`snapshot-trigger active-library-trigger ${snapshotMenuOpen ? "active" : ""}`} onClick={() => setSnapshotMenuOpen((open) => !open)} aria-expanded={snapshotMenuOpen} data-tip={activeImport.source_path} data-tip-pos="bottom">
+                  <Database size={14} />
+                  <span className="active-library-id">Library #{activeImport.id}</span>
+                  <strong>{snapshotDisplayName(activeImport)}</strong>
+                  <span className="active-library-count">{formatNumber(activeImport.grenade_count)} nades</span>
+                  <ChevronDown size={14} />
                 </button>
                 {snapshotMenuOpen ? (
                   <div className="snapshot-menu" role="listbox">
@@ -196,7 +193,9 @@ function Shell() {
                   </div>
                 ) : null}
               </div>
-            ) : null}
+            ) : (
+              <button className="btn primary" onClick={() => navigate("/maps?import=1")}><FolderOpen size={16} />Import data</button>
+            )}
             {activeImport ? <button className="icon-btn core-transfer" onClick={handleCoreExport} disabled={coreTransferBusy} data-tip="Export Core Nades"><Upload size={15} /></button> : null}
             {coreTransferStatus ? <span className="core-status-chip">{coreTransferStatus}</span> : null}
             {operationError ? <span className="operation-error-chip">{operationError}</span> : null}
