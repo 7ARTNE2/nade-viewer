@@ -897,9 +897,9 @@ fn filter_sql(filters: &MapFilters, args: &mut Vec<Box<dyn rusqlite::ToSql>>) ->
         .filter(|v| !v.is_empty())
     {
         parts.push(
-            "(thrower LIKE ? OR usage_throwers_json LIKE ? OR coordinates LIKE ? OR demo_filename LIKE ?)".to_string(),
+            "(LOWER(COALESCE(thrower, '')) LIKE ? ESCAPE '\\' OR LOWER(COALESCE(usage_throwers_json, '')) LIKE ? ESCAPE '\\' OR LOWER(COALESCE(coordinates, '')) LIKE ? ESCAPE '\\' OR LOWER(COALESCE(demo_filename, '')) LIKE ? ESCAPE '\\')".to_string(),
         );
-        let pattern = format!("%{}%", search);
+        let pattern = format!("%{}%", escape_like_pattern(&search.to_lowercase()));
         args.push(Box::new(pattern.clone()));
         args.push(Box::new(pattern.clone()));
         args.push(Box::new(pattern.clone()));
@@ -910,6 +910,13 @@ fn filter_sql(filters: &MapFilters, args: &mut Vec<Box<dyn rusqlite::ToSql>>) ->
     } else {
         format!(" AND {}", parts.join(" AND "))
     }
+}
+
+fn escape_like_pattern(value: &str) -> String {
+    value
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_")
 }
 
 fn visibility_sql(

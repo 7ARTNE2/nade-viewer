@@ -185,7 +185,6 @@ export default function GrenadePage() {
             <div className="thrower-list">
               {grenade.usage_throwers.map((thrower, index) => (
                 <span key={`${thrower}-${index}`} data-tip={thrower}>
-                  <strong>{thrower.slice(0, 2).toUpperCase()}</strong>
                   {thrower}
                 </span>
               ))}
@@ -197,7 +196,7 @@ export default function GrenadePage() {
 
         <div className="info-block">
           <div className="block-title">Similar grenades</div>
-          <GrenadeList grenades={similar} compact spawnPoints={spawnPoints} onCoreToggle={handleCoreToggle} emptyLabel="No similar grenades." />
+          <GrenadeList grenades={similar} compact showCopy spawnPoints={spawnPoints} onCoreToggle={handleCoreToggle} emptyLabel="No similar grenades." />
         </div>
       </aside>
     </div>
