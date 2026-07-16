@@ -5,6 +5,7 @@ import { formatNumber, grenadeLabel } from "../lib/format";
 import { buildSpawnMapPoints, INSTA_LABEL, isInstaGrenade } from "../lib/insta";
 import { splitThrowKeys, throwKeyVisual } from "../lib/throwKeys";
 import ThrowKeyIcon from "./ThrowKeyIcon";
+import GrenadeMapIcon from "./GrenadeMapIcon";
 import type { GrenadePreview, LandingCluster, SpawnPoint } from "../types/domain";
 import { useI18n } from "../i18n";
 
@@ -16,9 +17,12 @@ type Props = {
   grenadePointMode?: "throw" | "landing";
   spawnPoints?: SpawnPoint[];
   showSpawns?: boolean;
+  iconTheme?: IconTheme;
   onClusterSelect?: (cluster: LandingCluster) => void;
   onGrenadeOpen?: (id: number) => void;
 };
+
+export type IconTheme = "base" | "asset";
 
 const typeColor: Record<string, string> = { smoke: "#67e8f9", flash: "#fbbf24", molotov: "#fb7185", HE: "#34d399" };
 const sideColor: Record<string, string> = { T: "#f97316", CT: "#60a5fa", MIX: "#a78bfa", NEUTRAL: "#e5e7eb" };
@@ -59,7 +63,7 @@ const groupThrowPoints = (items: GrenadePreview[], mode: "throw" | "landing"): T
 
 export default function MapCanvas({
   mapImagePath, clusters = [], selectedClusterId, grenades = [], grenadePointMode = "throw",
-  spawnPoints = [], showSpawns = true, onClusterSelect, onGrenadeOpen,
+  spawnPoints = [], showSpawns = true, iconTheme = "base", onClusterSelect, onGrenadeOpen,
 }: Props) {
   const { tr } = useI18n();
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -187,7 +191,9 @@ export default function MapCanvas({
   const previewCommands = splitCommands(preview?.grenade.coordinates);
   const previewStyle = preview ? { left: clamp(preview.x + 16, 12, Math.max(12, (viewportRef.current?.clientWidth ?? 0) - 332)), top: clamp(preview.y + 14, 12, Math.max(12, (viewportRef.current?.clientHeight ?? 0) - 232)), "--dot": typeColor[preview.grenade.grenade_type] ?? "#fff" } as CSSProperties : undefined;
 
-  return <div className="map-canvas" data-tour="map-canvas">
+  const markerIcon = (grenadeType: string) => iconTheme === "asset" ? <GrenadeMapIcon grenadeType={grenadeType} /> : <Crosshair size={10} />;
+
+  return <div className={`map-canvas icon-theme-${iconTheme}`} data-tour="map-canvas">
     <div className="map-toolbar-floating" data-map-control="1">
       <button onClick={() => zoomAt(1.18)} aria-label={tr("Zoom in", "Приблизить")} data-tip={tr("Zoom in", "Приблизить")}><Plus size={16} /></button>
       <button onClick={() => zoomAt(1 / 1.18)} aria-label={tr("Zoom out", "Отдалить")} data-tip={tr("Zoom out", "Отдалить")}><Minus size={16} /></button>
@@ -217,11 +223,11 @@ export default function MapCanvas({
         </svg>
         <div className="absolute-layer marker-layer">
           {showSpawns && spawnPoints.map((spawn, index) => typeof spawn.map_x === "number" && typeof spawn.map_y === "number" ? <button key={`${spawn.side}-${index}-${spawn.pos_x}-${spawn.pos_y}`} className={`spawn-dot ${spawn.side === "CT" ? "ct" : "t"}`} style={project(spawn.map_x, spawn.map_y)} data-map-control="1" onClick={() => copySpawn(spawn, index)} data-tip={`${spawn.command} / ${spawn.side}`}><span className="spawn-pulse" /><span className={`spawn-core ${copied === index ? "copied" : ""}`} /></button> : null)}
-          {clusters.filter((cluster) => !selectedClusterId || cluster.id === selectedClusterId).map((cluster) => <button key={cluster.id} className={`cluster-dot ${grenadePointMode === "landing" ? "cluster-dot--throw " : ""}${cluster.id === selectedClusterId ? "selected" : ""}`} style={{ ...project(cluster.x, cluster.y), "--dot": sideColor[cluster.side_key] ?? sideColor.NEUTRAL } as CSSProperties} data-map-control="1" onClick={() => onClusterSelect?.(cluster)} data-tip={`${cluster.count} grenades`}><span>{cluster.count}</span></button>)}
-          {groups.map((group) => { const grenade = group.grenades[0]; const matched = grenadePointMode === "throw" && group.grenades.some((item) => isInstaGrenade(item, spawnMapPoints)); const style = { ...project(group.x, group.y), "--dot": typeColor[grenade.grenade_type] ?? "#fff" } as CSSProperties; return group.grenades.length > 1 ? <div key={group.id} className="throw-cluster-wrap" style={style} data-map-control="1"><button className={`throw-dot throw-stack-dot ${group.grenades.some((item) => item.is_core) ? "core" : ""} ${matched ? "spawn-match" : ""}`} onClick={() => setActiveGroupId(activeGroupId === group.id ? null : group.id)} data-tip={`${matched ? `${INSTA_LABEL} / ` : ""}${group.grenades.length} points`}><span>{group.grenades.length}</span></button></div> : <button key={group.id} className={`throw-dot ${grenade.is_core ? "core" : ""} ${matched ? "spawn-match" : ""}`} style={style} data-map-control="1" onPointerEnter={(event) => showPreview(event, grenade)} onPointerMove={(event) => showPreview(event, grenade)} onPointerLeave={() => setPreview(null)} onClick={() => onGrenadeOpen?.(grenade.id)} aria-label={`#${grenade.id} ${grenadeLabel(grenade.grenade_type)}`}><Crosshair size={10} /></button>; })}
+          {clusters.filter((cluster) => !selectedClusterId || cluster.id === selectedClusterId).map((cluster) => { const singleType = cluster.unique_types.length === 1 ? cluster.unique_types[0] : null; return <button key={cluster.id} className={`cluster-dot ${singleType ? "single-type " : ""}${grenadePointMode === "landing" ? "cluster-dot--throw " : ""}${cluster.id === selectedClusterId ? "selected" : ""}`} style={{ ...project(cluster.x, cluster.y), "--dot": sideColor[cluster.side_key] ?? sideColor.NEUTRAL } as CSSProperties} data-map-control="1" onClick={() => onClusterSelect?.(cluster)} data-tip={`${cluster.count} grenades`}>{iconTheme === "asset" && singleType ? <GrenadeMapIcon grenadeType={singleType} /> : null}<span>{cluster.count}</span></button>; })}
+          {groups.map((group) => { const grenade = group.grenades[0]; const matched = grenadePointMode === "throw" && group.grenades.some((item) => isInstaGrenade(item, spawnMapPoints)); const style = { ...project(group.x, group.y), "--dot": typeColor[grenade.grenade_type] ?? "#fff" } as CSSProperties; return group.grenades.length > 1 ? <div key={group.id} className="throw-cluster-wrap" style={style} data-map-control="1"><button className={`throw-dot throw-stack-dot ${group.grenades.some((item) => item.is_core) ? "core" : ""} ${matched ? "spawn-match" : ""}`} onClick={() => setActiveGroupId(activeGroupId === group.id ? null : group.id)} data-tip={`${matched ? `${INSTA_LABEL} / ` : ""}${group.grenades.length} points`}>{iconTheme === "asset" ? markerIcon(grenade.grenade_type) : null}<span>{group.grenades.length}</span></button></div> : <button key={group.id} className={`throw-dot ${grenade.is_core ? "core" : ""} ${matched ? "spawn-match" : ""}`} style={style} data-map-control="1" onPointerEnter={(event) => showPreview(event, grenade)} onPointerMove={(event) => showPreview(event, grenade)} onPointerLeave={() => setPreview(null)} onClick={() => onGrenadeOpen?.(grenade.id)} aria-label={`#${grenade.id} ${grenadeLabel(grenade.grenade_type)}`}>{markerIcon(grenade.grenade_type)}</button>; })}
         </div>
       </div>
-      {activeGroup ? <div className="throw-strip" data-map-control="1" onWheel={(event) => { event.preventDefault(); event.currentTarget.scrollLeft += event.deltaY; }}>{activeGroup.grenades.map((grenade) => <button key={grenade.id} className={`throw-strip-dot ${grenade.is_core ? "core" : ""}`} style={{ "--dot": typeColor[grenade.grenade_type] ?? "#fff" } as CSSProperties} onClick={() => onGrenadeOpen?.(grenade.id)} onPointerEnter={(event) => showPreview(event, grenade)} onPointerLeave={() => setPreview(null)}><Crosshair size={10} /></button>)}</div> : null}
+      {activeGroup ? <div className="throw-strip" data-map-control="1" onWheel={(event) => { event.preventDefault(); event.currentTarget.scrollLeft += event.deltaY; }}>{activeGroup.grenades.map((grenade) => <button key={grenade.id} className={`throw-strip-dot ${grenade.is_core ? "core" : ""}`} style={{ "--dot": typeColor[grenade.grenade_type] ?? "#fff" } as CSSProperties} onClick={() => onGrenadeOpen?.(grenade.id)} onPointerEnter={(event) => showPreview(event, grenade)} onPointerLeave={() => setPreview(null)}>{markerIcon(grenade.grenade_type)}</button>)}</div> : null}
       {preview ? <div className="throw-preview-popover" style={previewStyle} data-map-control="1"><div className="throw-preview-head"><span className="throw-preview-mark" /><strong>#{preview.grenade.id} {grenadeLabel(preview.grenade.grenade_type)}</strong><span>{preview.grenade.side}</span>{isInstaGrenade(preview.grenade, spawnMapPoints) ? <em className="insta">{INSTA_LABEL}</em> : null}{preview.grenade.is_core ? <em>Core</em> : null}</div>{previewKeys.length ? <div className="throw-preview-keys">{previewKeys.map((key, index) => { const visual = throwKeyVisual(key); return <span className="throw-preview-key-part" key={`${key}-${index}`}><span className={`throw-preview-key-icon ${visual.kind}`} data-tip={visual.title}><ThrowKeyIcon glyph={visual.glyph} /><span>{visual.label}</span></span>{index < previewKeys.length - 1 ? <span className="throw-preview-plus">+</span> : null}</span>; })}</div> : <div className="throw-preview-empty">No throw keys</div>}<div className="throw-preview-info"><span className="throw-preview-thrower">{preview.grenade.thrower || "Parsed throw"}</span><span>Airtime: <strong>{typeof preview.grenade.airtime === "number" ? `${preview.grenade.airtime.toFixed(2)}s` : "-"}</strong></span><span>Usage: <strong>{formatNumber(preview.grenade.usage_count)}</strong></span></div>{previewCommands.length ? <div className="throw-preview-command">{previewCommands.map((command) => <span key={command}>{command}</span>)}</div> : null}</div> : null}
     </div>
   </div>;

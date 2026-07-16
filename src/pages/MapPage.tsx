@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, BadgeCheck, ChevronLeft, ChevronRight, Filter, LocateFixed, RotateCcw, Search, Send } from "lucide-react";
-import MapCanvas from "../components/MapCanvas";
+import { ArrowLeft, BadgeCheck, Bomb, ChevronLeft, ChevronRight, Filter, LocateFixed, RotateCcw, Search, Send } from "lucide-react";
+import MapCanvas, { type IconTheme } from "../components/MapCanvas";
 import GrenadeList from "../components/GrenadeList";
 import { getClusterGrenades, getMapOverview, getSiteSettings, getSpawnPoints, getThrowClusterGrenades, getThrowOverview, setGrenadeCore, updateSiteSettings } from "../lib/tauri";
 import { formatNumber, grenadeLabel } from "../lib/format";
@@ -39,6 +39,7 @@ type StoredMapViewState = {
   showSpawns: boolean;
   radarMode: RadarMode;
   grenadeMode: GrenadeMode;
+  iconTheme: IconTheme;
 };
 
 const defaultMapFilters = (): MapFilters => ({ grenade_type: "smoke", side: "T", search: "", min_usage: 0, is_core: false });
@@ -70,6 +71,10 @@ function normalizeStoredGrenadeMode(value: unknown): GrenadeMode {
   return value === "throw" ? "throw" : "landing";
 }
 
+function normalizeStoredIconTheme(value: unknown): IconTheme {
+  return value === "asset" ? "asset" : "base";
+}
+
 function readStoredMapViewState(key: string): StoredMapViewState | null {
   try {
     const raw = window.sessionStorage.getItem(key);
@@ -84,6 +89,7 @@ function readStoredMapViewState(key: string): StoredMapViewState | null {
       showSpawns: typeof parsed.showSpawns === "boolean" ? parsed.showSpawns : true,
       radarMode: normalizeStoredRadarMode(parsed.radarMode),
       grenadeMode: normalizeStoredGrenadeMode(parsed.grenadeMode),
+      iconTheme: normalizeStoredIconTheme(parsed.iconTheme),
     };
   } catch {
     return null;
@@ -128,6 +134,7 @@ export default function MapPage({ activeImportId }: MapPageProps) {
   const [loading, setLoading] = useState(true);
   const [radarMode, setRadarMode] = useState<RadarMode>(initialViewState?.radarMode ?? "default");
   const [grenadeMode, setGrenadeMode] = useState<GrenadeMode>(initialViewState?.grenadeMode ?? "landing");
+  const [iconTheme, setIconTheme] = useState<IconTheme>(initialViewState?.iconTheme ?? "base");
   const [siteMinUsage, setSiteMinUsage] = useState(1);
   const [pendingSiteMinUsage, setPendingSiteMinUsage] = useState<number | null>(null);
   const overviewRequestRef = useRef(0);
@@ -158,6 +165,7 @@ export default function MapPage({ activeImportId }: MapPageProps) {
     setShowSpawns(nextViewState?.showSpawns ?? true);
     setRadarMode(nextViewState?.radarMode ?? "default");
     setGrenadeMode(nextViewState?.grenadeMode ?? "landing");
+    setIconTheme(nextViewState?.iconTheme ?? "base");
     clusterRequestRef.current += 1;
     mapTrajectoriesRequestRef.current += 1;
   }, [stateStorageKey]);
@@ -175,8 +183,9 @@ export default function MapPage({ activeImportId }: MapPageProps) {
       showSpawns,
       radarMode,
       grenadeMode,
+      iconTheme,
     });
-  }, [clusterPage, filters, grenadePage, grenadeMode, radarMode, selectedCluster, showSpawns, stateStorageKey]);
+  }, [clusterPage, filters, grenadePage, grenadeMode, iconTheme, radarMode, selectedCluster, showSpawns, stateStorageKey]);
 
   useEffect(() => {
     const requestId = overviewRequestRef.current + 1;
@@ -386,6 +395,15 @@ export default function MapPage({ activeImportId }: MapPageProps) {
             <span>{loading ? tr("Loading overview", "Загрузка обзора") : `${formatNumber(overview?.grenade_count ?? 0)} ${tr("filtered grenades", "гранат по фильтру")}`}</span>
           </div>
           <div className="toolbar-spacer" />
+          <button
+            className={`toggle map-appearance-toggle ${iconTheme === "asset" ? "active" : ""}`}
+            onClick={() => setIconTheme((theme) => theme === "base" ? "asset" : "base")}
+            data-tip={tr("Toggle grenade point icons", "Переключить значки точек")}
+            aria-label={tr("Toggle grenade point icons", "Переключить значки точек")}
+          >
+            <Bomb size={15} />
+            {tr("Icons", "Значки")}
+          </button>
           <button className={`toggle core-toolbar-toggle ${filters.is_core ? "active" : ""}`} onClick={() => setFilters((state) => ({ ...state, is_core: !state.is_core }))}>
             <BadgeCheck size={15} />
             Core
@@ -434,6 +452,7 @@ export default function MapPage({ activeImportId }: MapPageProps) {
           grenadePointMode={grenadeMode === "throw" ? "landing" : "throw"}
           spawnPoints={visibleSpawns}
           showSpawns={showSpawns}
+          iconTheme={iconTheme}
           onClusterSelect={selectCluster}
           onGrenadeOpen={(id) => navigate(`/grenade/${id}`)}
         />
