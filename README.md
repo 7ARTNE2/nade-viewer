@@ -71,20 +71,40 @@ are placed below `src-tauri/target/release/bundle/`.
 
 ## Tests and checks
 
+Run the complete local quality check (formatting, lint, TypeScript, frontend
+build, and Rust checks/tests):
+
+```powershell
+npm run check
+```
+
+Run the same check through the test aggregator:
+
+```powershell
+npm test
+```
+
+Individual quality commands are also available:
+
+```powershell
+npm run format:check
+npm run lint
+npm run typecheck
+npm run cargo:fmt:check
+npm run cargo:check
+npm run cargo:test
+npm run cargo:clippy -- --all-targets -- -D warnings
+```
+
 Run the Rust unit tests:
 
 ```powershell
 cargo test --manifest-path src-tauri/Cargo.toml
 ```
 
-Useful repository checks are:
-
-```powershell
-npm run build
-cargo fmt --manifest-path src-tauri/Cargo.toml --check
-```
-
-There is currently no JavaScript test script in `package.json`.
+`src/styles.css` is intentionally excluded from Prettier because it is a large
+generated-style asset and formatting it would create unrelated churn. CI runs
+the same commands on `windows-latest`, matching the supported Tauri toolchain.
 
 ## Local data
 

@@ -19,7 +19,7 @@ let started = false;
 function computeAndEmit(next: boolean) {
   if (next === active) return;
   active = next;
-  document.body.classList.toggle("app-inactive", !active);
+  document.body.classList.toggle('app-inactive', !active);
   for (const listener of listeners) listener(active);
 }
 
@@ -36,7 +36,7 @@ export function onWindowActiveChange(listener: Listener): () => void {
 
 // Track the two DOM signals plus the Tauri focus signal separately, then derive
 // the combined "active" state so any single "inactive" source wins.
-let domVisible = typeof document === "undefined" ? true : !document.hidden;
+let domVisible = typeof document === 'undefined' ? true : !document.hidden;
 let windowFocused = true;
 let tauriFocused = true;
 
@@ -61,9 +61,9 @@ export function startWindowActiveTracking(): () => void {
     recompute();
   };
 
-  document.addEventListener("visibilitychange", onVisibility);
-  window.addEventListener("focus", onFocus);
-  window.addEventListener("blur", onBlur);
+  document.addEventListener('visibilitychange', onVisibility);
+  window.addEventListener('focus', onFocus);
+  window.addEventListener('blur', onBlur);
 
   // Initialize from current state.
   domVisible = !document.hidden;
@@ -75,7 +75,7 @@ export function startWindowActiveTracking(): () => void {
   // plain browser dev context.
   let unlistenTauri: (() => void) | null = null;
   let disposed = false;
-  void import("@tauri-apps/api/window")
+  void import('@tauri-apps/api/window')
     .then(({ getCurrentWindow }) => {
       if (disposed) return;
       const win = getCurrentWindow();
@@ -85,7 +85,7 @@ export function startWindowActiveTracking(): () => void {
       });
     })
     .then((unlisten) => {
-      if (typeof unlisten === "function") {
+      if (typeof unlisten === 'function') {
         if (disposed) unlisten();
         else unlistenTauri = unlisten;
       }
@@ -97,9 +97,9 @@ export function startWindowActiveTracking(): () => void {
   return () => {
     disposed = true;
     started = false;
-    document.removeEventListener("visibilitychange", onVisibility);
-    window.removeEventListener("focus", onFocus);
-    window.removeEventListener("blur", onBlur);
+    document.removeEventListener('visibilitychange', onVisibility);
+    window.removeEventListener('focus', onFocus);
+    window.removeEventListener('blur', onBlur);
     unlistenTauri?.();
   };
 }

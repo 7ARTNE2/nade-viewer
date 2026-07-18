@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
-type Placement = "top" | "bottom" | "left" | "right";
+type Placement = 'top' | 'bottom' | 'left' | 'right';
 
 type TipState = {
   text: string;
@@ -24,7 +24,11 @@ export default function Tooltip() {
   const showTimer = useRef<number | null>(null);
   const currentAnchor = useRef<HTMLElement | null>(null);
   const pendingAnchor = useRef<HTMLElement | null>(null);
-  const [coords, setCoords] = useState<{ left: number; top: number; placement: Placement } | null>(null);
+  const [coords, setCoords] = useState<{
+    left: number;
+    top: number;
+    placement: Placement;
+  } | null>(null);
 
   useEffect(() => {
     const clearShowTimer = () => {
@@ -45,8 +49,8 @@ export default function Tooltip() {
     const findAnchor = (start: EventTarget | null): HTMLElement | null => {
       let el = start as HTMLElement | null;
       while (el && el !== document.body) {
-        if (el.nodeType === 1 && el.hasAttribute("data-tip")) {
-          const text = el.getAttribute("data-tip");
+        if (el.nodeType === 1 && el.hasAttribute('data-tip')) {
+          const text = el.getAttribute('data-tip');
           if (text && text.trim()) return el;
         }
         el = el.parentElement;
@@ -55,9 +59,10 @@ export default function Tooltip() {
     };
 
     const open = (anchor: HTMLElement) => {
-      const text = (anchor.getAttribute("data-tip") || "").trim();
+      const text = (anchor.getAttribute('data-tip') || '').trim();
       if (!text) return;
-      const placement = (anchor.getAttribute("data-tip-pos") as Placement | null) || "top";
+      const placement =
+        (anchor.getAttribute('data-tip-pos') as Placement | null) || 'top';
       pendingAnchor.current = anchor;
       clearShowTimer();
       showTimer.current = window.setTimeout(() => {
@@ -73,7 +78,8 @@ export default function Tooltip() {
         return;
       }
       // Already showing or already counting down for this anchor: do nothing.
-      if (anchor === currentAnchor.current || anchor === pendingAnchor.current) return;
+      if (anchor === currentAnchor.current || anchor === pendingAnchor.current)
+        return;
       open(anchor);
     };
 
@@ -96,25 +102,25 @@ export default function Tooltip() {
     const onScroll = () => hide();
     const onKeyDown = () => hide();
 
-    document.addEventListener("pointerover", onPointerOver, true);
-    document.addEventListener("pointerout", onPointerOut, true);
-    document.addEventListener("focusin", onFocusIn, true);
-    document.addEventListener("focusout", onFocusOut, true);
-    window.addEventListener("scroll", onScroll, true);
-    window.addEventListener("resize", onScroll, true);
-    window.addEventListener("keydown", onKeyDown, true);
-    window.addEventListener("pointerdown", hide, true);
+    document.addEventListener('pointerover', onPointerOver, true);
+    document.addEventListener('pointerout', onPointerOut, true);
+    document.addEventListener('focusin', onFocusIn, true);
+    document.addEventListener('focusout', onFocusOut, true);
+    window.addEventListener('scroll', onScroll, true);
+    window.addEventListener('resize', onScroll, true);
+    window.addEventListener('keydown', onKeyDown, true);
+    window.addEventListener('pointerdown', hide, true);
 
     return () => {
       clearShowTimer();
-      document.removeEventListener("pointerover", onPointerOver, true);
-      document.removeEventListener("pointerout", onPointerOut, true);
-      document.removeEventListener("focusin", onFocusIn, true);
-      document.removeEventListener("focusout", onFocusOut, true);
-      window.removeEventListener("scroll", onScroll, true);
-      window.removeEventListener("resize", onScroll, true);
-      window.removeEventListener("keydown", onKeyDown, true);
-      window.removeEventListener("pointerdown", hide, true);
+      document.removeEventListener('pointerover', onPointerOver, true);
+      document.removeEventListener('pointerout', onPointerOut, true);
+      document.removeEventListener('focusin', onFocusIn, true);
+      document.removeEventListener('focusout', onFocusOut, true);
+      window.removeEventListener('scroll', onScroll, true);
+      window.removeEventListener('resize', onScroll, true);
+      window.removeEventListener('keydown', onKeyDown, true);
+      window.removeEventListener('pointerdown', hide, true);
     };
   }, []);
 
@@ -134,23 +140,29 @@ export default function Tooltip() {
     const r = tip.rect;
 
     const fits = (placement: Placement): boolean => {
-      if (placement === "top") return r.top - GAP - th >= EDGE;
-      if (placement === "bottom") return r.bottom + GAP + th <= vh - EDGE;
-      if (placement === "left") return r.left - GAP - tw >= EDGE;
+      if (placement === 'top') return r.top - GAP - th >= EDGE;
+      if (placement === 'bottom') return r.bottom + GAP + th <= vh - EDGE;
+      if (placement === 'left') return r.left - GAP - tw >= EDGE;
       return r.right + GAP + tw <= vw - EDGE;
     };
 
-    const opposite: Record<Placement, Placement> = { top: "bottom", bottom: "top", left: "right", right: "left" };
+    const opposite: Record<Placement, Placement> = {
+      top: 'bottom',
+      bottom: 'top',
+      left: 'right',
+      right: 'left',
+    };
     let placement = tip.placement;
-    if (!fits(placement) && fits(opposite[placement])) placement = opposite[placement];
+    if (!fits(placement) && fits(opposite[placement]))
+      placement = opposite[placement];
 
     let left: number;
     let top: number;
-    if (placement === "top" || placement === "bottom") {
+    if (placement === 'top' || placement === 'bottom') {
       left = r.left + r.width / 2 - tw / 2;
-      top = placement === "top" ? r.top - GAP - th : r.bottom + GAP;
+      top = placement === 'top' ? r.top - GAP - th : r.bottom + GAP;
     } else {
-      left = placement === "left" ? r.left - GAP - tw : r.right + GAP;
+      left = placement === 'left' ? r.left - GAP - tw : r.right + GAP;
       top = r.top + r.height / 2 - th / 2;
     }
 
@@ -166,9 +178,12 @@ export default function Tooltip() {
   return createPortal(
     <div
       ref={tipRef}
-      className={`app-tooltip placement-${coords?.placement ?? tip.placement} ${coords ? "visible" : ""}`}
+      className={`app-tooltip placement-${coords?.placement ?? tip.placement} ${coords ? 'visible' : ''}`}
       role="tooltip"
-      style={{ left: coords ? `${coords.left}px` : "-9999px", top: coords ? `${coords.top}px` : "-9999px" }}
+      style={{
+        left: coords ? `${coords.left}px` : '-9999px',
+        top: coords ? `${coords.top}px` : '-9999px',
+      }}
     >
       {tip.text}
     </div>,

@@ -10,7 +10,7 @@ export type ImportStatus = {
 export type ImportSummary = {
   id: number;
   source_path: string;
-  kind: "grenade_index" | "core_nades" | string;
+  kind: 'grenade_index' | 'core_nades' | string;
   label?: string | null;
   imported_at: string;
   parser_version?: number | null;
@@ -35,14 +35,14 @@ export type CoreNadesExportReport = {
 
 export type JsonImportReport =
   | {
-      kind: "grenade_index";
+      kind: 'grenade_index';
       import_id: number;
       grenade_count: number;
       map_count: number;
       source_path: string;
     }
   | {
-      kind: "core_nades";
+      kind: 'core_nades';
       import_id: number;
       grenade_count: number;
       map_count: number;
@@ -66,7 +66,7 @@ export type MapFilters = {
   side?: string;
   search?: string;
   min_usage?: number;
-  radar_level?: "default" | "lower";
+  radar_level?: 'default' | 'lower';
   is_core?: boolean;
 };
 
@@ -76,9 +76,9 @@ export type LandingCluster = {
   y: number;
   count: number;
   first_grenade_id: number;
-  side_key: "T" | "CT" | "MIX" | "NEUTRAL" | string;
+  side_key: 'T' | 'CT' | 'MIX' | 'NEUTRAL' | string;
   unique_types: string[];
-  radar_level: "default" | "lower" | "unknown" | string;
+  radar_level: 'default' | 'lower' | 'unknown' | string;
 };
 
 export type MapOverview = {
@@ -93,8 +93,8 @@ export type MapOverview = {
 export type GrenadePreview = {
   id: number;
   map: string;
-  side: "T" | "CT" | "Any" | string;
-  grenade_type: "smoke" | "flash" | "molotov" | "HE" | string;
+  side: 'T' | 'CT' | 'Any' | string;
+  grenade_type: 'smoke' | 'flash' | 'molotov' | 'HE' | string;
   is_core: boolean;
   throw_description?: string | null;
   coordinates?: string | null;
@@ -106,7 +106,7 @@ export type GrenadePreview = {
   explode_map_x?: number | null;
   explode_map_y?: number | null;
   explode_pos_z?: number | null;
-  explode_radar_level: "default" | "lower" | "unknown" | string;
+  explode_radar_level: 'default' | 'lower' | 'unknown' | string;
   trajectory_preview?: Array<[number, number]> | null;
 };
 
@@ -133,7 +133,7 @@ export type GrenadeDetail = GrenadePreview & {
 
 export type SpawnPoint = {
   map: string;
-  side: "T" | "CT" | string;
+  side: 'T' | 'CT' | string;
   pos_x: number;
   pos_y: number;
   pos_z: number;

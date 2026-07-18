@@ -797,7 +797,7 @@ fn seed_assets(conn: &Connection, resource_dir: &Path) -> AppResult<()> {
             let lower = file_name.contains("lower");
             let slot = map_files.entry(key.clone()).or_default();
             if lower {
-                if slot.1.as_ref().map_or(true, |old| {
+                if slot.1.as_ref().is_none_or(|old| {
                     asset_score(file_name, &key, true)
                         > asset_score(
                             old.file_name().unwrap().to_str().unwrap_or_default(),
@@ -807,7 +807,7 @@ fn seed_assets(conn: &Connection, resource_dir: &Path) -> AppResult<()> {
                 }) {
                     slot.1 = Some(path);
                 }
-            } else if slot.0.as_ref().map_or(true, |old| {
+            } else if slot.0.as_ref().is_none_or(|old| {
                 asset_score(file_name, &key, false)
                     > asset_score(
                         old.file_name().unwrap().to_str().unwrap_or_default(),
@@ -831,7 +831,7 @@ fn seed_assets(conn: &Connection, resource_dir: &Path) -> AppResult<()> {
                 continue;
             };
             let key = caps[1].to_string();
-            if preview_files.get(&key).map_or(true, |old| {
+            if preview_files.get(&key).is_none_or(|old| {
                 asset_score(file_name, &key, false)
                     > asset_score(
                         old.file_name().unwrap().to_str().unwrap_or_default(),
@@ -1494,7 +1494,7 @@ fn set_active_import_in_conn(conn: &Connection, import_id: i64) -> AppResult<Imp
          ON CONFLICT(key) DO UPDATE SET value=excluded.value",
         params![import_id.to_string()],
     )?;
-    get_active_import_from_conn(&conn)?
+    get_active_import_from_conn(conn)?
         .ok_or_else(|| AppError::Message("Active import not found".to_string()))
 }
 
@@ -1587,7 +1587,7 @@ fn delete_import_from_conn(
     }
 
     tx.commit()?;
-    get_active_import_from_conn(&conn)
+    get_active_import_from_conn(conn)
 }
 
 #[tauri::command]
@@ -1607,7 +1607,7 @@ fn get_import_summary_by_id(
     import_id: i64,
     is_active: bool,
 ) -> AppResult<ImportSummary> {
-    Ok(conn
+    conn
         .query_row(
             "SELECT id, source_path, kind, label, imported_at, parser_version, parser_updated_at, grenade_count, map_count FROM imports WHERE id=?1",
             params![import_id],
@@ -1627,7 +1627,7 @@ fn get_import_summary_by_id(
             },
         )
         .optional()?
-        .ok_or_else(|| AppError::Message("Import not found".to_string()))?)
+        .ok_or_else(|| AppError::Message("Import not found".to_string()))
 }
 
 #[tauri::command]
@@ -1808,8 +1808,8 @@ fn map_overview_by(
             let sides: String = row.get(6)?;
             let types: String = row.get(7)?;
             let side_values = sides.split(',').collect::<Vec<_>>();
-            let has_t = side_values.iter().any(|side| *side == "T");
-            let has_ct = side_values.iter().any(|side| *side == "CT");
+            let has_t = side_values.contains(&"T");
+            let has_ct = side_values.contains(&"CT");
             let side_key = if has_t && has_ct {
                 "MIX"
             } else if has_t {
@@ -2269,7 +2269,8 @@ fn get_similar_grenades(
 ) -> AppResult<Vec<GrenadePreview>> {
     let conn = open_conn(&state)?;
     active_grenade_import_id(&conn, id)?;
-    let base: Option<(i64, String, String, Option<f64>, Option<f64>)> = conn
+    type SimilarBase = (i64, String, String, Option<f64>, Option<f64>);
+    let base: Option<SimilarBase> = conn
         .query_row(
             "SELECT import_id, map, grenade_type, explode_map_x, explode_map_y
              FROM grenades

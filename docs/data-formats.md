@@ -24,38 +24,38 @@ The canonical envelope maps to `ParserIndex`, and each entry maps to
 
 ### Envelope fields
 
-| Field | JSON type | Required | Meaning |
-| --- | --- | --- | --- |
-| `version` | integer | No | Parser/index version stored with the import. If present and non-null, it must be the supported version `1`; other versions are rejected with the supplied and supported versions in the diagnostic. |
-| `updated_at` | string | No | Parser/index update text stored with the import; the importer does not validate a timestamp format. |
-| `core_nades` | boolean | No | Defaults to `false`. When `true`, the import is classified as `core_nades` and every imported record starts with its Core flag set. |
-| `canonical_grenades` | array of canonical records | Yes | Records to import; an empty array is valid. |
+| Field                | JSON type                  | Required | Meaning                                                                                                                                                                                             |
+| -------------------- | -------------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `version`            | integer                    | No       | Parser/index version stored with the import. If present and non-null, it must be the supported version `1`; other versions are rejected with the supplied and supported versions in the diagnostic. |
+| `updated_at`         | string                     | No       | Parser/index update text stored with the import; the importer does not validate a timestamp format.                                                                                                 |
+| `core_nades`         | boolean                    | No       | Defaults to `false`. When `true`, the import is classified as `core_nades` and every imported record starts with its Core flag set.                                                                 |
+| `canonical_grenades` | array of canonical records | Yes      | Records to import; an empty array is valid.                                                                                                                                                         |
 
 ### Canonical record fields
 
-| Field | JSON type | Required | Meaning |
-| --- | --- | --- | --- |
-| `map` | string | Yes | Map name. It is stored exactly as supplied; radar lookup lowercases it and adds `de_` if absent. |
-| `side` | string | No | Side label; defaults to `"Any"`. |
-| `grenade_type` | string | No | Grenade type; defaults to `"smoke"`. |
-| `throw_description` | string | No | Human-readable throw instructions. |
-| `usage_count` | integer | No | Usage frequency; defaults to `1`. |
-| `usage_throwers` | array of strings | No | Players associated with uses; defaults to an empty array. |
-| `coordinates` | string | No | Source coordinate/position text displayed by the application. |
-| `demo_filename` | string | No | Source demo filename. |
-| `throw_tick` | integer | No | Tick at which the grenade was thrown. |
-| `lineup_tick` | integer | No | Tick for the lineup position. |
-| `tickrate` | integer | No | Demo tick rate. |
-| `round_time_seconds` | number | No | Time within the round. |
-| `start_pos_x` | number | No | Throw origin X in game/world coordinates. |
-| `start_pos_y` | number | No | Throw origin Y in game/world coordinates. |
-| `start_pos_z` | number | No | Throw origin Z in game/world coordinates. |
-| `explode_pos_x` | number | No | Detonation/landing X in game/world coordinates. |
-| `explode_pos_y` | number | No | Detonation/landing Y in game/world coordinates. |
-| `explode_pos_z` | number | No | Detonation/landing Z, also used to choose a radar level. |
-| `trajectory` | array of arrays of numbers | No | World-space trajectory points. Each point needs at least X and Y to appear in the sampled map preview; additional values such as Z are retained. |
-| `thrower` | string | No | Primary player/thrower name. |
-| `airtime` | number | No | Grenade airtime. No unit conversion or range validation is applied. |
+| Field                | JSON type                  | Required | Meaning                                                                                                                                          |
+| -------------------- | -------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `map`                | string                     | Yes      | Map name. It is stored exactly as supplied; radar lookup lowercases it and adds `de_` if absent.                                                 |
+| `side`               | string                     | No       | Side label; defaults to `"Any"`.                                                                                                                 |
+| `grenade_type`       | string                     | No       | Grenade type; defaults to `"smoke"`.                                                                                                             |
+| `throw_description`  | string                     | No       | Human-readable throw instructions.                                                                                                               |
+| `usage_count`        | integer                    | No       | Usage frequency; defaults to `1`.                                                                                                                |
+| `usage_throwers`     | array of strings           | No       | Players associated with uses; defaults to an empty array.                                                                                        |
+| `coordinates`        | string                     | No       | Source coordinate/position text displayed by the application.                                                                                    |
+| `demo_filename`      | string                     | No       | Source demo filename.                                                                                                                            |
+| `throw_tick`         | integer                    | No       | Tick at which the grenade was thrown.                                                                                                            |
+| `lineup_tick`        | integer                    | No       | Tick for the lineup position.                                                                                                                    |
+| `tickrate`           | integer                    | No       | Demo tick rate.                                                                                                                                  |
+| `round_time_seconds` | number                     | No       | Time within the round.                                                                                                                           |
+| `start_pos_x`        | number                     | No       | Throw origin X in game/world coordinates.                                                                                                        |
+| `start_pos_y`        | number                     | No       | Throw origin Y in game/world coordinates.                                                                                                        |
+| `start_pos_z`        | number                     | No       | Throw origin Z in game/world coordinates.                                                                                                        |
+| `explode_pos_x`      | number                     | No       | Detonation/landing X in game/world coordinates.                                                                                                  |
+| `explode_pos_y`      | number                     | No       | Detonation/landing Y in game/world coordinates.                                                                                                  |
+| `explode_pos_z`      | number                     | No       | Detonation/landing Z, also used to choose a radar level.                                                                                         |
+| `trajectory`         | array of arrays of numbers | No       | World-space trajectory points. Each point needs at least X and Y to appear in the sampled map preview; additional values such as Z are retained. |
+| `thrower`            | string                     | No       | Primary player/thrower name.                                                                                                                     |
+| `airtime`            | number                     | No       | Grenade airtime. No unit conversion or range validation is applied.                                                                              |
 
 All numeric fields must be JSON numbers. Integer fields do not accept decimal
 values. Optional position pairs are only projected to radar coordinates when a
@@ -117,35 +117,35 @@ The application accepts two representations of a Core collection.
 A root `grenades` key selects `CoreNadesFile`. Unlike the canonical format, the
 three identifying fields on every record are required.
 
-| Envelope field | JSON type | Required | Meaning |
-| --- | --- | --- | --- |
-| `version` | integer | Yes | Snapshot version, stored as the import parser version. It must be integer `1`; missing, non-integer, and unsupported versions have distinct diagnostics. |
-| `exported_at` | string | Yes | Export metadata stored with the import; no timestamp syntax is validated. |
-| `grenades` | array of Core records | Yes | Records to import; an empty array is valid. |
+| Envelope field | JSON type             | Required | Meaning                                                                                                                                                  |
+| -------------- | --------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `version`      | integer               | Yes      | Snapshot version, stored as the import parser version. It must be integer `1`; missing, non-integer, and unsupported versions have distinct diagnostics. |
+| `exported_at`  | string                | Yes      | Export metadata stored with the import; no timestamp syntax is validated.                                                                                |
+| `grenades`     | array of Core records | Yes      | Records to import; an empty array is valid.                                                                                                              |
 
-| Core record field | JSON type | Required | Meaning |
-| --- | --- | --- | --- |
-| `source_index` | integer | No | Original record index; defaults to the record's zero-based array position. |
-| `map` | string | Yes | Map name. |
-| `side` | string | Yes | Side label. There is no default in this format. |
-| `grenade_type` | string | Yes | Grenade type. There is no default in this format. |
-| `throw_description` | string | No | Human-readable throw instructions. |
-| `coordinates` | string | No | Source coordinate/position text. |
-| `thrower` | string | No | Primary player/thrower name. |
-| `airtime` | number | No | Grenade airtime. |
-| `usage_count` | integer | No | Usage frequency; defaults to `1`. |
-| `usage_throwers` | array of strings | No | Players associated with uses; defaults to an empty array. |
-| `demo_filename` | string | No | Source demo filename. |
-| `throw_tick` | integer | No | Throw tick. |
-| `lineup_tick` | integer | No | Lineup tick. |
-| `tickrate` | integer | No | Demo tick rate. |
-| `round_time_seconds` | number | No | Time within the round. |
-| `start_pos_x`, `start_pos_y`, `start_pos_z` | number | No | Throw origin in game/world coordinates. |
-| `explode_pos_x`, `explode_pos_y`, `explode_pos_z` | number | No | Detonation/landing position in game/world coordinates. |
-| `start_map_x`, `start_map_y` | number | No | Precomputed throw-origin radar coordinates, used only when world X/Y cannot be projected. |
-| `explode_map_x`, `explode_map_y` | number | No | Precomputed landing radar coordinates, used only when world X/Y cannot be projected. |
-| `trajectory` | array of arrays of numbers | No | Full world-space trajectory. It is retained unchanged for canonical Core re-export and is used to generate a sampled preview when `trajectory_preview` is absent. |
-| `trajectory_preview` | any JSON value | No | Precomputed preview stored as-is. The UI expects point-like data, but import performs no shape validation. |
+| Core record field                                 | JSON type                  | Required | Meaning                                                                                                                                                           |
+| ------------------------------------------------- | -------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `source_index`                                    | integer                    | No       | Original record index; defaults to the record's zero-based array position.                                                                                        |
+| `map`                                             | string                     | Yes      | Map name.                                                                                                                                                         |
+| `side`                                            | string                     | Yes      | Side label. There is no default in this format.                                                                                                                   |
+| `grenade_type`                                    | string                     | Yes      | Grenade type. There is no default in this format.                                                                                                                 |
+| `throw_description`                               | string                     | No       | Human-readable throw instructions.                                                                                                                                |
+| `coordinates`                                     | string                     | No       | Source coordinate/position text.                                                                                                                                  |
+| `thrower`                                         | string                     | No       | Primary player/thrower name.                                                                                                                                      |
+| `airtime`                                         | number                     | No       | Grenade airtime.                                                                                                                                                  |
+| `usage_count`                                     | integer                    | No       | Usage frequency; defaults to `1`.                                                                                                                                 |
+| `usage_throwers`                                  | array of strings           | No       | Players associated with uses; defaults to an empty array.                                                                                                         |
+| `demo_filename`                                   | string                     | No       | Source demo filename.                                                                                                                                             |
+| `throw_tick`                                      | integer                    | No       | Throw tick.                                                                                                                                                       |
+| `lineup_tick`                                     | integer                    | No       | Lineup tick.                                                                                                                                                      |
+| `tickrate`                                        | integer                    | No       | Demo tick rate.                                                                                                                                                   |
+| `round_time_seconds`                              | number                     | No       | Time within the round.                                                                                                                                            |
+| `start_pos_x`, `start_pos_y`, `start_pos_z`       | number                     | No       | Throw origin in game/world coordinates.                                                                                                                           |
+| `explode_pos_x`, `explode_pos_y`, `explode_pos_z` | number                     | No       | Detonation/landing position in game/world coordinates.                                                                                                            |
+| `start_map_x`, `start_map_y`                      | number                     | No       | Precomputed throw-origin radar coordinates, used only when world X/Y cannot be projected.                                                                         |
+| `explode_map_x`, `explode_map_y`                  | number                     | No       | Precomputed landing radar coordinates, used only when world X/Y cannot be projected.                                                                              |
+| `trajectory`                                      | array of arrays of numbers | No       | Full world-space trajectory. It is retained unchanged for canonical Core re-export and is used to generate a sampled preview when `trajectory_preview` is absent. |
+| `trajectory_preview`                              | any JSON value             | No       | Precomputed preview stored as-is. The UI expects point-like data, but import performs no shape validation.                                                        |
 
 When both world X/Y and precomputed map X/Y exist, successfully projected world
 coordinates take precedence. Every record imported through this envelope is

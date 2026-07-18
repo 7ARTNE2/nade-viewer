@@ -1,33 +1,52 @@
-import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, BadgeCheck, Clipboard, Clock, Crosshair, FileText, MapPinned, Timer } from "lucide-react";
-import MapCanvas from "../components/MapCanvas";
-import GrenadeList from "../components/GrenadeList";
-import ThrowKeyIcon from "../components/ThrowKeyIcon";
-import { getGrenade, getSimilarGrenades, getSpawnPoints, recordGrenadeView, setGrenadeCore } from "../lib/tauri";
-import { formatClock, formatNumber, grenadeLabel } from "../lib/format";
-import { buildSpawnMapPoints, INSTA_LABEL, isInstaGrenade } from "../lib/insta";
-import { splitThrowKeys, throwKeyVisual } from "../lib/throwKeys";
-import type { GrenadeDetail, GrenadePreview, SpawnPoint } from "../types/domain";
-import { useI18n } from "../i18n";
+import { useEffect, useMemo, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import {
+  ArrowLeft,
+  BadgeCheck,
+  Clipboard,
+  Clock,
+  Crosshair,
+  FileText,
+  MapPinned,
+  Timer,
+} from 'lucide-react';
+import MapCanvas from '../components/MapCanvas';
+import GrenadeList from '../components/GrenadeList';
+import ThrowKeyIcon from '../components/ThrowKeyIcon';
+import {
+  getGrenade,
+  getSimilarGrenades,
+  getSpawnPoints,
+  recordGrenadeView,
+  setGrenadeCore,
+} from '../lib/tauri';
+import { formatClock, formatNumber, grenadeLabel } from '../lib/format';
+import { buildSpawnMapPoints, INSTA_LABEL, isInstaGrenade } from '../lib/insta';
+import { splitThrowKeys, throwKeyVisual } from '../lib/throwKeys';
+import type {
+  GrenadeDetail,
+  GrenadePreview,
+  SpawnPoint,
+} from '../types/domain';
+import { useI18n } from '../i18n';
 
 const detailTypeColor: Record<string, string> = {
-  smoke: "#67e8f9",
-  flash: "#fbbf24",
-  molotov: "#fb7185",
-  HE: "#34d399",
+  smoke: '#67e8f9',
+  flash: '#fbbf24',
+  molotov: '#fb7185',
+  HE: '#34d399',
 };
 
 const detailTypeRgb: Record<string, string> = {
-  smoke: "103, 232, 249",
-  flash: "251, 191, 36",
-  molotov: "251, 113, 133",
-  HE: "52, 211, 153",
+  smoke: '103, 232, 249',
+  flash: '251, 191, 36',
+  molotov: '251, 113, 133',
+  HE: '52, 211, 153',
 };
 
 export default function GrenadePage() {
   const { tr } = useI18n();
-  const { id = "" } = useParams();
+  const { id = '' } = useParams();
   const navigate = useNavigate();
   const grenadeId = Number(id);
   const [grenade, setGrenade] = useState<GrenadeDetail | null>(null);
@@ -38,7 +57,7 @@ export default function GrenadePage() {
 
   useEffect(() => {
     if (!Number.isInteger(grenadeId) || grenadeId <= 0) {
-      navigate("/maps", { replace: true });
+      navigate('/maps', { replace: true });
       return;
     }
     let cancelled = false;
@@ -46,11 +65,22 @@ export default function GrenadePage() {
     getGrenade(grenadeId)
       .then(async (detail) => {
         if (cancelled) return;
-        setGrenade({ ...detail, usage_throwers: Array.isArray(detail.usage_throwers) ? detail.usage_throwers : [] });
-        recordGrenadeView(detail.id).catch((error) => {
-          console.warn(`Unable to record grenade ${detail.id} in view history`, error);
+        setGrenade({
+          ...detail,
+          usage_throwers: Array.isArray(detail.usage_throwers)
+            ? detail.usage_throwers
+            : [],
         });
-        const [list, spawns] = await Promise.all([getSimilarGrenades(grenadeId, 10), getSpawnPoints(detail.map, "Any")]);
+        recordGrenadeView(detail.id).catch((error) => {
+          console.warn(
+            `Unable to record grenade ${detail.id} in view history`,
+            error,
+          );
+        });
+        const [list, spawns] = await Promise.all([
+          getSimilarGrenades(grenadeId, 10),
+          getSpawnPoints(detail.map, 'Any'),
+        ]);
         if (cancelled) return;
         setSimilar(Array.isArray(list) ? list : []);
         setSpawnPoints(Array.isArray(spawns) ? spawns : []);
@@ -58,19 +88,34 @@ export default function GrenadePage() {
       .catch((error) => {
         if (cancelled) return;
         console.error(error);
-        setLoadError(tr("This grenade is no longer available in the active library.", "Этой гранаты больше нет в активной библиотеке."));
+        setLoadError(
+          tr(
+            'This grenade is no longer available in the active library.',
+            'Этой гранаты больше нет в активной библиотеке.',
+          ),
+        );
       });
     return () => {
       cancelled = true;
     };
   }, [grenadeId, navigate]);
 
-  const previewPoint = useMemo(() => (grenade ? [{ ...grenade }] : []), [grenade]);
-  const spawnMapPoints = useMemo(() => buildSpawnMapPoints(spawnPoints), [spawnPoints]);
+  const previewPoint = useMemo(
+    () => (grenade ? [{ ...grenade }] : []),
+    [grenade],
+  );
+  const spawnMapPoints = useMemo(
+    () => buildSpawnMapPoints(spawnPoints),
+    [spawnPoints],
+  );
   const isInsta = grenade ? isInstaGrenade(grenade, spawnMapPoints) : false;
   const throwKeys = splitThrowKeys(grenade?.throw_description);
-  const detailAccent = grenade ? detailTypeColor[grenade.grenade_type] ?? "#e5e7eb" : "#e5e7eb";
-  const detailAccentRgb = grenade ? detailTypeRgb[grenade.grenade_type] ?? "229, 231, 235" : "229, 231, 235";
+  const detailAccent = grenade
+    ? (detailTypeColor[grenade.grenade_type] ?? '#e5e7eb')
+    : '#e5e7eb';
+  const detailAccentRgb = grenade
+    ? (detailTypeRgb[grenade.grenade_type] ?? '229, 231, 235')
+    : '229, 231, 235';
 
   const copy = async (text?: string | null) => {
     if (!text) return;
@@ -82,7 +127,7 @@ export default function GrenadePage() {
   const goBack = () => {
     if (!grenade) return;
     const historyState = window.history.state as { idx?: number } | null;
-    if (typeof historyState?.idx === "number" && historyState.idx > 0) {
+    if (typeof historyState?.idx === 'number' && historyState.idx > 0) {
       navigate(-1);
       return;
     }
@@ -91,12 +136,29 @@ export default function GrenadePage() {
 
   const handleCoreToggle = async (id: number, isCore: boolean) => {
     await setGrenadeCore(id, isCore);
-    setSimilar((list) => list.map((item) => (item.id === id ? { ...item, is_core: isCore } : item)));
-    setGrenade((current) => (current && current.id === id ? { ...current, is_core: isCore } : current));
+    setSimilar((list) =>
+      list.map((item) =>
+        item.id === id ? { ...item, is_core: isCore } : item,
+      ),
+    );
+    setGrenade((current) =>
+      current && current.id === id ? { ...current, is_core: isCore } : current,
+    );
   };
 
   if (!grenade) {
-    if (loadError) return <div className="detail-load-error"><strong>{tr("Unable to open grenade", "Не удалось открыть гранату")}</strong><p>{loadError}</p><button className="btn primary" onClick={() => navigate("/maps")}>{tr("Back to maps", "К картам")}</button></div>;
+    if (loadError)
+      return (
+        <div className="detail-load-error">
+          <strong>
+            {tr('Unable to open grenade', 'Не удалось открыть гранату')}
+          </strong>
+          <p>{loadError}</p>
+          <button className="btn primary" onClick={() => navigate('/maps')}>
+            {tr('Back to maps', 'К картам')}
+          </button>
+        </div>
+      );
     return (
       <div className="detail-loading">
         <div className="loader-ring" />
@@ -108,49 +170,110 @@ export default function GrenadePage() {
     <div className="grenade-detail">
       <section className="detail-map-panel">
         <div className="map-toolbar">
-           <button className="icon-btn" onClick={goBack} aria-label={tr("Back to maps", "К картам")}>
+          <button
+            className="icon-btn"
+            onClick={goBack}
+            aria-label={tr('Back to maps', 'К картам')}
+          >
             <ArrowLeft size={16} />
           </button>
           <div className="map-heading">
-            <strong>{tr("Grenade", "Граната")} #{grenade.id}</strong>
-            <span>{grenade.map} / {grenadeLabel(grenade.grenade_type)}</span>
+            <strong>
+              {tr('Grenade', 'Граната')} #{grenade.id}
+            </strong>
+            <span>
+              {grenade.map} / {grenadeLabel(grenade.grenade_type)}
+            </span>
           </div>
         </div>
-        <MapCanvas mapImagePath={grenade.map_image_path} grenades={previewPoint} spawnPoints={spawnPoints} />
+        <MapCanvas
+          mapImagePath={grenade.map_image_path}
+          grenades={previewPoint}
+          spawnPoints={spawnPoints}
+        />
       </section>
 
-      <aside className="detail-inspector" style={{ "--dot": detailAccent, "--detail-rgb": detailAccentRgb } as React.CSSProperties}>
+      <aside
+        className="detail-inspector"
+        style={
+          {
+            '--dot': detailAccent,
+            '--detail-rgb': detailAccentRgb,
+          } as React.CSSProperties
+        }
+      >
         <div className="detail-title-row">
-          <span className={`type-pill ${String(grenade.grenade_type).toLowerCase()}`}>{grenadeLabel(grenade.grenade_type)}</span>
+          <span
+            className={`type-pill ${String(grenade.grenade_type).toLowerCase()}`}
+          >
+            {grenadeLabel(grenade.grenade_type)}
+          </span>
           <span className="side-mini">{grenade.side}</span>
-          <strong>{grenade.thrower || tr("Parsed grenade", "Распознанная граната")}</strong>
+          <strong>
+            {grenade.thrower || tr('Parsed grenade', 'Распознанная граната')}
+          </strong>
           {isInsta ? <span className="insta-badge">{INSTA_LABEL}</span> : null}
-          <button className={`core-action detail-core ${grenade.is_core ? "active" : ""}`} onClick={() => handleCoreToggle(grenade.id, !grenade.is_core)}>
+          <button
+            className={`core-action detail-core ${grenade.is_core ? 'active' : ''}`}
+            onClick={() => handleCoreToggle(grenade.id, !grenade.is_core)}
+          >
             <BadgeCheck size={14} />
-            {grenade.is_core ? tr("In Core", "В Core") : tr("Add to Core", "Добавить в Core")}
+            {grenade.is_core
+              ? tr('In Core', 'В Core')
+              : tr('Add to Core', 'Добавить в Core')}
           </button>
         </div>
 
         <div className="metric-grid">
-          <div><Timer size={14} /><span>{tr("Airtime", "Время полета")}</span><strong>{typeof grenade.airtime === "number" ? `${grenade.airtime.toFixed(2)}s` : "-"}</strong></div>
-          <div><Clock size={14} /><span>{tr("Round", "Раунд")}</span><strong>{formatClock(grenade.round_time_seconds)}</strong></div>
-          <div><Crosshair size={14} /><span>{tr("Usage", "Использования")}</span><strong>{formatNumber(grenade.usage_count)}</strong></div>
-          <div><MapPinned size={14} /><span>{tr("Tickrate", "Тикрейт")}</span><strong>{grenade.tickrate ?? "-"}</strong></div>
+          <div>
+            <Timer size={14} />
+            <span>{tr('Airtime', 'Время полета')}</span>
+            <strong>
+              {typeof grenade.airtime === 'number'
+                ? `${grenade.airtime.toFixed(2)}s`
+                : '-'}
+            </strong>
+          </div>
+          <div>
+            <Clock size={14} />
+            <span>{tr('Round', 'Раунд')}</span>
+            <strong>{formatClock(grenade.round_time_seconds)}</strong>
+          </div>
+          <div>
+            <Crosshair size={14} />
+            <span>{tr('Usage', 'Использования')}</span>
+            <strong>{formatNumber(grenade.usage_count)}</strong>
+          </div>
+          <div>
+            <MapPinned size={14} />
+            <span>{tr('Tickrate', 'Тикрейт')}</span>
+            <strong>{grenade.tickrate ?? '-'}</strong>
+          </div>
         </div>
 
         <div className="info-block">
-          <div className="block-title">{tr("Throw keys", "Клавиши броска")}</div>
+          <div className="block-title">
+            {tr('Throw keys', 'Клавиши броска')}
+          </div>
           {throwKeys.length ? (
             <div className="throw-preview-keys detail-throw-keys">
               {throwKeys.map((key, index) => {
                 const visual = throwKeyVisual(key);
                 return (
-                  <span className="throw-preview-key-part" key={`${key}-${index}`}>
-                    <span className={`throw-preview-key-icon ${visual.kind}`} data-tip={visual.title}>
+                  <span
+                    className="throw-preview-key-part"
+                    key={`${key}-${index}`}
+                  >
+                    <span
+                      className={`throw-preview-key-icon ${visual.kind}`}
+                      data-tip={visual.title}
+                    >
                       <ThrowKeyIcon glyph={visual.glyph} />
                       <span>{visual.label}</span>
                     </span>
-                    {index < throwKeys.length - 1 ? <span className="throw-preview-plus">+</span> : null}
+                    {index < throwKeys.length - 1 ? (
+                      <span className="throw-preview-plus">+</span>
+                    ) : null}
                   </span>
                 );
               })}
@@ -162,28 +285,43 @@ export default function GrenadePage() {
 
         <div className="info-block">
           <div className="block-title">
-            {tr("Coordinates", "Координаты")}
-            <button className="micro-btn" onClick={() => copy(grenade.coordinates)}>
+            {tr('Coordinates', 'Координаты')}
+            <button
+              className="micro-btn"
+              onClick={() => copy(grenade.coordinates)}
+            >
               <Clipboard size={13} />
-              {copied ? tr("Copied", "Скопировано") : tr("Copy", "Копировать")}
+              {copied ? tr('Copied', 'Скопировано') : tr('Copy', 'Копировать')}
             </button>
           </div>
-          <code>{grenade.coordinates || "-"}</code>
+          <code>{grenade.coordinates || '-'}</code>
         </div>
 
         <div className="info-block">
-          <div className="block-title">{tr("Demo metadata", "Данные демо")}</div>
+          <div className="block-title">
+            {tr('Demo metadata', 'Данные демо')}
+          </div>
           <div className="kv-list">
-            <span>{tr("Throw tick", "Тик броска")}</span><strong>{grenade.throw_tick ?? "-"}</strong>
-            <span>{tr("Lineup tick", "Тик подготовки")}</span><strong>{grenade.lineup_tick ?? "-"}</strong>
-            <span>{tr("Demo", "Демо")}</span><strong className="demo-filename"><FileText size={12} />{grenade.demo_filename || "-"}</strong>
+            <span>{tr('Throw tick', 'Тик броска')}</span>
+            <strong>{grenade.throw_tick ?? '-'}</strong>
+            <span>{tr('Lineup tick', 'Тик подготовки')}</span>
+            <strong>{grenade.lineup_tick ?? '-'}</strong>
+            <span>{tr('Demo', 'Демо')}</span>
+            <strong className="demo-filename">
+              <FileText size={12} />
+              {grenade.demo_filename || '-'}
+            </strong>
           </div>
         </div>
 
         <div className="info-block usage-throwers-block">
           <div className="block-title">
-            {tr("Usage throwers", "Использовали игроки")}
-            {grenade.usage_throwers.length ? <span className="block-count">{grenade.usage_throwers.length}</span> : null}
+            {tr('Usage throwers', 'Использовали игроки')}
+            {grenade.usage_throwers.length ? (
+              <span className="block-count">
+                {grenade.usage_throwers.length}
+              </span>
+            ) : null}
           </div>
           {grenade.usage_throwers.length ? (
             <div className="thrower-list">
@@ -199,8 +337,17 @@ export default function GrenadePage() {
         </div>
 
         <div className="info-block">
-          <div className="block-title">{tr("Similar grenades", "Похожие гранаты")}</div>
-          <GrenadeList grenades={similar} compact showCopy spawnPoints={spawnPoints} onCoreToggle={handleCoreToggle} emptyLabel={tr("No similar grenades.", "Похожих гранат нет.")} />
+          <div className="block-title">
+            {tr('Similar grenades', 'Похожие гранаты')}
+          </div>
+          <GrenadeList
+            grenades={similar}
+            compact
+            showCopy
+            spawnPoints={spawnPoints}
+            onCoreToggle={handleCoreToggle}
+            emptyLabel={tr('No similar grenades.', 'Похожих гранат нет.')}
+          />
         </div>
       </aside>
     </div>

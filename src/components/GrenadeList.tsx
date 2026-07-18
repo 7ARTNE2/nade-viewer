@@ -1,10 +1,10 @@
-import { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { ArrowRight, BadgeCheck, Check, Clipboard, Timer } from "lucide-react";
-import { grenadeLabel } from "../lib/format";
-import { buildSpawnMapPoints, INSTA_LABEL, isInstaGrenade } from "../lib/insta";
-import type { GrenadePreview, SpawnPoint } from "../types/domain";
-import { useI18n } from "../i18n";
+import { useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { ArrowRight, BadgeCheck, Check, Clipboard, Timer } from 'lucide-react';
+import { grenadeLabel } from '../lib/format';
+import { buildSpawnMapPoints, INSTA_LABEL, isInstaGrenade } from '../lib/insta';
+import type { GrenadePreview, SpawnPoint } from '../types/domain';
+import { useI18n } from '../i18n';
 
 type Props = {
   grenades: GrenadePreview[];
@@ -15,11 +15,21 @@ type Props = {
   emptyLabel?: string;
 };
 
-export default function GrenadeList({ grenades, compact, showCopy, spawnPoints = [], onCoreToggle, emptyLabel }: Props) {
+export default function GrenadeList({
+  grenades,
+  compact,
+  showCopy,
+  spawnPoints = [],
+  onCoreToggle,
+  emptyLabel,
+}: Props) {
   const { tr } = useI18n();
   const navigate = useNavigate();
   const [copiedId, setCopiedId] = useState<number | null>(null);
-  const spawnMapPoints = useMemo(() => buildSpawnMapPoints(spawnPoints), [spawnPoints]);
+  const spawnMapPoints = useMemo(
+    () => buildSpawnMapPoints(spawnPoints),
+    [spawnPoints],
+  );
 
   const copyGrenadeText = async (grenade: GrenadePreview) => {
     const text = grenade.coordinates || grenade.throw_description;
@@ -30,30 +40,45 @@ export default function GrenadeList({ grenades, compact, showCopy, spawnPoints =
   };
 
   if (!grenades.length) {
-    return <div className="empty-note">{emptyLabel ?? tr("Select a landing cluster to load grenades.", "Выберите кластер приземления, чтобы загрузить гранаты.")}</div>;
+    return (
+      <div className="empty-note">
+        {emptyLabel ??
+          tr(
+            'Select a landing cluster to load grenades.',
+            'Выберите кластер приземления, чтобы загрузить гранаты.',
+          )}
+      </div>
+    );
   }
 
   return (
-    <div className={compact ? "nade-list compact" : "nade-list"}>
+    <div className={compact ? 'nade-list compact' : 'nade-list'}>
       {grenades.map((g) => {
         const isInsta = isInstaGrenade(g, spawnMapPoints);
         return (
           <div
             key={g.id}
-            className={`nade-row type-${String(g.grenade_type).toLowerCase()} ${g.is_core ? "core" : ""} ${isInsta ? "insta" : ""}`}
+            className={`nade-row type-${String(g.grenade_type).toLowerCase()} ${g.is_core ? 'core' : ''} ${isInsta ? 'insta' : ''}`}
             role="button"
             tabIndex={0}
-            aria-label={`${grenadeLabel(g.grenade_type)} ${g.thrower || `${tr("Grenade", "Граната")} #${g.id}`}`}
+            aria-label={`${grenadeLabel(g.grenade_type)} ${g.thrower || `${tr('Grenade', 'Граната')} #${g.id}`}`}
             onClick={() => navigate(`/grenade/${g.id}`)}
             onKeyDown={(event) => {
-                if ((event.key === "Enter" || event.key === " ") && event.target === event.currentTarget) {
+              if (
+                (event.key === 'Enter' || event.key === ' ') &&
+                event.target === event.currentTarget
+              ) {
                 event.preventDefault();
                 navigate(`/grenade/${g.id}`);
               }
             }}
           >
             <span className="nade-type-stack">
-              <span className={`type-pill ${String(g.grenade_type).toLowerCase()}`}>{grenadeLabel(g.grenade_type)}</span>
+              <span
+                className={`type-pill ${String(g.grenade_type).toLowerCase()}`}
+              >
+                {grenadeLabel(g.grenade_type)}
+              </span>
               {showCopy ? (
                 <button
                   type="button"
@@ -63,39 +88,76 @@ export default function GrenadeList({ grenades, compact, showCopy, spawnPoints =
                     copyGrenadeText(g);
                   }}
                   disabled={!g.coordinates && !g.throw_description}
-                  aria-label={tr("Copy grenade coordinates", "Копировать координаты гранаты")}
-                  data-tip={copiedId === g.id ? tr("Copied", "Скопировано") : tr("Copy coordinates", "Копировать координаты")}
+                  aria-label={tr(
+                    'Copy grenade coordinates',
+                    'Копировать координаты гранаты',
+                  )}
+                  data-tip={
+                    copiedId === g.id
+                      ? tr('Copied', 'Скопировано')
+                      : tr('Copy coordinates', 'Копировать координаты')
+                  }
                 >
-                  {copiedId === g.id ? <Check size={13} /> : <Clipboard size={13} />}
-                  <span>{copiedId === g.id ? tr("Copied", "Скопировано") : tr("Copy", "Копировать")}</span>
+                  {copiedId === g.id ? (
+                    <Check size={13} />
+                  ) : (
+                    <Clipboard size={13} />
+                  )}
+                  <span>
+                    {copiedId === g.id
+                      ? tr('Copied', 'Скопировано')
+                      : tr('Copy', 'Копировать')}
+                  </span>
                 </button>
               ) : null}
             </span>
             <span className="side-mini">{g.side}</span>
             <span className="nade-main">
               <span className="nade-title-line">
-                <strong>{g.thrower || `${tr("Grenade", "Граната")} #${g.id}`}</strong>
-                {isInsta ? <span className="insta-badge">{INSTA_LABEL}</span> : null}
-                 {g.is_core ? <span className="core-badge">{tr("Core", "Core")}</span> : null}
+                <strong>
+                  {g.thrower || `${tr('Grenade', 'Граната')} #${g.id}`}
+                </strong>
+                {isInsta ? (
+                  <span className="insta-badge">{INSTA_LABEL}</span>
+                ) : null}
+                {g.is_core ? (
+                  <span className="core-badge">{tr('Core', 'Core')}</span>
+                ) : null}
               </span>
-              <small>{g.throw_description || g.coordinates || tr("No command metadata", "Нет данных команды")}</small>
+              <small>
+                {g.throw_description ||
+                  g.coordinates ||
+                  tr('No command metadata', 'Нет данных команды')}
+              </small>
             </span>
             <span className="nade-action-stack">
               <button
                 type="button"
-                className={`core-action ${g.is_core ? "active" : ""}`}
+                className={`core-action ${g.is_core ? 'active' : ''}`}
                 onClick={(event) => {
                   event.stopPropagation();
                   onCoreToggle?.(g.id, !g.is_core);
                 }}
-                aria-label={g.is_core ? tr("Remove from Core", "Удалить из Core") : tr("Add to Core", "Добавить в Core")}
-                data-tip={g.is_core ? tr("In Core", "В Core") : tr("Add to Core", "Добавить в Core")}
+                aria-label={
+                  g.is_core
+                    ? tr('Remove from Core', 'Удалить из Core')
+                    : tr('Add to Core', 'Добавить в Core')
+                }
+                data-tip={
+                  g.is_core
+                    ? tr('In Core', 'В Core')
+                    : tr('Add to Core', 'Добавить в Core')
+                }
               >
                 <BadgeCheck size={14} />
-                <span>{g.is_core ? tr("In Core", "В Core") : tr("Add to Core", "Добавить в Core")}</span>
+                <span>
+                  {g.is_core
+                    ? tr('In Core', 'В Core')
+                    : tr('Add to Core', 'Добавить в Core')}
+                </span>
               </button>
               <span className="row-meta">
-                {typeof g.airtime === "number" ? (
+                {typeof g.airtime === 'number' ? (
                   <>
                     <Timer size={12} />
                     {g.airtime.toFixed(2)}s

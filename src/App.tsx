@@ -1,5 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
+import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  Navigate,
+  Route,
+  Routes,
+  useLocation,
+  useNavigate,
+} from 'react-router-dom';
 import {
   AlertTriangle,
   Check,
@@ -15,7 +21,7 @@ import {
   GraduationCap,
   Upload,
   X,
-} from "lucide-react";
+} from 'lucide-react';
 import {
   deleteImport,
   exportCoreNades,
@@ -26,18 +32,18 @@ import {
   setActiveImport,
   updateImportLabel,
   completeOnboarding,
-} from "./lib/tauri";
-import { compactDate, formatNumber } from "./lib/format";
-import { startWindowActiveTracking } from "./lib/windowActive";
-import type { ImportSummary } from "./types/domain";
-import { version } from "../package.json";
-import HomePage from "./pages/HomePage";
-import MapPage from "./pages/MapPage";
-import GrenadePage from "./pages/GrenadePage";
-import Tooltip from "./components/Tooltip";
-import OnboardingModal from "./components/OnboardingModal";
-import { useI18n } from "./i18n";
-import { useModalAccessibility } from "./lib/useModalAccessibility";
+} from './lib/tauri';
+import { compactDate, formatNumber } from './lib/format';
+import { startWindowActiveTracking } from './lib/windowActive';
+import type { ImportSummary } from './types/domain';
+import { version } from '../package.json';
+import HomePage from './pages/HomePage';
+import MapPage from './pages/MapPage';
+import GrenadePage from './pages/GrenadePage';
+import Tooltip from './components/Tooltip';
+import OnboardingModal from './components/OnboardingModal';
+import { useI18n } from './i18n';
+import { useModalAccessibility } from './lib/useModalAccessibility';
 
 function importFileName(path: string) {
   return path.split(/[\\/]/).filter(Boolean).pop() || path;
@@ -55,16 +61,23 @@ function Shell() {
   const [imports, setImports] = useState<ImportSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [coreTransferBusy, setCoreTransferBusy] = useState(false);
-  const [coreTransferStatus, setCoreTransferStatus] = useState<string | null>(null);
+  const [coreTransferStatus, setCoreTransferStatus] = useState<string | null>(
+    null,
+  );
   const [snapshotMenuOpen, setSnapshotMenuOpen] = useState(false);
-  const [editingSnapshotId, setEditingSnapshotId] = useState<number | null>(null);
-  const [editingLabel, setEditingLabel] = useState("");
+  const [editingSnapshotId, setEditingSnapshotId] = useState<number | null>(
+    null,
+  );
+  const [editingLabel, setEditingLabel] = useState('');
   const [deleteSnapshotOpen, setDeleteSnapshotOpen] = useState(false);
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const importsRequestRef = useRef(0);
   const [operationError, setOperationError] = useState<string | null>(null);
   const closeDeleteModal = useCallback(() => setDeleteSnapshotOpen(false), []);
-  const deleteDialogRef = useModalAccessibility<HTMLDivElement>(deleteSnapshotOpen, closeDeleteModal);
+  const deleteDialogRef = useModalAccessibility<HTMLDivElement>(
+    deleteSnapshotOpen,
+    closeDeleteModal,
+  );
 
   const restartTutorial = async () => {
     await resetOnboarding();
@@ -74,18 +87,34 @@ function Shell() {
   const refreshImports = useCallback(async () => {
     const requestId = ++importsRequestRef.current;
     try {
-      const [active, all, onboarding] = await Promise.allSettled([getActiveImport(), listImports(), getOnboardingState()]);
+      const [active, all, onboarding] = await Promise.allSettled([
+        getActiveImport(),
+        listImports(),
+        getOnboardingState(),
+      ]);
       if (importsRequestRef.current !== requestId) return;
-      if (active.status === "fulfilled") {
+      if (active.status === 'fulfilled') {
         setActive(active.value);
-        if (!active.value && !["/", "/maps"].includes(location.pathname)) navigate("/maps?import=1", { replace: true });
+        if (!active.value && !['/', '/maps'].includes(location.pathname))
+          navigate('/maps?import=1', { replace: true });
       }
-      if (all.status === "fulfilled") setImports(Array.isArray(all.value) ? all.value : []);
-      if (onboarding.status === "fulfilled") setOnboardingOpen(!onboarding.value.completed);
-      const failures = [active, all, onboarding].filter((result) => result.status === "rejected");
+      if (all.status === 'fulfilled')
+        setImports(Array.isArray(all.value) ? all.value : []);
+      if (onboarding.status === 'fulfilled')
+        setOnboardingOpen(!onboarding.value.completed);
+      const failures = [active, all, onboarding].filter(
+        (result) => result.status === 'rejected',
+      );
       if (failures.length) {
-        failures.forEach((failure) => console.error("Unable to refresh application state", failure.reason));
-        setOperationError(tr("Some library data could not be refreshed", "Не удалось обновить часть данных библиотеки"));
+        failures.forEach((failure) =>
+          console.error('Unable to refresh application state', failure.reason),
+        );
+        setOperationError(
+          tr(
+            'Some library data could not be refreshed',
+            'Не удалось обновить часть данных библиотеки',
+          ),
+        );
       } else {
         setOperationError(null);
       }
@@ -109,10 +138,12 @@ function Shell() {
       setImports(Array.isArray(all) ? all : []);
       setSnapshotMenuOpen(false);
       setEditingSnapshotId(null);
-      navigate("/maps");
+      navigate('/maps');
     } catch (error) {
       console.error(error);
-      setOperationError(tr("Could not switch library", "Не удалось переключить библиотеку"));
+      setOperationError(
+        tr('Could not switch library', 'Не удалось переключить библиотеку'),
+      );
     }
   };
 
@@ -120,13 +151,17 @@ function Shell() {
     setOperationError(null);
     try {
       const updated = await updateImportLabel(snapshot.id, editingLabel);
-      setImports((current) => current.map((item) => item.id === updated.id ? updated : item));
+      setImports((current) =>
+        current.map((item) => (item.id === updated.id ? updated : item)),
+      );
       if (activeImport?.id === updated.id) setActive(updated);
       setEditingSnapshotId(null);
-      setEditingLabel("");
+      setEditingLabel('');
     } catch (error) {
       console.error(error);
-      setOperationError(tr("Could not rename library", "Не удалось переименовать библиотеку"));
+      setOperationError(
+        tr('Could not rename library', 'Не удалось переименовать библиотеку'),
+      );
     }
   };
 
@@ -137,10 +172,12 @@ function Shell() {
       const next = await deleteImport(activeImport.id);
       setDeleteSnapshotOpen(false);
       await refreshImports();
-      navigate(next ? "/maps" : "/maps?import=1", { replace: true });
+      navigate(next ? '/maps' : '/maps?import=1', { replace: true });
     } catch (error) {
       console.error(error);
-      setOperationError(tr("Could not delete library", "Не удалось удалить библиотеку"));
+      setOperationError(
+        tr('Could not delete library', 'Не удалось удалить библиотеку'),
+      );
     }
   };
 
@@ -149,23 +186,43 @@ function Shell() {
     setCoreTransferStatus(null);
     try {
       const report = await exportCoreNades();
-      if (report) setCoreTransferStatus(count(report.grenade_count, "grenade saved", "grenades saved", "граната сохранена", "гранаты сохранены", "гранат сохранено"));
+      if (report)
+        setCoreTransferStatus(
+          count(
+            report.grenade_count,
+            'grenade saved',
+            'grenades saved',
+            'граната сохранена',
+            'гранаты сохранены',
+            'гранат сохранено',
+          ),
+        );
     } catch (error) {
       console.error(error);
-      setCoreTransferStatus(tr("Export failed", "Ошибка экспорта"));
+      setCoreTransferStatus(tr('Export failed', 'Ошибка экспорта'));
     } finally {
       setCoreTransferBusy(false);
     }
   };
 
-  const mapsRouteActive = location.pathname === "/" || location.pathname === "/maps" || location.pathname.startsWith("/map/") || location.pathname.startsWith("/grenade/");
-  const importPanelActive = location.pathname === "/maps" && new URLSearchParams(location.search).get("import") === "1";
+  const mapsRouteActive =
+    location.pathname === '/' ||
+    location.pathname === '/maps' ||
+    location.pathname.startsWith('/map/') ||
+    location.pathname.startsWith('/grenade/');
+  const importPanelActive =
+    location.pathname === '/maps' &&
+    new URLSearchParams(location.search).get('import') === '1';
 
   if (loading) {
     return (
       <div className="boot-screen viewer-boot">
-        <div className="viewer-loader"><Sparkles size={20} /></div>
-        <div className="boot-title">Nade Viewer <span className="boot-version">v{version}</span></div>
+        <div className="viewer-loader">
+          <Sparkles size={20} />
+        </div>
+        <div className="boot-title">
+          Nade Viewer <span className="boot-version">v{version}</span>
+        </div>
       </div>
     );
   }
@@ -175,33 +232,97 @@ function Shell() {
       <main className="app-main viewer-main">
         <header className="viewer-topbar">
           <div className="topbar-navigation">
-            <button className="topbar-brand" onClick={() => navigate("/maps")} aria-label={tr("Nade Viewer home", "Главная Nade Viewer")}>
+            <button
+              className="topbar-brand"
+              onClick={() => navigate('/maps')}
+              aria-label={tr('Nade Viewer home', 'Главная Nade Viewer')}
+            >
               <span className="viewer-brand-mark">NV</span>
-              <span className="topbar-brand-copy"><strong>Nade Viewer</strong><small>v{version}</small></span>
+              <span className="topbar-brand-copy">
+                <strong>Nade Viewer</strong>
+                <small>v{version}</small>
+              </span>
             </button>
             <span className="topbar-divider" />
-            <button className={`topbar-nav-link ${mapsRouteActive && !importPanelActive ? "active" : ""}`} onClick={() => navigate("/maps")}>
-              <Map size={16} /><span>{tr("Maps", "Карты")}</span>
+            <button
+              className={`topbar-nav-link ${mapsRouteActive && !importPanelActive ? 'active' : ''}`}
+              onClick={() => navigate('/maps')}
+            >
+              <Map size={16} />
+              <span>{tr('Maps', 'Карты')}</span>
             </button>
-            <button className={`topbar-nav-link ${importPanelActive ? "active" : ""}`} onClick={() => navigate("/maps?import=1")}>
-              <Download size={16} /><span>{tr("Import library", "Импорт")}</span>
+            <button
+              className={`topbar-nav-link ${importPanelActive ? 'active' : ''}`}
+              onClick={() => navigate('/maps?import=1')}
+            >
+              <Download size={16} />
+              <span>{tr('Import library', 'Импорт')}</span>
             </button>
-            <button className="topbar-nav-link" onClick={() => restartTutorial().catch((error) => { console.error(error); setOperationError("Could not restart tutorial"); })}>
-              <GraduationCap size={16} /><span>{tr("Tutorial", "Обучение")}</span>
+            <button
+              className="topbar-nav-link"
+              onClick={() =>
+                restartTutorial().catch((error) => {
+                  console.error(error);
+                  setOperationError('Could not restart tutorial');
+                })
+              }
+            >
+              <GraduationCap size={16} />
+              <span>{tr('Tutorial', 'Обучение')}</span>
             </button>
-            <div className="language-switch" aria-label={tr("Language", "Язык")}>
-              <button className={locale === "en" ? "active" : ""} onClick={() => setLocale("en")}>EN</button>
-              <button className={locale === "ru" ? "active" : ""} onClick={() => setLocale("ru")}>RU</button>
+            <div
+              className="language-switch"
+              aria-label={tr('Language', 'Язык')}
+            >
+              <button
+                className={locale === 'en' ? 'active' : ''}
+                onClick={() => setLocale('en')}
+              >
+                EN
+              </button>
+              <button
+                className={locale === 'ru' ? 'active' : ''}
+                onClick={() => setLocale('ru')}
+              >
+                RU
+              </button>
             </div>
           </div>
           <div className="topbar-actions">
             {activeImport ? (
-              <div className="snapshot-picker" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setSnapshotMenuOpen(false); }}>
-                <button className={`snapshot-trigger active-library-trigger ${snapshotMenuOpen ? "active" : ""}`} onClick={() => setSnapshotMenuOpen((open) => !open)} aria-expanded={snapshotMenuOpen} data-tip={activeImport.source_path} data-tip-pos="bottom">
+              <div
+                className="snapshot-picker"
+                onBlur={(event) => {
+                  if (
+                    !event.currentTarget.contains(
+                      event.relatedTarget as Node | null,
+                    )
+                  )
+                    setSnapshotMenuOpen(false);
+                }}
+              >
+                <button
+                  className={`snapshot-trigger active-library-trigger ${snapshotMenuOpen ? 'active' : ''}`}
+                  onClick={() => setSnapshotMenuOpen((open) => !open)}
+                  aria-expanded={snapshotMenuOpen}
+                  data-tip={activeImport.source_path}
+                  data-tip-pos="bottom"
+                >
                   <Database size={14} />
-                  <span className="active-library-id">{tr("Library", "Библиотека")} #{activeImport.id}</span>
+                  <span className="active-library-id">
+                    {tr('Library', 'Библиотека')} #{activeImport.id}
+                  </span>
                   <strong>{snapshotDisplayName(activeImport)}</strong>
-                  <span className="active-library-count">{count(activeImport.grenade_count, "grenade", "grenades", "граната", "гранаты", "гранат")}</span>
+                  <span className="active-library-count">
+                    {count(
+                      activeImport.grenade_count,
+                      'grenade',
+                      'grenades',
+                      'граната',
+                      'гранаты',
+                      'гранат',
+                    )}
+                  </span>
                   <ChevronDown size={14} />
                 </button>
                 {snapshotMenuOpen ? (
@@ -209,21 +330,90 @@ function Shell() {
                     {imports.map((item) => {
                       const isEditing = editingSnapshotId === item.id;
                       return (
-                        <div key={item.id} className={`snapshot-option ${item.id === activeImport.id ? "active" : ""} ${isEditing ? "editing" : ""}`}>
+                        <div
+                          key={item.id}
+                          className={`snapshot-option ${item.id === activeImport.id ? 'active' : ''} ${isEditing ? 'editing' : ''}`}
+                        >
                           <span className="snapshot-id">#{item.id}</span>
                           {isEditing ? (
-                            <form className="snapshot-edit-row" onSubmit={(event) => { event.preventDefault(); void saveSnapshotLabel(item); }}>
-                              <input className="snapshot-edit-input" value={editingLabel} onChange={(event) => setEditingLabel(event.target.value)} placeholder={importFileName(item.source_path)} autoFocus />
-                              <button className="snapshot-edit-action" type="submit" aria-label={tr("Save library name", "Сохранить название библиотеки")}><Check size={14} /></button>
-                              <button className="snapshot-edit-action" type="button" onClick={() => setEditingSnapshotId(null)} aria-label={tr("Cancel renaming", "Отменить переименование")}><X size={14} /></button>
+                            <form
+                              className="snapshot-edit-row"
+                              onSubmit={(event) => {
+                                event.preventDefault();
+                                void saveSnapshotLabel(item);
+                              }}
+                            >
+                              <input
+                                className="snapshot-edit-input"
+                                value={editingLabel}
+                                onChange={(event) =>
+                                  setEditingLabel(event.target.value)
+                                }
+                                placeholder={importFileName(item.source_path)}
+                                autoFocus
+                              />
+                              <button
+                                className="snapshot-edit-action"
+                                type="submit"
+                                aria-label={tr(
+                                  'Save library name',
+                                  'Сохранить название библиотеки',
+                                )}
+                              >
+                                <Check size={14} />
+                              </button>
+                              <button
+                                className="snapshot-edit-action"
+                                type="button"
+                                onClick={() => setEditingSnapshotId(null)}
+                                aria-label={tr(
+                                  'Cancel renaming',
+                                  'Отменить переименование',
+                                )}
+                              >
+                                <X size={14} />
+                              </button>
                             </form>
                           ) : (
                             <>
-                              <button className="snapshot-option-main" type="button" onClick={() => item.id === activeImport.id ? setSnapshotMenuOpen(false) : switchImport(item.id)}>
-                                <span className="snapshot-main"><strong>{snapshotDisplayName(item)}</strong><small>{count(item.grenade_count, "grenade", "grenades", "граната", "гранаты", "гранат")}</small></span>
-                                {item.id === activeImport.id ? <span className="snapshot-current">{tr("Active", "Активна")}</span> : null}
+                              <button
+                                className="snapshot-option-main"
+                                type="button"
+                                onClick={() =>
+                                  item.id === activeImport.id
+                                    ? setSnapshotMenuOpen(false)
+                                    : switchImport(item.id)
+                                }
+                              >
+                                <span className="snapshot-main">
+                                  <strong>{snapshotDisplayName(item)}</strong>
+                                  <small>
+                                    {count(
+                                      item.grenade_count,
+                                      'grenade',
+                                      'grenades',
+                                      'граната',
+                                      'гранаты',
+                                      'гранат',
+                                    )}
+                                  </small>
+                                </span>
+                                {item.id === activeImport.id ? (
+                                  <span className="snapshot-current">
+                                    {tr('Active', 'Активна')}
+                                  </span>
+                                ) : null}
                               </button>
-                              <button className="snapshot-rename-btn" type="button" onClick={() => { setEditingSnapshotId(item.id); setEditingLabel(item.label?.trim() || ""); }}><Pencil size={13} /></button>
+                              <button
+                                className="snapshot-rename-btn"
+                                type="button"
+                                onClick={() => {
+                                  setEditingSnapshotId(item.id);
+                                  setEditingLabel(item.label?.trim() || '');
+                                }}
+                              >
+                                <Pencil size={13} />
+                              </button>
                             </>
                           )}
                         </div>
@@ -233,35 +423,168 @@ function Shell() {
                 ) : null}
               </div>
             ) : (
-              <button className="btn primary" onClick={() => navigate("/maps?import=1")}><FolderOpen size={16} />{tr("Import data", "Импортировать")}</button>
+              <button
+                className="btn primary"
+                onClick={() => navigate('/maps?import=1')}
+              >
+                <FolderOpen size={16} />
+                {tr('Import data', 'Импортировать')}
+              </button>
             )}
-            {activeImport ? <button className="icon-btn core-transfer" onClick={handleCoreExport} disabled={coreTransferBusy} aria-label={tr("Export Core Nades", "Экспорт Core Nades")} data-tip={tr("Export Core Nades", "Экспорт Core Nades")}><Upload size={15} /></button> : null}
-            {coreTransferStatus ? <span className="core-status-chip">{coreTransferStatus}</span> : null}
-            {operationError ? <span className="operation-error-chip">{operationError}</span> : null}
-            {activeImport ? <button className="icon-btn danger" onClick={() => setDeleteSnapshotOpen(true)} aria-label={tr("Delete active library", "Удалить активную библиотеку")} data-tip={tr("Delete active library", "Удалить активную библиотеку")}><Trash2 size={15} /></button> : null}
-            <button className="icon-btn" onClick={() => window.location.reload()} aria-label={tr("Refresh", "Обновить")} data-tip={tr("Refresh", "Обновить")}><RotateCw size={15} /></button>
+            {activeImport ? (
+              <button
+                className="icon-btn core-transfer"
+                onClick={handleCoreExport}
+                disabled={coreTransferBusy}
+                aria-label={tr('Export Core Nades', 'Экспорт Core Nades')}
+                data-tip={tr('Export Core Nades', 'Экспорт Core Nades')}
+              >
+                <Upload size={15} />
+              </button>
+            ) : null}
+            {coreTransferStatus ? (
+              <span className="core-status-chip">{coreTransferStatus}</span>
+            ) : null}
+            {operationError ? (
+              <span className="operation-error-chip">{operationError}</span>
+            ) : null}
+            {activeImport ? (
+              <button
+                className="icon-btn danger"
+                onClick={() => setDeleteSnapshotOpen(true)}
+                aria-label={tr(
+                  'Delete active library',
+                  'Удалить активную библиотеку',
+                )}
+                data-tip={tr(
+                  'Delete active library',
+                  'Удалить активную библиотеку',
+                )}
+              >
+                <Trash2 size={15} />
+              </button>
+            ) : null}
+            <button
+              className="icon-btn"
+              onClick={() => window.location.reload()}
+              aria-label={tr('Refresh', 'Обновить')}
+              data-tip={tr('Refresh', 'Обновить')}
+            >
+              <RotateCw size={15} />
+            </button>
           </div>
         </header>
 
         <div className="view-frame viewer-frame">
           <Routes>
-            <Route path="/" element={<Navigate to={activeImport ? "/maps" : "/maps?import=1"} replace />} />
-            <Route path="/maps" element={<HomePage activeImportId={activeImport?.id ?? null} onImported={refreshImports} lastImport={imports[0] ?? null} />} />
-            <Route path="/import" element={<Navigate to="/maps?import=1" replace />} />
-            <Route path="/map/:mapName" element={activeImport ? <MapPage activeImportId={activeImport.id} /> : <Navigate to="/maps?import=1" replace />} />
-            <Route path="/grenade/:id" element={activeImport ? <GrenadePage /> : <Navigate to="/maps?import=1" replace />} />
-            <Route path="*" element={<Navigate to={activeImport ? "/maps" : "/maps?import=1"} replace />} />
+            <Route
+              path="/"
+              element={
+                <Navigate
+                  to={activeImport ? '/maps' : '/maps?import=1'}
+                  replace
+                />
+              }
+            />
+            <Route
+              path="/maps"
+              element={
+                <HomePage
+                  activeImportId={activeImport?.id ?? null}
+                  onImported={refreshImports}
+                  lastImport={imports[0] ?? null}
+                />
+              }
+            />
+            <Route
+              path="/import"
+              element={<Navigate to="/maps?import=1" replace />}
+            />
+            <Route
+              path="/map/:mapName"
+              element={
+                activeImport ? (
+                  <MapPage activeImportId={activeImport.id} />
+                ) : (
+                  <Navigate to="/maps?import=1" replace />
+                )
+              }
+            />
+            <Route
+              path="/grenade/:id"
+              element={
+                activeImport ? (
+                  <GrenadePage />
+                ) : (
+                  <Navigate to="/maps?import=1" replace />
+                )
+              }
+            />
+            <Route
+              path="*"
+              element={
+                <Navigate
+                  to={activeImport ? '/maps' : '/maps?import=1'}
+                  replace
+                />
+              }
+            />
           </Routes>
         </div>
       </main>
 
       {deleteSnapshotOpen && activeImport ? (
-        <div className="modal-scrim" role="presentation" onMouseDown={() => setDeleteSnapshotOpen(false)}>
-          <div ref={deleteDialogRef} className="snapshot-delete-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-library-title" onMouseDown={(event) => event.stopPropagation()}>
-            <div className="snapshot-delete-mark"><AlertTriangle size={19} /></div>
-            <div className="snapshot-delete-copy"><div className="eyebrow">{tr("Delete library", "Удаление библиотеки")}</div><h2 id="delete-library-title">{snapshotDisplayName(activeImport)}</h2><p>{tr(`Library #${activeImport.id} and ${formatNumber(activeImport.grenade_count)} grenade rows will be removed.`, `Библиотека #${activeImport.id} и ${formatNumber(activeImport.grenade_count)} записей будут удалены.`)}</p></div>
-            <div className="snapshot-delete-meta"><span>{tr("Source", "Источник")}</span><strong>{importFileName(activeImport.source_path)}</strong><span>{tr("Imported", "Импортирована")}</span><strong>{compactDate(activeImport.imported_at)}</strong></div>
-            <div className="snapshot-delete-actions"><button className="btn" onClick={() => setDeleteSnapshotOpen(false)}>{tr("Cancel", "Отмена")}</button><button className="btn danger-action" onClick={confirmDeleteSnapshot}><Trash2 size={15} />{tr("Delete", "Удалить")}</button></div>
+        <div
+          className="modal-scrim"
+          role="presentation"
+          onMouseDown={() => setDeleteSnapshotOpen(false)}
+        >
+          <div
+            ref={deleteDialogRef}
+            className="snapshot-delete-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-library-title"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="snapshot-delete-mark">
+              <AlertTriangle size={19} />
+            </div>
+            <div className="snapshot-delete-copy">
+              <div className="eyebrow">
+                {tr('Delete library', 'Удаление библиотеки')}
+              </div>
+              <h2 id="delete-library-title">
+                {snapshotDisplayName(activeImport)}
+              </h2>
+              <p>
+                {tr(
+                  `Library #${activeImport.id} and ${formatNumber(activeImport.grenade_count)} grenade rows will be removed.`,
+                  `Библиотека #${activeImport.id} и ${formatNumber(activeImport.grenade_count)} записей будут удалены.`,
+                )}
+              </p>
+            </div>
+            <div className="snapshot-delete-meta">
+              <span>{tr('Source', 'Источник')}</span>
+              <strong>{importFileName(activeImport.source_path)}</strong>
+              <span>{tr('Imported', 'Импортирована')}</span>
+              <strong>{compactDate(activeImport.imported_at)}</strong>
+            </div>
+            <div className="snapshot-delete-actions">
+              <button
+                className="btn"
+                onClick={() => setDeleteSnapshotOpen(false)}
+              >
+                {tr('Cancel', 'Отмена')}
+              </button>
+              <button
+                className="btn danger-action"
+                onClick={confirmDeleteSnapshot}
+              >
+                <Trash2 size={15} />
+                {tr('Delete', 'Удалить')}
+              </button>
+            </div>
           </div>
         </div>
       ) : null}
@@ -271,8 +594,8 @@ function Shell() {
             await completeOnboarding();
             setOnboardingOpen(false);
           }}
-          onShowImport={() => navigate("/maps?import=1")}
-          onShowMaps={() => navigate("/maps")}
+          onShowImport={() => navigate('/maps?import=1')}
+          onShowMaps={() => navigate('/maps')}
           activeImport={Boolean(activeImport)}
           pathname={location.pathname}
         />

@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
-import { ArrowUpRight, History, Plus, Search, X } from "lucide-react";
-import { assetUrl, getMaps, getRecentlyViewedGrenades } from "../lib/tauri";
-import { formatNumber, grenadeLabel } from "../lib/format";
-import type { ImportSummary, MapSummary, ViewedGrenade } from "../types/domain";
-import ImportPage from "./ImportPage";
-import { useI18n } from "../i18n";
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { ArrowUpRight, History, Plus, Search, X } from 'lucide-react';
+import { assetUrl, getMaps, getRecentlyViewedGrenades } from '../lib/tauri';
+import { formatNumber, grenadeLabel } from '../lib/format';
+import type { ImportSummary, MapSummary, ViewedGrenade } from '../types/domain';
+import ImportPage from './ImportPage';
+import { useI18n } from '../i18n';
 
 type HomePageProps = {
   activeImportId?: number | null;
@@ -13,13 +13,17 @@ type HomePageProps = {
   lastImport: ImportSummary | null;
 };
 
-export default function HomePage({ activeImportId, onImported, lastImport }: HomePageProps) {
+export default function HomePage({
+  activeImportId,
+  onImported,
+  lastImport,
+}: HomePageProps) {
   const { tr, count } = useI18n();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [maps, setMaps] = useState<MapSummary[]>([]);
   const [recentlyViewed, setRecentlyViewed] = useState<ViewedGrenade[]>([]);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState('');
   const mapsRequestRef = useRef(0);
 
   useEffect(() => {
@@ -32,7 +36,9 @@ export default function HomePage({ activeImportId, onImported, lastImport }: Hom
       .then(([nextMaps, nextRecentlyViewed]) => {
         if (mapsRequestRef.current === requestId) {
           setMaps(Array.isArray(nextMaps) ? nextMaps : []);
-          setRecentlyViewed(Array.isArray(nextRecentlyViewed) ? nextRecentlyViewed : []);
+          setRecentlyViewed(
+            Array.isArray(nextRecentlyViewed) ? nextRecentlyViewed : [],
+          );
         }
       })
       .catch(() => {
@@ -45,11 +51,21 @@ export default function HomePage({ activeImportId, onImported, lastImport }: Hom
 
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return q ? maps.filter((map) => String(map.label ?? "").toLowerCase().includes(q) || String(map.name ?? "").toLowerCase().includes(q)) : maps;
+    return q
+      ? maps.filter(
+          (map) =>
+            String(map.label ?? '')
+              .toLowerCase()
+              .includes(q) ||
+            String(map.name ?? '')
+              .toLowerCase()
+              .includes(q),
+        )
+      : maps;
   }, [maps, search]);
 
   const total = maps.reduce((sum, map) => sum + map.grenade_count, 0);
-  const importOpen = !activeImportId || searchParams.get("import") === "1";
+  const importOpen = !activeImportId || searchParams.get('import') === '1';
   const closeImport = () => {
     if (!activeImportId) return;
     setSearchParams({}, { replace: true });
@@ -58,56 +74,135 @@ export default function HomePage({ activeImportId, onImported, lastImport }: Hom
   return (
     <div className="home-view">
       <section className="home-sidebar">
-        <div className="eyebrow">{tr("Grenade database", "База гранат")}</div>
-        <h1>{tr("Choose a map", "Выберите карту")}</h1>
-        <p className="muted">{tr("Explore lineups by landing zone, throw position and trajectory.", "Изучайте раскидки по точке приземления, позиции броска и траектории.")}</p>
+        <div className="eyebrow">{tr('Grenade database', 'База гранат')}</div>
+        <h1>{tr('Choose a map', 'Выберите карту')}</h1>
+        <p className="muted">
+          {tr(
+            'Explore lineups by landing zone, throw position and trajectory.',
+            'Изучайте раскидки по точке приземления, позиции броска и траектории.',
+          )}
+        </p>
         <div className="library-stats">
-           <div className="stat-line"><span>{formatNumber(maps.length)}</span><small>{tr("Maps", "Карты")}</small></div>
-           <div className="stat-line"><span>{formatNumber(total)}</span><small>{tr("Lineups", "Раскидки")}</small></div>
+          <div className="stat-line">
+            <span>{formatNumber(maps.length)}</span>
+            <small>{tr('Maps', 'Карты')}</small>
+          </div>
+          <div className="stat-line">
+            <span>{formatNumber(total)}</span>
+            <small>{tr('Lineups', 'Раскидки')}</small>
+          </div>
         </div>
-        <button className="library-import-btn" type="button" onClick={() => setSearchParams({ import: "1" })}>
-          <Plus size={15} /> {tr("Import library", "Импорт библиотеки")}
+        <button
+          className="library-import-btn"
+          type="button"
+          onClick={() => setSearchParams({ import: '1' })}
+        >
+          <Plus size={15} /> {tr('Import library', 'Импорт библиотеки')}
         </button>
         <div className="recent-history">
           <div className="recent-history-title">
-            <span><History size={14} /> {tr("Recently viewed", "Недавно просмотренные")}</span>
-            {recentlyViewed.length ? <small>{formatNumber(recentlyViewed.length)}</small> : null}
+            <span>
+              <History size={14} />{' '}
+              {tr('Recently viewed', 'Недавно просмотренные')}
+            </span>
+            {recentlyViewed.length ? (
+              <small>{formatNumber(recentlyViewed.length)}</small>
+            ) : null}
           </div>
           {recentlyViewed.length ? (
             <div className="recent-history-list">
               {recentlyViewed.map((grenade) => (
-                <button key={grenade.id} type="button" onClick={() => navigate(`/grenade/${grenade.id}`)}>
-                  <span className={`type-pill ${String(grenade.grenade_type).toLowerCase()}`}>{grenadeLabel(grenade.grenade_type)}</span>
-                  <span className="recent-history-main">
-                    <strong>{grenade.thrower || `${tr("Grenade", "Граната")} #${grenade.id}`}</strong>
-                    <small>{grenade.map} / {grenade.side}</small>
+                <button
+                  key={grenade.id}
+                  type="button"
+                  onClick={() => navigate(`/grenade/${grenade.id}`)}
+                >
+                  <span
+                    className={`type-pill ${String(grenade.grenade_type).toLowerCase()}`}
+                  >
+                    {grenadeLabel(grenade.grenade_type)}
                   </span>
-                  {grenade.view_count > 1 ? <span className="recent-history-count">{formatNumber(grenade.view_count)}x</span> : null}
+                  <span className="recent-history-main">
+                    <strong>
+                      {grenade.thrower ||
+                        `${tr('Grenade', 'Граната')} #${grenade.id}`}
+                    </strong>
+                    <small>
+                      {grenade.map} / {grenade.side}
+                    </small>
+                  </span>
+                  {grenade.view_count > 1 ? (
+                    <span className="recent-history-count">
+                      {formatNumber(grenade.view_count)}x
+                    </span>
+                  ) : null}
                 </button>
               ))}
             </div>
           ) : (
-            <div className="recent-history-empty">{tr("No grenade views yet.", "Просмотренных гранат пока нет.")}</div>
+            <div className="recent-history-empty">
+              {tr('No grenade views yet.', 'Просмотренных гранат пока нет.')}
+            </div>
           )}
         </div>
       </section>
 
       <section className="map-grid-section">
         <div className="library-heading">
-           <div><span className="eyebrow">{tr("Map pool", "Набор карт")}</span><strong>{count(visible.length, "map available", "maps available", "карта доступна", "карты доступны", "карт доступно")}</strong></div>
+          <div>
+            <span className="eyebrow">{tr('Map pool', 'Набор карт')}</span>
+            <strong>
+              {count(
+                visible.length,
+                'map available',
+                'maps available',
+                'карта доступна',
+                'карты доступны',
+                'карт доступно',
+              )}
+            </strong>
+          </div>
           <div className="search-box">
             <Search size={16} />
-            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={tr("Find a map", "Найти карту")} />
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder={tr('Find a map', 'Найти карту')}
+            />
           </div>
         </div>
         <div className="map-grid">
           {visible.map((map) => (
-            <button key={map.name} className="map-tile" data-tour={map.name === maps[0]?.name ? "map-target" : "map-tile"} data-map-key={String(map.name).toLowerCase().replace(/^de_/, "")} onClick={() => navigate(`/map/${encodeURIComponent(map.name)}`)}>
+            <button
+              key={map.name}
+              className="map-tile"
+              data-tour={map.name === maps[0]?.name ? 'map-target' : 'map-tile'}
+              data-map-key={String(map.name).toLowerCase().replace(/^de_/, '')}
+              onClick={() => navigate(`/map/${encodeURIComponent(map.name)}`)}
+            >
               <div className="map-orb">
-                {map.preview_image_path ? <img src={assetUrl(map.preview_image_path)} alt="" /> : <span>{String(map.label || map.name || "??").slice(0, 2)}</span>}
+                {map.preview_image_path ? (
+                  <img src={assetUrl(map.preview_image_path)} alt="" />
+                ) : (
+                  <span>
+                    {String(map.label || map.name || '??').slice(0, 2)}
+                  </span>
+                )}
               </div>
               <div className="map-tile-footer">
-                  <span><strong>{map.label}</strong><small>{count(map.grenade_count, "lineup", "lineups", "раскидка", "раскидки", "раскидок")}</small></span>
+                <span>
+                  <strong>{map.label}</strong>
+                  <small>
+                    {count(
+                      map.grenade_count,
+                      'lineup',
+                      'lineups',
+                      'раскидка',
+                      'раскидки',
+                      'раскидок',
+                    )}
+                  </small>
+                </span>
                 <ArrowUpRight size={17} />
               </div>
             </button>
@@ -116,8 +211,19 @@ export default function HomePage({ activeImportId, onImported, lastImport }: Hom
       </section>
 
       {importOpen ? (
-        <div className={`library-import-layer ${activeImportId ? "overlay" : "required"}`}>
-          {activeImportId ? <button className="library-import-close" type="button" onClick={closeImport} aria-label={tr("Close import", "Закрыть импорт")}><X size={18} /></button> : null}
+        <div
+          className={`library-import-layer ${activeImportId ? 'overlay' : 'required'}`}
+        >
+          {activeImportId ? (
+            <button
+              className="library-import-close"
+              type="button"
+              onClick={closeImport}
+              aria-label={tr('Close import', 'Закрыть импорт')}
+            >
+              <X size={18} />
+            </button>
+          ) : null}
           <ImportPage onImported={onImported} lastImport={lastImport} />
         </div>
       ) : null}
