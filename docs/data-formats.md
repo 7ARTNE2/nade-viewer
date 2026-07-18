@@ -4,9 +4,7 @@ This document describes only formats implemented by the Serde structures and
 import code in `src-tauri/src/lib.rs`. No external schema or data source is
 assumed.
 
-Nade Viewer accepts files up to exactly 104,857,600 bytes (100 MiB). The limit
-is checked from file metadata before JSON is read or deserialized. It expects a
-UTF-8 JSON object and then detects the format as follows:
+Nade Viewer expects a UTF-8 JSON object and detects the format as follows:
 
 - A top-level `canonical_grenades` key selects the canonical parser.
 - A top-level `grenades` key selects the Core Nades parser.

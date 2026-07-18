@@ -118,10 +118,6 @@ export default function ImportPage({ onImported, lastImport }: Props) {
           'The JSON file cannot be opened',
           'Не удалось открыть JSON-файл',
         ),
-        file_too_large: tr(
-          'The JSON file exceeds the 100 MiB limit',
-          'JSON-файл превышает лимит 100 МиБ',
-        ),
         invalid_json: tr(
           'The file is not valid JSON',
           'Файл содержит некорректный JSON',

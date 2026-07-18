@@ -16,7 +16,6 @@ use thiserror::Error;
 
 const WORLD: f64 = 1024.0;
 const MAX_OVERVIEW_CLUSTERS: usize = 2_000;
-const MAX_IMPORT_JSON_BYTES: u64 = 100 * 1024 * 1024;
 const SUPPORTED_IMPORT_VERSION: i64 = 1;
 const GRENADE_PREVIEW_COLUMNS: &str = "g.id, g.map, g.side, g.grenade_type, g.is_core,
     g.throw_description, g.coordinates, g.thrower, g.airtime, g.usage_count,
@@ -649,18 +648,6 @@ fn try_begin_import(status: &Mutex<ImportStatus>) -> AppResult<()> {
     Ok(())
 }
 
-fn validate_import_size(size: u64) -> AppResult<()> {
-    if size > MAX_IMPORT_JSON_BYTES {
-        return Err(AppError::Import {
-            code: "file_too_large",
-            message: format!(
-                "JSON file is too large ({size} bytes). Maximum size is {MAX_IMPORT_JSON_BYTES} bytes (100 MiB)"
-            ),
-        });
-    }
-    Ok(())
-}
-
 fn parse_import(reader: impl std::io::Read) -> AppResult<TypedImportFile> {
     let value: Value = serde_json::from_reader(reader).map_err(|error| AppError::Import {
         code: "invalid_json",
@@ -730,23 +717,13 @@ fn parse_import(reader: impl std::io::Read) -> AppResult<TypedImportFile> {
 }
 
 fn read_import_bytes(file: fs::File) -> AppResult<Vec<u8>> {
-    validate_import_size(
-        file.metadata()
-            .map_err(|error| AppError::Import {
-                code: "file_unavailable",
-                message: format!("Cannot inspect JSON file: {error}"),
-            })?
-            .len(),
-    )?;
     let mut bytes = Vec::new();
     BufReader::new(file)
-        .take(MAX_IMPORT_JSON_BYTES + 1)
         .read_to_end(&mut bytes)
         .map_err(|error| AppError::Import {
             code: "file_unavailable",
             message: format!("Cannot read JSON file: {error}"),
         })?;
-    validate_import_size(bytes.len() as u64)?;
     Ok(bytes)
 }
 
@@ -2584,19 +2561,6 @@ mod tests {
         assert_eq!(radar.pos_y, 200.0);
         assert_eq!(radar.scale, 2.5);
         assert_eq!(radar.split_z, Some(-64.25));
-    }
-
-    #[test]
-    fn validates_import_size_limit() {
-        assert!(validate_import_size(MAX_IMPORT_JSON_BYTES).is_ok());
-        let error = validate_import_size(MAX_IMPORT_JSON_BYTES + 1).unwrap_err();
-        assert!(matches!(
-            error,
-            AppError::Import {
-                code: "file_too_large",
-                ..
-            }
-        ));
     }
 
     #[test]
