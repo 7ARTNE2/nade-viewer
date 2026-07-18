@@ -7,13 +7,10 @@ import { getClusterGrenades, getMapOverview, getSiteSettings, getSpawnPoints, ge
 import { formatNumber, grenadeLabel } from "../lib/format";
 import type { GrenadePreview, LandingCluster, MapFilters, MapOverview, SpawnPoint } from "../types/domain";
 import { useI18n } from "../i18n";
+import { defaultMapFilters, filtersMatchDefault, mapViewStorageKey, radarLevels, readStoredMapViewState, writeStoredMapViewState, type GrenadeMode, type RadarMode, type StoredMapViewState } from "./mapViewPersistence";
 
 const grenadeTypes = ["all", "smoke", "flash", "molotov", "HE"];
 const sides = ["Any", "T", "CT"];
-  const radarLevels = [
-  { key: "default", label: "Main" },
-  { key: "lower", label: "Lower" },
-] as const;
 const clusterAccentRgb: Record<string, string> = {
   T: "249, 115, 22",
   CT: "96, 165, 250",
@@ -27,83 +24,6 @@ const mapTrajectoryPreviewLimit = 120;
 type MapPageProps = {
   activeImportId: number;
 };
-
-type RadarMode = (typeof radarLevels)[number]["key"];
-
-type GrenadeMode = "landing" | "throw";
-
-type StoredMapViewState = {
-  filters: MapFilters;
-  selectedClusterId: string | null;
-  clusterPage: number;
-  grenadePage: number;
-  showSpawns: boolean;
-  radarMode: RadarMode;
-  grenadeMode: GrenadeMode;
-  iconTheme: IconTheme;
-};
-
-const defaultMapFilters = (): MapFilters => ({ grenade_type: "smoke", side: "T", search: "", min_usage: 0, is_core: false });
-
-function filtersMatchDefault(filters: MapFilters) {
-  const defaults = defaultMapFilters();
-  return (
-    filters.grenade_type === defaults.grenade_type &&
-    filters.side === defaults.side &&
-    (filters.search ?? "") === defaults.search &&
-    (filters.min_usage ?? 0) === defaults.min_usage &&
-    Boolean(filters.is_core) === Boolean(defaults.is_core)
-  );
-}
-
-function mapViewStorageKey(activeImportId: number, map: string) {
-  return `nadeviewer.map-view.${activeImportId}.${map}`;
-}
-
-function normalizeStoredNumber(value: unknown, fallback: number) {
-  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : fallback;
-}
-
-function normalizeStoredRadarMode(value: unknown): RadarMode {
-  return value === "lower" ? "lower" : "default";
-}
-
-function normalizeStoredGrenadeMode(value: unknown): GrenadeMode {
-  return value === "throw" ? "throw" : "landing";
-}
-
-function normalizeStoredIconTheme(value: unknown): IconTheme {
-  return value === "asset" ? "asset" : "base";
-}
-
-function readStoredMapViewState(key: string): StoredMapViewState | null {
-  try {
-    const raw = window.sessionStorage.getItem(key);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as Partial<StoredMapViewState>;
-    const selectedClusterId = typeof parsed.selectedClusterId === "string" ? parsed.selectedClusterId : null;
-    return {
-      filters: { ...defaultMapFilters(), ...(parsed.filters ?? {}) },
-      selectedClusterId,
-      clusterPage: normalizeStoredNumber(parsed.clusterPage, 0),
-      grenadePage: normalizeStoredNumber(parsed.grenadePage, 0),
-      showSpawns: typeof parsed.showSpawns === "boolean" ? parsed.showSpawns : true,
-      radarMode: normalizeStoredRadarMode(parsed.radarMode),
-      grenadeMode: normalizeStoredGrenadeMode(parsed.grenadeMode),
-      iconTheme: normalizeStoredIconTheme(parsed.iconTheme),
-    };
-  } catch {
-    return null;
-  }
-}
-
-function writeStoredMapViewState(key: string, state: StoredMapViewState) {
-  try {
-    window.sessionStorage.setItem(key, JSON.stringify(state));
-  } catch {
-    // Session storage can be unavailable in constrained webviews.
-  }
-}
 
 export default function MapPage({ activeImportId }: MapPageProps) {
   const { locale, tr, count } = useI18n();
