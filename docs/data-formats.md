@@ -144,11 +144,17 @@ three identifying fields on every record are required.
 | `explode_pos_x`, `explode_pos_y`, `explode_pos_z` | number | No | Detonation/landing position in game/world coordinates. |
 | `start_map_x`, `start_map_y` | number | No | Precomputed throw-origin radar coordinates, used only when world X/Y cannot be projected. |
 | `explode_map_x`, `explode_map_y` | number | No | Precomputed landing radar coordinates, used only when world X/Y cannot be projected. |
+| `trajectory` | array of arrays of numbers | No | Full world-space trajectory. It is retained unchanged for canonical Core re-export and is used to generate a sampled preview when `trajectory_preview` is absent. |
 | `trajectory_preview` | any JSON value | No | Precomputed preview stored as-is. The UI expects point-like data, but import performs no shape validation. |
 
 When both world X/Y and precomputed map X/Y exist, successfully projected world
 coordinates take precedence. Every record imported through this envelope is
-marked Core.
+marked Core. When both trajectory fields exist, `trajectory_preview` is used
+as-is by the UI and `trajectory` remains the lossless export source. When only
+`trajectory` exists, the importer derives the UI preview using the same sampling
+and radar projection as a canonical import. A preview-only legacy record remains
+valid and keeps its preview, but no full trajectory is inferred from map-space
+preview points.
 
 ### Minimal Core Nades snapshot
 
@@ -189,10 +195,11 @@ above:
 This is also the envelope currently written by Nade Viewer's Core export action.
 The export sets `version` to `1`, sets `updated_at` to the current UTC timestamp,
 sets `core_nades` to `true`, and includes only records marked Core in the active
-import. It preserves the full canonical `trajectory` only when that trajectory
-was available in the active import. A collection imported through the
-`grenades` snapshot envelope stores only `trajectory_preview`, so re-exporting
-it through the canonical exporter cannot recreate a full trajectory.
+import. Canonical records additionally accept optional `trajectory_preview` with
+the same type and behavior documented for snapshot records. Export includes the
+stored full `trajectory` and stored `trajectory_preview`, so either representation
+survives another import/export cycle. Missing fields are serialized as `null`,
+consistent with the other optional canonical record fields.
 
 ## Values used by the interface
 
@@ -241,9 +248,11 @@ not guaranteed.
 - The map count is the count of distinct `map` strings, with exact spelling and
   case.
 - Canonical records receive a zero-based `source_index` based on array order.
-- The canonical trajectory preview samples at most approximately 64 regularly
-  spaced points and ignores trajectory entries with fewer than two numbers.
-- Core snapshot `trajectory_preview` is accepted without structural validation.
+- When no explicit preview exists, trajectory preview generation samples at most
+  approximately 64 regularly spaced points and ignores trajectory entries with
+  fewer than two numbers.
+- `trajectory_preview` in either Core representation is accepted without
+  structural validation and takes precedence over generated preview data.
 - Strings are not trimmed or normalized during record import.
 - There is no comprehensive validation for timestamp syntax, supported map,
   side/type vocabulary, finite/ranged coordinates, positive tick rates, or

@@ -210,6 +210,7 @@ struct CoreNadeRecord {
     start_map_y: Option<f64>,
     explode_map_x: Option<f64>,
     explode_map_y: Option<f64>,
+    trajectory: Option<Vec<Vec<f64>>>,
     trajectory_preview: Option<Value>,
 }
 
@@ -261,6 +262,7 @@ struct RawGrenade {
     explode_pos_y: Option<f64>,
     explode_pos_z: Option<f64>,
     trajectory: Option<Vec<Vec<f64>>>,
+    trajectory_preview: Option<Value>,
     thrower: Option<String>,
     airtime: Option<f64>,
 }
@@ -1178,6 +1180,7 @@ fn grenade_preview_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Grenade
 fn raw_grenade_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<RawGrenade> {
     let usage_throwers_json: Option<String> = row.get("usage_throwers_json")?;
     let trajectory_json: Option<String> = row.get("trajectory_json")?;
+    let trajectory_preview_json: Option<String> = row.get("trajectory_preview_json")?;
     Ok(RawGrenade {
         map: row.get("map")?,
         side: Some(row.get("side")?),
@@ -1198,6 +1201,7 @@ fn raw_grenade_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<RawGrenade>
         explode_pos_y: row.get("explode_pos_y")?,
         explode_pos_z: row.get("explode_pos_z")?,
         trajectory: trajectory_json.and_then(|s| serde_json::from_str(&s).ok()),
+        trajectory_preview: trajectory_preview_json.and_then(|s| serde_json::from_str(&s).ok()),
         thrower: row.get("thrower")?,
         airtime: row.get("airtime")?,
     })
@@ -1221,6 +1225,24 @@ fn sample_trajectory(traj: &[Vec<f64>], radar: Option<&RadarParams>) -> Vec<[f64
             Some([x, y])
         })
         .collect()
+}
+
+fn trajectory_storage_json(
+    trajectory: Option<&Vec<Vec<f64>>>,
+    trajectory_preview: Option<&Value>,
+    radar: Option<&RadarParams>,
+) -> AppResult<(Option<String>, Option<String>)> {
+    let preview = if let Some(preview) = trajectory_preview {
+        Some(serde_json::to_string(preview)?)
+    } else {
+        trajectory
+            .map(|trajectory| sample_trajectory(trajectory, radar))
+            .filter(|preview| !preview.is_empty())
+            .map(|preview| serde_json::to_string(&preview))
+            .transpose()?
+    };
+    let full = trajectory.map(serde_json::to_string).transpose()?;
+    Ok((preview, full))
 }
 
 #[tauri::command]
@@ -1369,18 +1391,11 @@ fn import_index_blocking(
                 }
                 _ => (None, None),
             };
-            let trajectory_preview = g
-                .trajectory
-                .as_ref()
-                .map(|traj| sample_trajectory(traj, radar))
-                .filter(|traj| !traj.is_empty())
-                .map(|traj| serde_json::to_string(&traj))
-                .transpose()?;
-            let trajectory_json = g
-                .trajectory
-                .as_ref()
-                .map(serde_json::to_string)
-                .transpose()?;
+            let (trajectory_preview, trajectory_json) = trajectory_storage_json(
+                g.trajectory.as_ref(),
+                g.trajectory_preview.as_ref(),
+                radar,
+            )?;
 
             stmt.execute(params![
                 import_id,
@@ -2085,7 +2100,8 @@ fn export_core_nades(
         "SELECT source_index, map, side, grenade_type, throw_description, coordinates,
             thrower, airtime, usage_count, usage_throwers_json, demo_filename, throw_tick,
             lineup_tick, tickrate, round_time_seconds, start_pos_x, start_pos_y, start_pos_z,
-            explode_pos_x, explode_pos_y, explode_pos_z, trajectory_json
+            explode_pos_x, explode_pos_y, explode_pos_z, trajectory_json,
+            trajectory_preview_json
          FROM grenades
          WHERE import_id=?1 AND is_core=1
          ORDER BY map ASC, grenade_type ASC, usage_count DESC, id ASC",
@@ -2164,10 +2180,10 @@ fn import_core_nades_snapshot_blocking(
                 thrower, airtime, usage_count, usage_throwers_json, demo_filename, throw_tick,
                 lineup_tick, tickrate, round_time_seconds, start_pos_x, start_pos_y, start_pos_z,
                 explode_pos_x, explode_pos_y, explode_pos_z, start_map_x, start_map_y,
-                explode_map_x, explode_map_y, trajectory_preview_json
+                explode_map_x, explode_map_y, trajectory_preview_json, trajectory_json
             ) VALUES (
                 ?1, ?2, ?3, ?4, ?5, 1, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15,
-                ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27
+                ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28
             )",
         )?;
 
@@ -2191,11 +2207,11 @@ fn import_core_nades_snapshot_blocking(
                 }
                 _ => (g.explode_map_x, g.explode_map_y),
             };
-            let trajectory_preview = g
-                .trajectory_preview
-                .as_ref()
-                .map(serde_json::to_string)
-                .transpose()?;
+            let (trajectory_preview, trajectory_json) = trajectory_storage_json(
+                g.trajectory.as_ref(),
+                g.trajectory_preview.as_ref(),
+                radar,
+            )?;
 
             stmt.execute(params![
                 import_id,
@@ -2225,6 +2241,7 @@ fn import_core_nades_snapshot_blocking(
                 explode_map_x,
                 explode_map_y,
                 trajectory_preview,
+                trajectory_json,
             ])?;
         }
     }
@@ -2421,6 +2438,62 @@ mod tests {
         conn.query_row(sql, [], |row| row.get(0)).unwrap()
     }
 
+    fn round_trip_core_trajectory(json: &str) -> RawGrenade {
+        let TypedImportFile::CoreNades(file) = parse_import(json.as_bytes()).unwrap() else {
+            panic!("expected Core Nades snapshot");
+        };
+        let grenade = &file.grenades[0];
+        let (trajectory_preview_json, trajectory_json) = trajectory_storage_json(
+            grenade.trajectory.as_ref(),
+            grenade.trajectory_preview.as_ref(),
+            None,
+        )
+        .unwrap();
+
+        let conn = Connection::open_in_memory().unwrap();
+        init_schema(&conn).unwrap();
+        insert_import(&conn, 1);
+        conn.execute(
+            "INSERT INTO grenades(
+                import_id, source_index, map, side, grenade_type, is_core,
+                trajectory_preview_json, trajectory_json
+             ) VALUES (1, 0, ?1, ?2, ?3, 1, ?4, ?5)",
+            params![
+                grenade.map,
+                grenade.side,
+                grenade.grenade_type,
+                trajectory_preview_json,
+                trajectory_json
+            ],
+        )
+        .unwrap();
+        let exported = conn
+            .query_row(
+                "SELECT source_index, map, side, grenade_type, throw_description, coordinates,
+                    thrower, airtime, usage_count, usage_throwers_json, demo_filename, throw_tick,
+                    lineup_tick, tickrate, round_time_seconds, start_pos_x, start_pos_y, start_pos_z,
+                    explode_pos_x, explode_pos_y, explode_pos_z, trajectory_json,
+                    trajectory_preview_json
+                 FROM grenades WHERE import_id=1",
+                [],
+                raw_grenade_from_row,
+            )
+            .unwrap();
+        let exported_json = serde_json::to_vec(&ParserIndex {
+            version: Some(1),
+            updated_at: Some("now".to_string()),
+            core_nades: Some(true),
+            canonical_grenades: vec![exported],
+        })
+        .unwrap();
+        let TypedImportFile::GrenadeIndex(reimported) =
+            parse_import(exported_json.as_slice()).unwrap()
+        else {
+            panic!("expected canonical Core export");
+        };
+        reimported.canonical_grenades.into_iter().next().unwrap()
+    }
+
     #[test]
     fn converts_game_coordinates_to_radar_space() {
         let radar = RadarParams {
@@ -2502,6 +2575,51 @@ mod tests {
         let core =
             parse_import(r#"{"version":1,"exported_at":"now","grenades":[]}"#.as_bytes()).unwrap();
         assert!(matches!(core, TypedImportFile::CoreNades(_)));
+    }
+
+    #[test]
+    fn core_preview_only_trajectory_survives_canonical_round_trip() {
+        let grenade = round_trip_core_trajectory(
+            r#"{
+                "version": 1,
+                "exported_at": "then",
+                "grenades": [{
+                    "map": "Legacy",
+                    "side": "T",
+                    "grenade_type": "smoke",
+                    "trajectory_preview": [[10.0, 20.0], [30.0, 40.0]]
+                }]
+            }"#,
+        );
+
+        assert_eq!(grenade.trajectory, None);
+        assert_eq!(
+            grenade.trajectory_preview,
+            Some(serde_json::json!([[10.0, 20.0], [30.0, 40.0]]))
+        );
+    }
+
+    #[test]
+    fn core_full_trajectory_survives_canonical_round_trip_and_generates_preview() {
+        let trajectory = vec![vec![1.0, 2.0, 3.0], vec![4.0, 5.0, 6.0]];
+        let grenade = round_trip_core_trajectory(
+            r#"{
+                "version": 1,
+                "exported_at": "then",
+                "grenades": [{
+                    "map": "Current",
+                    "side": "CT",
+                    "grenade_type": "flashbang",
+                    "trajectory": [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]
+                }]
+            }"#,
+        );
+
+        assert_eq!(grenade.trajectory, Some(trajectory));
+        assert_eq!(
+            grenade.trajectory_preview,
+            Some(serde_json::json!([[1.0, 2.0], [4.0, 5.0]]))
+        );
     }
 
     #[test]
