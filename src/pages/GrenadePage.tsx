@@ -47,7 +47,9 @@ export default function GrenadePage() {
       .then(async (detail) => {
         if (cancelled) return;
         setGrenade({ ...detail, usage_throwers: Array.isArray(detail.usage_throwers) ? detail.usage_throwers : [] });
-        recordGrenadeView(detail.id).catch(() => undefined);
+        recordGrenadeView(detail.id).catch((error) => {
+          console.warn(`Unable to record grenade ${detail.id} in view history`, error);
+        });
         const [list, spawns] = await Promise.all([getSimilarGrenades(grenadeId, 10), getSpawnPoints(detail.map, "Any")]);
         if (cancelled) return;
         setSimilar(Array.isArray(list) ? list : []);

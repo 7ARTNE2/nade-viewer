@@ -106,7 +106,7 @@ function writeStoredMapViewState(key: string, state: StoredMapViewState) {
 }
 
 export default function MapPage({ activeImportId }: MapPageProps) {
-  const { tr } = useI18n();
+  const { locale, tr } = useI18n();
   const { mapName = "" } = useParams();
   const navigate = useNavigate();
   const decodedMap = useMemo(() => {
@@ -133,6 +133,9 @@ export default function MapPage({ activeImportId }: MapPageProps) {
   const [grenadeLoading, setGrenadeLoading] = useState(false);
   const [showSpawns, setShowSpawns] = useState(initialViewState?.showSpawns ?? true);
   const [loading, setLoading] = useState(true);
+  const [overviewError, setOverviewError] = useState<string | null>(null);
+  const [grenadeError, setGrenadeError] = useState<string | null>(null);
+  const [overviewRetry, setOverviewRetry] = useState(0);
   const [radarMode, setRadarMode] = useState<RadarMode>(initialViewState?.radarMode ?? "default");
   const [grenadeMode, setGrenadeMode] = useState<GrenadeMode>(initialViewState?.grenadeMode ?? "landing");
   const [iconTheme, setIconTheme] = useState<IconTheme>(initialViewState?.iconTheme ?? "base");
@@ -193,6 +196,8 @@ export default function MapPage({ activeImportId }: MapPageProps) {
     overviewRequestRef.current = requestId;
     const requestFilters: MapFilters = { ...filters, radar_level: radarMode };
     setLoading(true);
+    setOverviewError(null);
+    setGrenadeError(null);
     setOverview(null);
     setSpawns([]);
     setSelectedCluster(null);
@@ -216,7 +221,10 @@ export default function MapPage({ activeImportId }: MapPageProps) {
               Promise.all([
                 loadClusterGrenades(restoredCluster, restoredGrenadePageRef.current),
                 loadClusterMapGrenades(restoredCluster),
-              ]).catch((error) => console.error(error));
+              ]).catch((error) => {
+                console.error(error);
+                setGrenadeError(tr("Unable to load grenades", "Не удалось загрузить гранаты"));
+              });
             } else {
               restoredClusterIdRef.current = null;
               restoredGrenadePageRef.current = 0;
@@ -228,6 +236,7 @@ export default function MapPage({ activeImportId }: MapPageProps) {
       .catch((error) => {
         if (overviewRequestRef.current === requestId) {
           console.error(error);
+          setOverviewError(tr("Unable to load map overview", "Не удалось загрузить обзор карты"));
         }
       })
       .finally(() => {
@@ -235,7 +244,7 @@ export default function MapPage({ activeImportId }: MapPageProps) {
           setLoading(false);
         }
       });
-  }, [activeImportId, decodedMap, filters, radarMode, grenadeMode, siteMinUsage]);
+  }, [activeImportId, decodedMap, filters, grenadeMode, locale, overviewRetry, radarMode, siteMinUsage]);
 
   useEffect(() => {
     if (!overview || overview.map.has_lower_radar || radarMode === "default") return;
@@ -246,6 +255,7 @@ export default function MapPage({ activeImportId }: MapPageProps) {
     const requestId = clusterRequestRef.current + 1;
     clusterRequestRef.current = requestId;
     setGrenadeLoading(true);
+    setGrenadeError(null);
 
     try {
       const clusterLoader = grenadeMode === "throw" ? getThrowClusterGrenades : getClusterGrenades;
@@ -254,6 +264,11 @@ export default function MapPage({ activeImportId }: MapPageProps) {
         setGrenades(nextGrenades);
         setGrenadePage(page);
         restoredGrenadePageRef.current = page;
+      }
+    } catch (error) {
+      if (clusterRequestRef.current === requestId) {
+        console.error(error);
+        setGrenadeError(tr("Unable to load grenades", "Не удалось загрузить гранаты"));
       }
     } finally {
       if (clusterRequestRef.current === requestId) {
@@ -289,10 +304,12 @@ export default function MapPage({ activeImportId }: MapPageProps) {
     setSelectedCluster(cluster);
     setGrenades([]);
     setMapGrenades([]);
+    setGrenadeError(null);
     try {
       await Promise.all([loadClusterGrenades(cluster, 0), loadClusterMapGrenades(cluster)]);
     } catch (error) {
       console.error(error);
+      setGrenadeError(tr("Unable to load grenades", "Не удалось загрузить гранаты"));
       setGrenades([]);
       setMapGrenades([]);
     }
@@ -391,6 +408,14 @@ export default function MapPage({ activeImportId }: MapPageProps) {
     }
   };
 
+  const retryClusterLoad = (cluster: LandingCluster) => {
+    setGrenadeError(null);
+    Promise.all([loadClusterGrenades(cluster, grenadePage), loadClusterMapGrenades(cluster)]).catch((error) => {
+      console.error(error);
+      setGrenadeError(tr("Unable to load grenades", "Не удалось загрузить гранаты"));
+    });
+  };
+
   return (
     <div className="map-workspace">
       <section className="map-main-panel">
@@ -452,18 +477,26 @@ export default function MapPage({ activeImportId }: MapPageProps) {
           ) : null}
         </div>
 
-        <MapCanvas
-          mapImagePath={mapImagePath}
-          clusters={overview?.clusters}
-          selectedClusterId={selectedCluster?.id}
-          grenades={mapGrenades}
-          grenadePointMode={grenadeMode === "throw" ? "landing" : "throw"}
-          spawnPoints={visibleSpawns}
-          showSpawns={showSpawns}
-          iconTheme={iconTheme}
-          onClusterSelect={selectCluster}
-          onGrenadeOpen={(id) => navigate(`/grenade/${id}`)}
-        />
+        {overviewError ? (
+          <div className="detail-load-error">
+            <strong>{tr("Unable to open map", "Не удалось открыть карту")}</strong>
+            <p>{overviewError}</p>
+            <button className="btn primary" onClick={() => setOverviewRetry((value) => value + 1)}>{tr("Retry", "Повторить")}</button>
+          </div>
+        ) : (
+          <MapCanvas
+            mapImagePath={mapImagePath}
+            clusters={overview?.clusters}
+            selectedClusterId={selectedCluster?.id}
+            grenades={mapGrenades}
+            grenadePointMode={grenadeMode === "throw" ? "landing" : "throw"}
+            spawnPoints={visibleSpawns}
+            showSpawns={showSpawns}
+            iconTheme={iconTheme}
+            onClusterSelect={selectCluster}
+            onGrenadeOpen={(id) => navigate(`/grenade/${id}`)}
+          />
+        )}
       </section>
 
       <aside className="inspector">
@@ -570,14 +603,21 @@ export default function MapPage({ activeImportId }: MapPageProps) {
             {tr("Selected grenades", "Выбранные гранаты")}
             {selectedCluster ? <span className="section-count">{formatNumber(selectedCluster.count)}</span> : null}
           </div>
-          <GrenadeList
-            grenades={grenades}
-            compact
-            showCopy
-            spawnPoints={visibleSpawns}
-            onCoreToggle={handleCoreToggle}
-            emptyLabel={grenadeLoading ? tr("Loading grenades.", "Загрузка гранат.") : filters.is_core ? tr("No Core Nades in this cluster.", "В этом кластере нет Core Nades.") : undefined}
-          />
+          {grenadeError && selectedCluster ? (
+            <div className="panel-load-error">
+              <span>{grenadeError}</span>
+              <button className="micro-btn" onClick={() => retryClusterLoad(selectedCluster)}>{tr("Retry", "Повторить")}</button>
+            </div>
+          ) : (
+            <GrenadeList
+              grenades={grenades}
+              compact
+              showCopy
+              spawnPoints={visibleSpawns}
+              onCoreToggle={handleCoreToggle}
+              emptyLabel={grenadeLoading ? tr("Loading grenades.", "Загрузка гранат.") : filters.is_core ? tr("No Core Nades in this cluster.", "В этом кластере нет Core Nades.") : undefined}
+            />
+          )}
           {selectedCluster && selectedCluster.count > grenadePageSize ? (
             <div className="panel-pager">
               <button onClick={() => loadClusterGrenades(selectedCluster, Math.max(0, grenadePage - 1))} disabled={grenadeLoading || grenadePage === 0} aria-label="Previous selected grenades">

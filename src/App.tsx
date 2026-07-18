@@ -71,16 +71,25 @@ function Shell() {
   const refreshImports = useCallback(async () => {
     const requestId = ++importsRequestRef.current;
     try {
-      const [active, all, onboarding] = await Promise.all([getActiveImport(), listImports(), getOnboardingState()]);
+      const [active, all, onboarding] = await Promise.allSettled([getActiveImport(), listImports(), getOnboardingState()]);
       if (importsRequestRef.current !== requestId) return;
-      setActive(active);
-      setImports(Array.isArray(all) ? all : []);
-      setOnboardingOpen(!onboarding.completed);
-      if (!active && !["/", "/maps"].includes(location.pathname)) navigate("/maps?import=1", { replace: true });
+      if (active.status === "fulfilled") {
+        setActive(active.value);
+        if (!active.value && !["/", "/maps"].includes(location.pathname)) navigate("/maps?import=1", { replace: true });
+      }
+      if (all.status === "fulfilled") setImports(Array.isArray(all.value) ? all.value : []);
+      if (onboarding.status === "fulfilled") setOnboardingOpen(!onboarding.value.completed);
+      const failures = [active, all, onboarding].filter((result) => result.status === "rejected");
+      if (failures.length) {
+        failures.forEach((failure) => console.error("Unable to refresh application state", failure.reason));
+        setOperationError(tr("Some library data could not be refreshed", "Не удалось обновить часть данных библиотеки"));
+      } else {
+        setOperationError(null);
+      }
     } finally {
       if (importsRequestRef.current === requestId) setLoading(false);
     }
-  }, [location.pathname, navigate]);
+  }, [locale, location.pathname, navigate]);
 
   useEffect(() => {
     refreshImports().catch(() => setLoading(false));
@@ -105,11 +114,17 @@ function Shell() {
   };
 
   const saveSnapshotLabel = async (snapshot: ImportSummary) => {
-    const updated = await updateImportLabel(snapshot.id, editingLabel);
-    setImports(await listImports());
-    if (activeImport?.id === updated.id) setActive(updated);
-    setEditingSnapshotId(null);
-    setEditingLabel("");
+    setOperationError(null);
+    try {
+      const updated = await updateImportLabel(snapshot.id, editingLabel);
+      setImports((current) => current.map((item) => item.id === updated.id ? updated : item));
+      if (activeImport?.id === updated.id) setActive(updated);
+      setEditingSnapshotId(null);
+      setEditingLabel("");
+    } catch (error) {
+      console.error(error);
+      setOperationError(tr("Could not rename library", "Не удалось переименовать библиотеку"));
+    }
   };
 
   const confirmDeleteSnapshot = async () => {
@@ -194,7 +209,7 @@ function Shell() {
                         <div key={item.id} className={`snapshot-option ${item.id === activeImport.id ? "active" : ""} ${isEditing ? "editing" : ""}`}>
                           <span className="snapshot-id">#{item.id}</span>
                           {isEditing ? (
-                            <form className="snapshot-edit-row" onSubmit={(event) => { event.preventDefault(); saveSnapshotLabel(item).catch(() => undefined); }}>
+                            <form className="snapshot-edit-row" onSubmit={(event) => { event.preventDefault(); void saveSnapshotLabel(item); }}>
                               <input className="snapshot-edit-input" value={editingLabel} onChange={(event) => setEditingLabel(event.target.value)} placeholder={importFileName(item.source_path)} autoFocus />
                               <button className="snapshot-edit-action" type="submit"><Check size={14} /></button>
                               <button className="snapshot-edit-action" type="button" onClick={() => setEditingSnapshotId(null)}><X size={14} /></button>

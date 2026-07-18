@@ -259,6 +259,7 @@
 }
 
 .operation-error-chip{color:#ff9ca3;font-size:9px;white-space:nowrap}
+.panel-load-error{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px;border:1px solid rgba(255,113,133,.2);border-radius:8px;background:rgba(255,113,133,.06);color:#ff9ca3;font-size:10px}
 .demo-filename{display:flex;min-width:0;align-items:flex-start;justify-content:flex-end;gap:5px;overflow-wrap:anywhere;white-space:normal}
 .demo-filename svg{flex:none;margin-top:1px}
 html[lang="ru"] .home-sidebar h1,

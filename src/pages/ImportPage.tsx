@@ -13,7 +13,7 @@ type Props = {
 };
 
 export default function ImportPage({ onImported, lastImport }: Props) {
-  const { tr } = useI18n();
+  const { locale, tr } = useI18n();
   const navigate = useNavigate();
   const [path, setPath] = useState("");
   const [status, setStatus] = useState<ImportStatus>({ running: false, stage: "idle", current: 0, total: 0, message: "Ready" });
@@ -26,10 +26,13 @@ export default function ImportPage({ onImported, lastImport }: Props) {
   useEffect(() => {
     if (!busy) return;
     const timer = window.setInterval(() => {
-      getImportStatus().then(setStatus).catch(() => undefined);
+      getImportStatus().then(setStatus).catch((error) => {
+        console.error("Unable to read import progress", error);
+        setStatus((current) => ({ ...current, message: tr("Unable to read import progress", "Не удалось получить ход импорта") }));
+      });
     }, 350);
     return () => window.clearInterval(timer);
-  }, [busy]);
+  }, [busy, locale]);
 
   const choose = async () => {
     try {
@@ -98,7 +101,10 @@ export default function ImportPage({ onImported, lastImport }: Props) {
         const droppedPath = payload.paths.find((candidate) => candidate.toLowerCase().endsWith(".json"));
         if (droppedPath) {
           setPath(droppedPath);
-          void runImportRef.current(droppedPath);
+          runImportRef.current(droppedPath).catch((error) => {
+            console.error("Unable to import dropped file", error);
+            setMessage(tr("Import failed", "Ошибка импорта"));
+          });
         } else {
           setMessage(tr("Drop a JSON file", "Перетащите JSON-файл"));
         }
@@ -106,12 +112,15 @@ export default function ImportPage({ onImported, lastImport }: Props) {
     }).then((stop) => {
       if (disposed) stop();
       else unlisten = stop;
-    }).catch((error) => console.error("Unable to listen for file drops", error));
+    }).catch((error) => {
+      console.error("Unable to listen for file drops", error);
+      setMessage(tr("File drop is unavailable", "Перетаскивание файлов недоступно"));
+    });
     return () => {
       disposed = true;
       unlisten?.();
     };
-  }, [tr]);
+  }, [locale]);
 
   return (
     <div className="import-view">
