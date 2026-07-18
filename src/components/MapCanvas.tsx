@@ -247,10 +247,11 @@ export default function MapCanvas({
   const radarSize = Math.min(stageSize.width, stageSize.height);
   const radarOffsetX = (stageSize.width - radarSize) / 2;
   const radarOffsetY = (stageSize.height - radarSize) / 2;
-  const project = (x: number, y: number) => ({
-    left: `${(radarOffsetX + (x / 1024) * radarSize) * view.s + view.tx}px`,
-    top: `${(radarOffsetY + (y / 1024) * radarSize) * view.s + view.ty}px`,
-  });
+  const project = (x: number, y: number) =>
+    ({
+      '--map-x': `${(radarOffsetX + (x / 1024) * radarSize) * view.s + view.tx}px`,
+      '--map-y': `${(radarOffsetY + (y / 1024) * radarSize) * view.s + view.ty}px`,
+    }) as CSSProperties;
   const projectSvg = (x: number, y: number) => ({
     x: (radarOffsetX + (x / 1024) * radarSize) * view.s + view.tx,
     y: (radarOffsetY + (y / 1024) * radarSize) * view.s + view.ty,
