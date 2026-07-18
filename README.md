@@ -138,6 +138,52 @@ history; it does not delete the original JSON file.
 Imports are snapshots: importing a file creates a new database import rather
 than merging it into the active one. Only one import can run at a time.
 
+## Trajectories and large map results
+
+### Core trajectory import and export
+
+Nade Viewer stores two different trajectory representations:
+
+- `trajectory` is the complete sequence of world-space trajectory points. It is
+  the source data that must be preserved for a lossless export.
+- `trajectory_preview` is a smaller, radar-space sequence used to draw the path
+  efficiently on the map. It can be supplied by the source file or generated
+  from `trajectory` when a matching radar config is available.
+
+Earlier Core snapshot imports kept only `trajectory_preview`. Exporting that
+import afterward could therefore omit the original complete `trajectory`.
+Current imports store both values independently in SQLite, and Core export
+writes both back to the canonical Core JSON. A Core file containing a complete
+trajectory can now go through import, export, and re-import without losing its
+world-space points.
+
+For compatibility, older Core files that contain only `trajectory_preview`
+still import and export correctly. Nade Viewer does not attempt to reconstruct a
+complete world-space trajectory from preview points because that conversion
+would be lossy and potentially incorrect.
+
+See [Core Nades formats](docs/data-formats.md#core-nades-formats) for the exact
+JSON fields.
+
+### Map preview limits
+
+Opening a large cluster does not send every grenade and every trajectory to the
+frontend at once:
+
+- The paginated lineup list loads 30 grenades per page.
+- The map requests at most 120 grenades from the selected cluster for trajectory
+  and marker preview. This limits SQLite-to-Tauri serialization and SVG/DOM work;
+  it does not remove grenades from the imported library or from list pagination.
+- A map overview returns at most the 2,000 largest clusters. The backend checks
+  for one additional result, sets `clusters_truncated`, and the UI displays
+  `Showing the 2,000 largest clusters` (or its Russian translation) when more
+  clusters match the current filters.
+
+The cluster limit affects only overview markers and cluster navigation for the
+current filter result. The displayed total grenade count still describes the
+full matching dataset. Narrow the filters to inspect clusters outside the 2,000
+largest results.
+
 ## Maps and radar assets
 
 Bundled previews, radar images, and radar coordinate configs currently cover:
