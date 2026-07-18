@@ -839,6 +839,20 @@ fn active_import_id(conn: &Connection) -> AppResult<Option<i64>> {
         .and_then(|v| v.parse::<i64>().ok()))
 }
 
+fn active_grenade_import_id(conn: &Connection, grenade_id: i64) -> AppResult<i64> {
+    active_import_id(conn)?.ok_or_else(|| AppError::Message("No active import".to_string()))?;
+    conn.query_row(
+        "SELECT g.import_id
+             FROM grenades g
+             JOIN app_meta m ON m.key='active_import_id' AND CAST(m.value AS INTEGER)=g.import_id
+             WHERE g.id=?1",
+        params![grenade_id],
+        |row| row.get(0),
+    )
+    .optional()?
+    .ok_or_else(|| AppError::Message("Grenade not found".to_string()))
+}
+
 fn public_min_usage_count(conn: &Connection) -> AppResult<i64> {
     let value = conn
         .query_row(
@@ -1784,6 +1798,7 @@ fn parse_cluster_id(id: &str) -> AppResult<(i64, i64)> {
 #[tauri::command]
 fn get_grenade(id: i64, state: tauri::State<'_, AppState>) -> AppResult<GrenadeDetail> {
     let conn = open_conn(&state)?;
+    active_grenade_import_id(&conn, id)?;
     let radars = load_radars(&state.resource_dir)?;
     let mut stmt = conn.prepare(&format!(
         "SELECT {GRENADE_PREVIEW_COLUMNS}, g.usage_throwers_json, g.demo_filename,
@@ -1793,7 +1808,9 @@ fn get_grenade(id: i64, state: tauri::State<'_, AppState>) -> AppResult<GrenadeD
                 a.map_image_path, a.lower_map_image_path, a.preview_image_path
          FROM grenades g
          LEFT JOIN map_assets a ON a.name=g.map
-         WHERE g.id=?1"
+         WHERE g.id=?1 AND g.import_id=(
+             SELECT CAST(value AS INTEGER) FROM app_meta WHERE key='active_import_id'
+         )"
     ))?;
     Ok(stmt.query_row(params![id], |row| {
         let mut preview = grenade_preview_from_row(row)?;
@@ -1834,20 +1851,16 @@ fn get_grenade(id: i64, state: tauri::State<'_, AppState>) -> AppResult<GrenadeD
 #[tauri::command]
 fn record_grenade_view(id: i64, state: tauri::State<'_, AppState>) -> AppResult<bool> {
     let conn = open_conn(&state)?;
-    let exists = conn
-        .query_row("SELECT id FROM grenades WHERE id=?1", params![id], |row| {
-            row.get::<_, i64>(0)
-        })
-        .optional()?;
-    if exists.is_none() {
-        return Err(AppError::Message("Grenade not found".to_string()));
-    }
+    active_grenade_import_id(&conn, id)?;
 
     let now = Utc::now();
     let duplicate_window_start = now - Duration::seconds(5);
-    conn.execute(
+    let changed = conn.execute(
         "INSERT INTO grenade_view_history(grenade_id, viewed_at, view_count)
-         VALUES (?1, ?2, 1)
+         SELECT g.id, ?2, 1 FROM grenades g
+         WHERE g.id=?1 AND g.import_id=(
+             SELECT CAST(value AS INTEGER) FROM app_meta WHERE key='active_import_id'
+         )
          ON CONFLICT(grenade_id) DO UPDATE SET
            viewed_at=excluded.viewed_at,
            view_count=CASE
@@ -1856,6 +1869,9 @@ fn record_grenade_view(id: i64, state: tauri::State<'_, AppState>) -> AppResult<
            END",
         params![id, now.to_rfc3339(), duplicate_window_start.to_rfc3339()],
     )?;
+    if changed == 0 {
+        return Err(AppError::Message("Grenade not found".to_string()));
+    }
     Ok(true)
 }
 
@@ -1888,8 +1904,12 @@ fn get_recently_viewed_grenades(
 #[tauri::command]
 fn set_grenade_core(id: i64, is_core: bool, state: tauri::State<'_, AppState>) -> AppResult<bool> {
     let conn = open_conn(&state)?;
+    active_grenade_import_id(&conn, id)?;
     let changed = conn.execute(
-        "UPDATE grenades SET is_core=?1 WHERE id=?2",
+        "UPDATE grenades SET is_core=?1
+         WHERE id=?2 AND import_id=(
+             SELECT CAST(value AS INTEGER) FROM app_meta WHERE key='active_import_id'
+         )",
         params![if is_core { 1 } else { 0 }, id],
     )?;
     if changed == 0 {
@@ -2085,11 +2105,24 @@ fn get_similar_grenades(
     state: tauri::State<'_, AppState>,
 ) -> AppResult<Vec<GrenadePreview>> {
     let conn = open_conn(&state)?;
+    active_grenade_import_id(&conn, id)?;
     let base: Option<(i64, String, String, Option<f64>, Option<f64>)> = conn
         .query_row(
-            "SELECT import_id, map, grenade_type, explode_map_x, explode_map_y FROM grenades WHERE id=?1",
+            "SELECT import_id, map, grenade_type, explode_map_x, explode_map_y
+             FROM grenades
+             WHERE id=?1 AND import_id=(
+                 SELECT CAST(value AS INTEGER) FROM app_meta WHERE key='active_import_id'
+             )",
             params![id],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                ))
+            },
         )
         .optional()?;
     let Some((import_id, map, grenade_type, x, y)) = base else {
@@ -2222,5 +2255,54 @@ fn fmt_num(value: f64) -> String {
     } else {
         let s = format!("{:.2}", value);
         s.trim_end_matches('0').trim_end_matches('.').to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn active_grenade_is_limited_to_active_import() {
+        let conn = Connection::open_in_memory().unwrap();
+        init_schema(&conn).unwrap();
+        conn.execute_batch(
+            "INSERT INTO imports(id, source_path, kind, imported_at, grenade_count, map_count)
+             VALUES (1, 'one', 'grenade_index', 'now', 1, 1),
+                    (2, 'two', 'grenade_index', 'now', 1, 1);
+             INSERT INTO grenades(id, import_id, source_index, map, side, grenade_type)
+             VALUES (10, 1, 0, 'de_dust2', 'T', 'smoke'),
+                    (20, 2, 0, 'de_dust2', 'T', 'smoke');
+             INSERT INTO app_meta(key, value) VALUES ('active_import_id', '1');",
+        )
+        .unwrap();
+
+        assert_eq!(active_grenade_import_id(&conn, 10).unwrap(), 1);
+        assert_eq!(
+            active_grenade_import_id(&conn, 20).unwrap_err().to_string(),
+            "Grenade not found"
+        );
+
+        conn.execute(
+            "UPDATE app_meta SET value='2' WHERE key='active_import_id'",
+            [],
+        )
+        .unwrap();
+        assert_eq!(active_grenade_import_id(&conn, 20).unwrap(), 2);
+        assert_eq!(
+            active_grenade_import_id(&conn, 10).unwrap_err().to_string(),
+            "Grenade not found"
+        );
+    }
+
+    #[test]
+    fn active_grenade_requires_an_active_import() {
+        let conn = Connection::open_in_memory().unwrap();
+        init_schema(&conn).unwrap();
+
+        assert_eq!(
+            active_grenade_import_id(&conn, 10).unwrap_err().to_string(),
+            "No active import"
+        );
     }
 }
