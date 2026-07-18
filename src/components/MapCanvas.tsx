@@ -458,24 +458,24 @@ export default function MapCanvas({
                 {tr('No map image', 'Нет изображения карты')}
               </div>
             )}
-            {selectedCluster ? (
-              <div className="map-caption">
-                <span>
-                  {count(
-                    selectedCluster.count,
-                    'grenade selected',
-                    'grenades selected',
-                    'граната выбрана',
-                    'гранаты выбрано',
-                    'гранат выбрано',
-                  )}
-                </span>
-                <span>
-                  {selectedCluster.unique_types.map(grenadeLabel).join(', ')}
-                </span>
-              </div>
-            ) : null}
           </div>
+          {selectedCluster ? (
+            <div className="map-caption">
+              <span>
+                {count(
+                  selectedCluster.count,
+                  'grenade selected',
+                  'grenades selected',
+                  'граната выбрана',
+                  'гранаты выбрано',
+                  'гранат выбрано',
+                )}
+              </span>
+              <span>
+                {selectedCluster.unique_types.map(grenadeLabel).join(', ')}
+              </span>
+            </div>
+          ) : null}
           <svg
             className="trajectory-screen-layer"
             width={stageSize.width}
