@@ -1333,6 +1333,10 @@ fn set_active_import(
     state: tauri::State<'_, AppState>,
 ) -> AppResult<ImportSummary> {
     let conn = open_conn(&state)?;
+    set_active_import_in_conn(&conn, import_id)
+}
+
+fn set_active_import_in_conn(conn: &Connection, import_id: i64) -> AppResult<ImportSummary> {
     let exists: Option<i64> = conn
         .query_row(
             "SELECT id FROM imports WHERE id=?1",
@@ -1384,6 +1388,15 @@ fn delete_import(
     state: tauri::State<'_, AppState>,
 ) -> AppResult<Option<ImportSummary>> {
     let mut conn = open_conn(&state)?;
+    let active = delete_import_from_conn(&mut conn, import_id)?;
+    conn.execute_batch("PRAGMA wal_checkpoint(PASSIVE); PRAGMA optimize;")?;
+    Ok(active)
+}
+
+fn delete_import_from_conn(
+    conn: &mut Connection,
+    import_id: i64,
+) -> AppResult<Option<ImportSummary>> {
     let tx = conn.transaction()?;
     let exists: Option<i64> = tx
         .query_row(
@@ -1432,7 +1445,6 @@ fn delete_import(
     }
 
     tx.commit()?;
-    conn.execute_batch("PRAGMA wal_checkpoint(PASSIVE); PRAGMA optimize;")?;
     get_active_import_from_conn(&conn)
 }
 
@@ -1792,6 +1804,9 @@ fn parse_cluster_id(id: &str) -> AppResult<(i64, i64)> {
         .next()
         .and_then(|v| v.parse::<i64>().ok())
         .ok_or_else(|| AppError::Message("Invalid cluster id".to_string()))?;
+    if parts.next().is_some() {
+        return Err(AppError::Message("Invalid cluster id".to_string()));
+    }
     Ok((cx, cy))
 }
 
@@ -2261,6 +2276,206 @@ fn fmt_num(value: f64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn insert_import(conn: &Connection, id: i64) {
+        conn.execute(
+            "INSERT INTO imports(id, source_path, imported_at, grenade_count, map_count)
+             VALUES (?1, ?2, 'now', 1, 1)",
+            params![id, format!("import-{id}")],
+        )
+        .unwrap();
+    }
+
+    fn count(conn: &Connection, sql: &str) -> i64 {
+        conn.query_row(sql, [], |row| row.get(0)).unwrap()
+    }
+
+    #[test]
+    fn converts_game_coordinates_to_radar_space() {
+        let radar = RadarParams {
+            pos_x: -2476.0,
+            pos_y: 3239.0,
+            scale: 4.4,
+            split_z: Some(-100.0),
+        };
+
+        assert_eq!(game_to_map_coords(-2476.0, 3239.0, &radar), (0.0, 0.0));
+        let (x, y) = game_to_map_coords(1924.0, -1161.0, &radar);
+        assert!((x - 1000.0).abs() < 1e-9);
+        assert!((y - 1000.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn classifies_radar_levels_at_split_boundary() {
+        assert_eq!(classify_radar_level(None, Some(0.0), true), "unknown");
+        assert_eq!(classify_radar_level(Some(-1.0), Some(0.0), true), "lower");
+        assert_eq!(classify_radar_level(Some(0.0), Some(0.0), true), "lower");
+        assert_eq!(classify_radar_level(Some(1.0), Some(0.0), true), "default");
+        assert_eq!(
+            classify_radar_level(Some(-1.0), Some(0.0), false),
+            "default"
+        );
+        assert_eq!(classify_radar_level(Some(-1.0), None, true), "default");
+    }
+
+    #[test]
+    fn parses_radar_format_and_scopes_lower_altitude() {
+        let path = std::env::temp_dir().join(format!(
+            "nade-viewer-radar-{}-{}.txt",
+            std::process::id(),
+            chrono::Utc::now().timestamp_nanos_opt().unwrap()
+        ));
+        fs::write(
+            &path,
+            r#"
+                "pos_x" "-100.5"
+                "pos_y" "200"
+                "scale" "2.5"
+                "AltitudeMax" "999"
+                "lower" // split-level metadata
+                {
+                    "AltitudeMax" "-64.25"
+                }
+            "#,
+        )
+        .unwrap();
+
+        let radar = parse_radar_file(&path).unwrap().unwrap();
+        fs::remove_file(path).unwrap();
+        assert_eq!(radar.pos_x, -100.5);
+        assert_eq!(radar.pos_y, 200.0);
+        assert_eq!(radar.scale, 2.5);
+        assert_eq!(radar.split_z, Some(-64.25));
+    }
+
+    #[test]
+    fn search_filter_treats_like_metacharacters_as_literals() {
+        let conn = Connection::open_in_memory().unwrap();
+        init_schema(&conn).unwrap();
+        insert_import(&conn, 1);
+        conn.execute_batch(
+            "INSERT INTO grenades(import_id, source_index, map, side, grenade_type, thrower)
+             VALUES (1, 0, 'de_test', 'T', 'smoke', '100% real'),
+                    (1, 1, 'de_test', 'T', 'smoke', '1000 real'),
+                    (1, 2, 'de_test', 'T', 'smoke', 'under_score'),
+                    (1, 3, 'de_test', 'T', 'smoke', 'underXscore'),
+                    (1, 4, 'de_test', 'T', 'smoke', 'path\\name');",
+        )
+        .unwrap();
+
+        for (search, expected_index) in [("%", 0), ("_", 2), (r"\", 4)] {
+            let filters = MapFilters {
+                search: Some(format!("  {search}  ")),
+                ..Default::default()
+            };
+            let mut args: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+            let sql = format!(
+                "SELECT source_index FROM grenades WHERE 1=1{}",
+                filter_sql(&filters, &mut args)
+            );
+            let found: i64 = conn
+                .query_row(
+                    &sql,
+                    rusqlite::params_from_iter(args.iter().map(|arg| &**arg)),
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(found, expected_index, "search term {search:?}");
+        }
+    }
+
+    #[test]
+    fn migrates_legacy_schema_without_losing_rows() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE imports (
+                id INTEGER PRIMARY KEY, source_path TEXT NOT NULL, imported_at TEXT NOT NULL,
+                parser_version INTEGER, parser_updated_at TEXT, grenade_count INTEGER NOT NULL,
+                map_count INTEGER NOT NULL
+             );
+             CREATE TABLE grenades (
+                id INTEGER PRIMARY KEY, import_id INTEGER NOT NULL, source_index INTEGER NOT NULL,
+                map TEXT NOT NULL, side TEXT NOT NULL, grenade_type TEXT NOT NULL,
+                usage_count INTEGER NOT NULL DEFAULT 1,
+                start_map_x REAL, start_map_y REAL, explode_map_x REAL, explode_map_y REAL
+             );
+             INSERT INTO imports VALUES (7, 'legacy', 'then', NULL, NULL, 1, 1);
+             INSERT INTO grenades(id, import_id, source_index, map, side, grenade_type)
+             VALUES (9, 7, 0, 'de_test', 'T', 'smoke');",
+        )
+        .unwrap();
+
+        init_schema(&conn).unwrap();
+        init_schema(&conn).unwrap();
+
+        let migrated: (String, Option<String>, i64, Option<String>) = conn
+            .query_row(
+                "SELECT i.kind, i.label, g.is_core, g.trajectory_json
+                 FROM imports i JOIN grenades g ON g.import_id=i.id WHERE i.id=7",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .unwrap();
+        assert_eq!(migrated, ("grenade_index".into(), None, 0, None));
+    }
+
+    #[test]
+    fn validates_cluster_ids_and_uses_distinct_grid_sizes() {
+        assert_eq!(cluster_cell_size("start"), 10);
+        assert_eq!(cluster_cell_size("explode"), 28);
+        assert_eq!(parse_cluster_id("-2:17").unwrap(), (-2, 17));
+        for invalid in ["", "1", "a:2", "1:2:3"] {
+            assert_eq!(
+                parse_cluster_id(invalid).unwrap_err().to_string(),
+                "Invalid cluster id"
+            );
+        }
+    }
+
+    #[test]
+    fn switching_and_deleting_imports_preserves_history_and_selects_fallback() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        init_schema(&conn).unwrap();
+        for id in 1..=3 {
+            insert_import(&conn, id);
+            conn.execute(
+                "INSERT INTO grenades(id, import_id, source_index, map, side, grenade_type)
+                 VALUES (?1, ?2, 0, 'de_test', 'T', 'smoke')",
+                params![id * 10, id],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO grenade_view_history(grenade_id, viewed_at) VALUES (?1, 'now')",
+                params![id * 10],
+            )
+            .unwrap();
+        }
+
+        assert_eq!(set_active_import_in_conn(&conn, 2).unwrap().id, 2);
+        assert_eq!(active_import_id(&conn).unwrap(), Some(2));
+        assert_eq!(
+            set_active_import_in_conn(&conn, 99)
+                .err()
+                .unwrap()
+                .to_string(),
+            "Import not found"
+        );
+
+        assert_eq!(
+            delete_import_from_conn(&mut conn, 1).unwrap().unwrap().id,
+            2
+        );
+        assert_eq!(count(&conn, "SELECT COUNT(*) FROM grenade_view_history"), 2);
+        assert_eq!(
+            delete_import_from_conn(&mut conn, 2).unwrap().unwrap().id,
+            3
+        );
+        assert_eq!(active_import_id(&conn).unwrap(), Some(3));
+        assert_eq!(count(&conn, "SELECT COUNT(*) FROM grenade_view_history"), 1);
+        assert!(delete_import_from_conn(&mut conn, 3).unwrap().is_none());
+        assert_eq!(active_import_id(&conn).unwrap(), None);
+        assert_eq!(count(&conn, "SELECT COUNT(*) FROM grenade_view_history"), 0);
+    }
 
     #[test]
     fn active_grenade_is_limited_to_active_import() {
