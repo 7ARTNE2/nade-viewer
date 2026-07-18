@@ -6,7 +6,7 @@ use serde_json::Value;
 use std::{
     collections::{BTreeMap, HashMap},
     env, fs,
-    io::BufReader,
+    io::{BufReader, Read},
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
 };
@@ -16,6 +16,8 @@ use thiserror::Error;
 
 const WORLD: f64 = 1024.0;
 const MAX_OVERVIEW_CLUSTERS: usize = 2_000;
+const MAX_IMPORT_JSON_BYTES: u64 = 100 * 1024 * 1024;
+const SUPPORTED_IMPORT_VERSION: i64 = 1;
 const GRENADE_PREVIEW_COLUMNS: &str = "g.id, g.map, g.side, g.grenade_type, g.is_core,
     g.throw_description, g.coordinates, g.thrower, g.airtime, g.usage_count,
     g.start_map_x, g.start_map_y, g.explode_map_x, g.explode_map_y, g.explode_pos_z,
@@ -25,6 +27,8 @@ const GRENADE_PREVIEW_COLUMNS: &str = "g.id, g.map, g.side, g.grenade_type, g.is
 enum AppError {
     #[error("{0}")]
     Message(String),
+    #[error("{message}")]
+    Import { code: &'static str, message: String },
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error(transparent)]
@@ -39,7 +43,18 @@ impl serde::Serialize for AppError {
     where
         S: serde::Serializer,
     {
-        serializer.serialize_str(&self.to_string())
+        match self {
+            Self::Import { code, message } => {
+                #[derive(Serialize)]
+                struct ImportError<'a> {
+                    code: &'a str,
+                    message: &'a str,
+                }
+
+                ImportError { code, message }.serialize(serializer)
+            }
+            _ => serializer.serialize_str(&self.to_string()),
+        }
     }
 }
 
@@ -163,44 +178,9 @@ struct CoreNadesFile {
     grenades: Vec<CoreNadeRecord>,
 }
 
-#[derive(Deserialize)]
-struct ImportFile {
-    version: Option<i64>,
-    updated_at: Option<String>,
-    core_nades: Option<bool>,
-    canonical_grenades: Option<Vec<RawGrenade>>,
-    exported_at: Option<String>,
-    grenades: Option<Vec<CoreNadeRecord>>,
-}
-
 enum TypedImportFile {
     GrenadeIndex(ParserIndex),
     CoreNades(CoreNadesFile),
-}
-
-impl ImportFile {
-    fn into_typed(self) -> AppResult<TypedImportFile> {
-        if let Some(canonical_grenades) = self.canonical_grenades {
-            return Ok(TypedImportFile::GrenadeIndex(ParserIndex {
-                version: self.version,
-                updated_at: self.updated_at,
-                core_nades: self.core_nades,
-                canonical_grenades,
-            }));
-        }
-        if let (Some(version), Some(exported_at), Some(grenades)) =
-            (self.version, self.exported_at, self.grenades)
-        {
-            return Ok(TypedImportFile::CoreNades(CoreNadesFile {
-                version,
-                exported_at,
-                grenades,
-            }));
-        }
-        Err(AppError::Message(
-            "Unsupported JSON. Choose grenade_index.json or Core Nades JSON.".to_string(),
-        ))
-    }
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -624,6 +604,127 @@ fn set_status(state: &AppState, stage: &str, current: u64, total: u64, message: 
             status.error = None;
         }
     }
+}
+
+fn try_begin_import(status: &Mutex<ImportStatus>) -> AppResult<()> {
+    let mut status = status.lock().map_err(|_| AppError::Import {
+        code: "import_state_unavailable",
+        message: "Import state is unavailable".to_string(),
+    })?;
+    if status.running {
+        return Err(AppError::Import {
+            code: "import_already_running",
+            message: "An import is already running".to_string(),
+        });
+    }
+    status.running = true;
+    status.stage = "reading".to_string();
+    status.current = 0;
+    status.total = 0;
+    status.message = "Reading JSON".to_string();
+    status.error = None;
+    Ok(())
+}
+
+fn validate_import_size(size: u64) -> AppResult<()> {
+    if size > MAX_IMPORT_JSON_BYTES {
+        return Err(AppError::Import {
+            code: "file_too_large",
+            message: format!(
+                "JSON file is too large ({size} bytes). Maximum size is {MAX_IMPORT_JSON_BYTES} bytes (100 MiB)"
+            ),
+        });
+    }
+    Ok(())
+}
+
+fn parse_import(reader: impl std::io::Read) -> AppResult<TypedImportFile> {
+    let value: Value = serde_json::from_reader(reader).map_err(|error| AppError::Import {
+        code: "invalid_json",
+        message: format!("Invalid JSON: {error}"),
+    })?;
+    let object = value.as_object().ok_or_else(|| AppError::Import {
+        code: "invalid_top_level",
+        message: "The top-level JSON value must be an object".to_string(),
+    })?;
+    let has_canonical = object.contains_key("canonical_grenades");
+    let has_core = object.contains_key("grenades");
+    if has_canonical && has_core {
+        return Err(AppError::Import {
+            code: "ambiguous_format",
+            message: "JSON cannot contain both canonical_grenades and grenades at the top level"
+                .to_string(),
+        });
+    }
+    if !has_canonical && !has_core {
+        return Err(AppError::Import {
+            code: "unsupported_format",
+            message:
+                "Unsupported JSON format: expected canonical_grenades or grenades at the top level"
+                    .to_string(),
+        });
+    }
+
+    let version = object.get("version").filter(|value| !value.is_null());
+    if has_core && version.is_none() {
+        return Err(AppError::Import {
+            code: "missing_version",
+            message: "Core Nades JSON requires top-level version 1".to_string(),
+        });
+    }
+    if let Some(version) = version {
+        let Some(version) = version.as_i64() else {
+            return Err(AppError::Import {
+                code: "invalid_version",
+                message: "Top-level version must be an integer".to_string(),
+            });
+        };
+        if version != SUPPORTED_IMPORT_VERSION {
+            return Err(AppError::Import {
+                code: "unsupported_version",
+                message: format!(
+                    "Unsupported JSON version {version}; supported version is {SUPPORTED_IMPORT_VERSION}"
+                ),
+            });
+        }
+    }
+
+    if has_canonical {
+        serde_json::from_value::<ParserIndex>(value)
+            .map(TypedImportFile::GrenadeIndex)
+            .map_err(|error| AppError::Import {
+                code: "invalid_canonical_format",
+                message: format!("Invalid grenade_index JSON: {error}"),
+            })
+    } else {
+        serde_json::from_value::<CoreNadesFile>(value)
+            .map(TypedImportFile::CoreNades)
+            .map_err(|error| AppError::Import {
+                code: "invalid_core_format",
+                message: format!("Invalid Core Nades JSON: {error}"),
+            })
+    }
+}
+
+fn read_import_bytes(file: fs::File) -> AppResult<Vec<u8>> {
+    validate_import_size(
+        file.metadata()
+            .map_err(|error| AppError::Import {
+                code: "file_unavailable",
+                message: format!("Cannot inspect JSON file: {error}"),
+            })?
+            .len(),
+    )?;
+    let mut bytes = Vec::new();
+    BufReader::new(file)
+        .take(MAX_IMPORT_JSON_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|error| AppError::Import {
+            code: "file_unavailable",
+            message: format!("Cannot read JSON file: {error}"),
+        })?;
+    validate_import_size(bytes.len() as u64)?;
+    Ok(bytes)
 }
 
 fn set_error(state: &AppState, message: &str) {
@@ -1136,36 +1237,18 @@ async fn import_json(
     state: tauri::State<'_, AppState>,
 ) -> AppResult<JsonImportReport> {
     let state = state.inner().clone();
-    if state
-        .import_status
-        .lock()
-        .map(|s| s.running)
-        .unwrap_or(false)
-    {
-        return Err(AppError::Message(
-            "An import is already running".to_string(),
-        ));
-    }
+    try_begin_import(&state.import_status)?;
 
     let import_path = path.clone();
     let import_state = state.clone();
-    set_status(&state, "reading", 0, 0, "Reading JSON");
     let result = tauri::async_runtime::spawn_blocking(move || {
         let source_path = PathBuf::from(&import_path);
-        if !source_path.exists() {
-            return Err(AppError::Message(format!(
-                "File not found: {}",
-                import_path
-            )));
-        }
-
-        let file = fs::File::open(&source_path)?;
-        let import: ImportFile = serde_json::from_reader(BufReader::new(file)).map_err(|_| {
-            AppError::Message(
-                "Unsupported JSON. Choose grenade_index.json or Core Nades JSON.".to_string(),
-            )
+        let file = fs::File::open(&source_path).map_err(|error| AppError::Import {
+            code: "file_unavailable",
+            message: format!("Cannot open JSON file '{}': {error}", import_path),
         })?;
-        match import.into_typed()? {
+        let bytes = read_import_bytes(file)?;
+        match parse_import(bytes.as_slice())? {
             TypedImportFile::GrenadeIndex(index) => {
                 import_index_blocking(&import_state, &import_path, index)
                     .map(JsonImportReport::from)
@@ -2397,21 +2480,83 @@ mod tests {
     }
 
     #[test]
-    fn deserializes_supported_import_formats_to_typed_data() {
-        let index: ImportFile =
-            serde_json::from_str(r#"{"version":1,"updated_at":"now","canonical_grenades":[]}"#)
-                .unwrap();
+    fn validates_import_size_limit() {
+        assert!(validate_import_size(MAX_IMPORT_JSON_BYTES).is_ok());
+        let error = validate_import_size(MAX_IMPORT_JSON_BYTES + 1).unwrap_err();
         assert!(matches!(
-            index.into_typed().unwrap(),
-            TypedImportFile::GrenadeIndex(_)
+            error,
+            AppError::Import {
+                code: "file_too_large",
+                ..
+            }
         ));
+    }
 
-        let core: ImportFile =
-            serde_json::from_str(r#"{"version":1,"exported_at":"now","grenades":[]}"#).unwrap();
-        assert!(matches!(
-            core.into_typed().unwrap(),
-            TypedImportFile::CoreNades(_)
-        ));
+    #[test]
+    fn deserializes_both_supported_import_formats() {
+        let index =
+            parse_import(r#"{"version":1,"updated_at":"now","canonical_grenades":[]}"#.as_bytes())
+                .unwrap();
+        assert!(matches!(index, TypedImportFile::GrenadeIndex(_)));
+
+        let core =
+            parse_import(r#"{"version":1,"exported_at":"now","grenades":[]}"#.as_bytes()).unwrap();
+        assert!(matches!(core, TypedImportFile::CoreNades(_)));
+    }
+
+    #[test]
+    fn reports_top_level_format_and_version_errors() {
+        let cases = [
+            ("[]", "invalid_top_level"),
+            (r#"{"other":[]}"#, "unsupported_format"),
+            (
+                r#"{"canonical_grenades":[],"grenades":[]}"#,
+                "ambiguous_format",
+            ),
+            (r#"{"grenades":[],"exported_at":"now"}"#, "missing_version"),
+            (
+                r#"{"version":"1","canonical_grenades":[]}"#,
+                "invalid_version",
+            ),
+            (
+                r#"{"version":2,"canonical_grenades":[]}"#,
+                "unsupported_version",
+            ),
+        ];
+
+        for (json, expected_code) in cases {
+            let error = parse_import(json.as_bytes()).err().unwrap();
+            assert!(
+                matches!(error, AppError::Import { code, .. } if code == expected_code),
+                "expected {expected_code}, got {error}"
+            );
+        }
+    }
+
+    #[test]
+    fn import_start_is_an_atomic_single_winner_operation() {
+        use std::sync::Barrier;
+
+        let status = Arc::new(Mutex::new(ImportStatus::default()));
+        let barrier = Arc::new(Barrier::new(8));
+        let handles: Vec<_> = (0..8)
+            .map(|_| {
+                let status = Arc::clone(&status);
+                let barrier = Arc::clone(&barrier);
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    try_begin_import(&status).is_ok()
+                })
+            })
+            .collect();
+        let winners = handles
+            .into_iter()
+            .filter_map(|handle| handle.join().ok())
+            .filter(|won| *won)
+            .count();
+
+        assert_eq!(winners, 1);
+        assert!(status.lock().unwrap().running);
     }
 
     #[test]

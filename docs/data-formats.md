@@ -4,16 +4,18 @@ This document describes only formats implemented by the Serde structures and
 import code in `src-tauri/src/lib.rs`. No external schema or data source is
 assumed.
 
-Nade Viewer expects a UTF-8 JSON object. The importer reads the object once for
-format detection:
+Nade Viewer accepts files up to exactly 104,857,600 bytes (100 MiB). The limit
+is checked from file metadata before JSON is read or deserialized. It expects a
+UTF-8 JSON object and then detects the format as follows:
 
 - A top-level `canonical_grenades` key selects the canonical parser.
-- Otherwise, a top-level `grenades` key selects the Core Nades parser.
+- A top-level `grenades` key selects the Core Nades parser.
 - Otherwise, the file is rejected as unsupported.
 
-If both keys exist, `canonical_grenades` takes precedence. Serde ignores unknown
-fields. A field marked optional below may be omitted or set to `null`; a
-required field must be present and must not be `null`.
+The root must be an object and exactly one of these format keys must be present;
+a file containing both is rejected as ambiguous. Serde ignores unknown fields.
+A field marked optional below may be omitted or set to `null`; a required field
+must be present and must not be `null`.
 
 ## Canonical grenade_index
 
@@ -24,7 +26,7 @@ The canonical envelope maps to `ParserIndex`, and each entry maps to
 
 | Field | JSON type | Required | Meaning |
 | --- | --- | --- | --- |
-| `version` | integer | No | Parser/index version stored with the import. |
+| `version` | integer | No | Parser/index version stored with the import. If present and non-null, it must be the supported version `1`; other versions are rejected with the supplied and supported versions in the diagnostic. |
 | `updated_at` | string | No | Parser/index update text stored with the import; the importer does not validate a timestamp format. |
 | `core_nades` | boolean | No | Defaults to `false`. When `true`, the import is classified as `core_nades` and every imported record starts with its Core flag set. |
 | `canonical_grenades` | array of canonical records | Yes | Records to import; an empty array is valid. |
@@ -117,7 +119,7 @@ three identifying fields on every record are required.
 
 | Envelope field | JSON type | Required | Meaning |
 | --- | --- | --- | --- |
-| `version` | integer | Yes | Snapshot version, stored as the import parser version. |
+| `version` | integer | Yes | Snapshot version, stored as the import parser version. It must be integer `1`; missing, non-integer, and unsupported versions have distinct diagnostics. |
 | `exported_at` | string | Yes | Export metadata stored with the import; no timestamp syntax is validated. |
 | `grenades` | array of Core records | Yes | Records to import; an empty array is valid. |
 

@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { CheckCircle2, Database, FileJson, FolderOpen, History, ShieldCheck, Upload } from "lucide-react";
-import { getImportStatus, importJson, selectImportFile } from "../lib/tauri";
+import { getImportStatus, importJson, isTauri, selectImportFile } from "../lib/tauri";
 import { compactDate, formatNumber } from "../lib/format";
 import type { ImportStatus, ImportSummary } from "../types/domain";
 import { useI18n } from "../i18n";
@@ -17,7 +18,9 @@ export default function ImportPage({ onImported, lastImport }: Props) {
   const [path, setPath] = useState("");
   const [status, setStatus] = useState<ImportStatus>({ running: false, stage: "idle", current: 0, total: 0, message: "Ready" });
   const [busy, setBusy] = useState(false);
+  const [dragging, setDragging] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const runImportRef = useRef<(nextPath?: string) => Promise<void>>(async () => undefined);
   const progress = useMemo(() => (status.total > 0 ? Math.min(100, Math.round((status.current / status.total) * 100)) : busy ? 8 : 0), [busy, status]);
 
   useEffect(() => {
@@ -51,23 +54,67 @@ export default function ImportPage({ onImported, lastImport }: Props) {
       }
       navigate("/maps", { replace: true });
     } catch (error) {
-      setMessage(typeof error === "string" ? error : error instanceof Error ? error.message : tr("Import failed", "Ошибка импорта"));
+      const importError = typeof error === "object" && error !== null && "code" in error
+        ? error as { code: string; message?: string }
+        : null;
+      const translated: Record<string, string> = {
+        import_already_running: tr("An import is already running", "Импорт уже выполняется"),
+        import_state_unavailable: tr("Import state is unavailable", "Состояние импорта недоступно"),
+        file_unavailable: tr("The JSON file cannot be opened", "Не удалось открыть JSON-файл"),
+        file_too_large: tr("The JSON file exceeds the 100 MiB limit", "JSON-файл превышает лимит 100 МиБ"),
+        invalid_json: tr("The file is not valid JSON", "Файл содержит некорректный JSON"),
+        invalid_top_level: tr("The top-level JSON value must be an object", "Верхний уровень JSON должен быть объектом"),
+        ambiguous_format: tr("The file mixes two import formats", "В файле смешаны два формата импорта"),
+        unsupported_format: tr("Expected grenade_index or Core Nades JSON", "Ожидается JSON grenade_index или Core Nades"),
+        missing_version: tr("Core Nades JSON requires version 1", "Для Core Nades JSON требуется версия 1"),
+        invalid_version: tr("The top-level version must be an integer", "Версия верхнего уровня должна быть целым числом"),
+        unsupported_version: tr("This JSON version is not supported", "Эта версия JSON не поддерживается"),
+        invalid_canonical_format: tr("Invalid grenade_index structure", "Некорректная структура grenade_index"),
+        invalid_core_format: tr("Invalid Core Nades structure", "Некорректная структура Core Nades"),
+      };
+      if (importError) {
+        const summary = translated[importError.code] ?? tr("Import failed", "Ошибка импорта");
+        setMessage(importError.message && importError.message !== summary ? `${summary}: ${importError.message}` : summary);
+      } else {
+        setMessage(typeof error === "string" ? error : error instanceof Error ? error.message : tr("Import failed", "Ошибка импорта"));
+      }
     } finally {
       setBusy(false);
     }
   };
+  runImportRef.current = runImport;
 
-  const drop = (event: React.DragEvent) => {
-    event.preventDefault();
-    const file = event.dataTransfer.files[0] as File & { path?: string };
-    if (file?.path) {
-      setPath(file.path);
-      runImport(file.path).catch(() => undefined);
-    }
-  };
+  useEffect(() => {
+    if (!isTauri) return;
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    getCurrentWindow().onDragDropEvent(({ payload }) => {
+      if (payload.type === "enter" || payload.type === "over") {
+        setDragging(true);
+      } else if (payload.type === "leave") {
+        setDragging(false);
+      } else {
+        setDragging(false);
+        const droppedPath = payload.paths.find((candidate) => candidate.toLowerCase().endsWith(".json"));
+        if (droppedPath) {
+          setPath(droppedPath);
+          void runImportRef.current(droppedPath);
+        } else {
+          setMessage(tr("Drop a JSON file", "Перетащите JSON-файл"));
+        }
+      }
+    }).then((stop) => {
+      if (disposed) stop();
+      else unlisten = stop;
+    }).catch((error) => console.error("Unable to listen for file drops", error));
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [tr]);
 
   return (
-    <div className="import-view" onDragOver={(event) => event.preventDefault()} onDrop={drop}>
+    <div className="import-view">
       <section className="import-panel">
         <div className="import-copy">
           <div className="import-orbit"><FileJson size={32} /></div>
@@ -81,9 +128,9 @@ export default function ImportPage({ onImported, lastImport }: Props) {
         </div>
 
         <div className="import-action-card">
-          <div className={`drop-zone ${busy ? "working" : ""}`}>
+          <div className={`drop-zone ${busy ? "working" : ""} ${dragging ? "dragging" : ""}`}>
             <Database size={24} />
-            <strong>{busy ? status.message : message ?? tr("Drop JSON file here", "Перетащите JSON-файл сюда")}</strong>
+            <strong>{busy ? status.message : dragging ? tr("Release to import JSON", "Отпустите для импорта JSON") : message ?? tr("Drop JSON file here", "Перетащите JSON-файл сюда")}</strong>
             <span>{busy ? tr(`${progress}% complete`, `Выполнено ${progress}%`) : "grenade_index.json or Core Nades JSON"}</span>
           </div>
 
