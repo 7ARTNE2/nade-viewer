@@ -22,6 +22,7 @@ const clusterAccentRgb: Record<string, string> = {
 };
 const clusterPageSize = 12;
 const grenadePageSize = 30;
+const mapTrajectoryPreviewLimit = 120;
 
 type MapPageProps = {
   activeImportId: number;
@@ -265,7 +266,7 @@ export default function MapPage({ activeImportId }: MapPageProps) {
     const requestId = mapTrajectoriesRequestRef.current + 1;
     mapTrajectoriesRequestRef.current = requestId;
     const clusterLoader = grenadeMode === "throw" ? getThrowClusterGrenades : getClusterGrenades;
-    const nextGrenades = await clusterLoader(decodedMap, cluster.id, { ...filters, radar_level: radarMode }, Math.max(cluster.count, grenadePageSize), 0);
+    const nextGrenades = await clusterLoader(decodedMap, cluster.id, { ...filters, radar_level: radarMode }, mapTrajectoryPreviewLimit, 0);
     if (mapTrajectoriesRequestRef.current === requestId) {
       setMapGrenades(nextGrenades);
     }
@@ -555,6 +556,11 @@ export default function MapPage({ activeImportId }: MapPageProps) {
               <button onClick={() => setClusterPage((page) => Math.min(clusterPageCount - 1, page + 1))} disabled={clusterPage >= clusterPageCount - 1} aria-label="Next landing clusters">
                 <ChevronRight size={14} />
               </button>
+            </div>
+          ) : null}
+          {overview?.clusters_truncated ? (
+            <div className="cluster-limit-note">
+              {tr("Showing the 2,000 largest clusters.", "Показаны 2 000 крупнейших кластеров.")}
             </div>
           ) : null}
         </div>

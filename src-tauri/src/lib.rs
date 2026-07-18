@@ -15,6 +15,7 @@ use tauri::{AppHandle, Manager};
 use thiserror::Error;
 
 const WORLD: f64 = 1024.0;
+const MAX_OVERVIEW_CLUSTERS: usize = 2_000;
 const GRENADE_PREVIEW_COLUMNS: &str = "g.id, g.map, g.side, g.grenade_type, g.is_core,
     g.throw_description, g.coordinates, g.thrower, g.airtime, g.usage_count,
     g.start_map_x, g.start_map_y, g.explode_map_x, g.explode_map_y, g.explode_pos_z,
@@ -162,6 +163,46 @@ struct CoreNadesFile {
     grenades: Vec<CoreNadeRecord>,
 }
 
+#[derive(Deserialize)]
+struct ImportFile {
+    version: Option<i64>,
+    updated_at: Option<String>,
+    core_nades: Option<bool>,
+    canonical_grenades: Option<Vec<RawGrenade>>,
+    exported_at: Option<String>,
+    grenades: Option<Vec<CoreNadeRecord>>,
+}
+
+enum TypedImportFile {
+    GrenadeIndex(ParserIndex),
+    CoreNades(CoreNadesFile),
+}
+
+impl ImportFile {
+    fn into_typed(self) -> AppResult<TypedImportFile> {
+        if let Some(canonical_grenades) = self.canonical_grenades {
+            return Ok(TypedImportFile::GrenadeIndex(ParserIndex {
+                version: self.version,
+                updated_at: self.updated_at,
+                core_nades: self.core_nades,
+                canonical_grenades,
+            }));
+        }
+        if let (Some(version), Some(exported_at), Some(grenades)) =
+            (self.version, self.exported_at, self.grenades)
+        {
+            return Ok(TypedImportFile::CoreNades(CoreNadesFile {
+                version,
+                exported_at,
+                grenades,
+            }));
+        }
+        Err(AppError::Message(
+            "Unsupported JSON. Choose grenade_index.json or Core Nades JSON.".to_string(),
+        ))
+    }
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 struct CoreNadeRecord {
     source_index: Option<i64>,
@@ -249,6 +290,7 @@ struct MapOverview {
     map: MapSummary,
     grenade_count: i64,
     clusters: Vec<LandingCluster>,
+    clusters_truncated: bool,
     type_counts: BTreeMap<String, i64>,
     side_counts: BTreeMap<String, i64>,
 }
@@ -637,6 +679,7 @@ fn seed_assets(conn: &Connection, resource_dir: &Path) -> AppResult<()> {
     let maps_2d = resource_dir.join("maps").join("2d");
     let previews = resource_dir.join("maps").join("preview");
     let mut map_files: HashMap<String, (Option<PathBuf>, Option<PathBuf>)> = HashMap::new();
+    let map_filename_re = Regex::new(r"(de_[a-z0-9]+)")?;
 
     if maps_2d.exists() {
         for entry in fs::read_dir(&maps_2d)? {
@@ -644,7 +687,7 @@ fn seed_assets(conn: &Connection, resource_dir: &Path) -> AppResult<()> {
             let Some(file_name) = path.file_name().and_then(|x| x.to_str()) else {
                 continue;
             };
-            let Some(caps) = Regex::new(r"(de_[a-z0-9]+)")?.captures(file_name) else {
+            let Some(caps) = map_filename_re.captures(file_name) else {
                 continue;
             };
             let key = caps[1].to_string();
@@ -681,7 +724,7 @@ fn seed_assets(conn: &Connection, resource_dir: &Path) -> AppResult<()> {
             let Some(file_name) = path.file_name().and_then(|x| x.to_str()) else {
                 continue;
             };
-            let Some(caps) = Regex::new(r"(de_[a-z0-9]+)")?.captures(file_name) else {
+            let Some(caps) = map_filename_re.captures(file_name) else {
                 continue;
             };
             let key = caps[1].to_string();
@@ -1117,18 +1160,21 @@ async fn import_json(
         }
 
         let file = fs::File::open(&source_path)?;
-        let value: Value = serde_json::from_reader(BufReader::new(file))?;
-        if value.get("canonical_grenades").is_some() {
-            return import_index_blocking(&import_state, &import_path).map(JsonImportReport::from);
+        let import: ImportFile = serde_json::from_reader(BufReader::new(file)).map_err(|_| {
+            AppError::Message(
+                "Unsupported JSON. Choose grenade_index.json or Core Nades JSON.".to_string(),
+            )
+        })?;
+        match import.into_typed()? {
+            TypedImportFile::GrenadeIndex(index) => {
+                import_index_blocking(&import_state, &import_path, index)
+                    .map(JsonImportReport::from)
+            }
+            TypedImportFile::CoreNades(core_file) => {
+                import_core_nades_snapshot_blocking(&import_state, &import_path, core_file)
+                    .map(JsonImportReport::core_nades)
+            }
         }
-        if value.get("grenades").is_some() {
-            return import_core_nades_snapshot_blocking(&import_state, &import_path)
-                .map(JsonImportReport::core_nades);
-        }
-
-        Err(AppError::Message(
-            "Unsupported JSON. Choose grenade_index.json or Core Nades JSON.".to_string(),
-        ))
     })
     .await;
 
@@ -1154,13 +1200,11 @@ fn get_import_status(state: tauri::State<'_, AppState>) -> ImportStatus {
         .unwrap_or_default()
 }
 
-fn import_index_blocking(state: &AppState, path: &str) -> AppResult<ImportReport> {
-    let source_path = PathBuf::from(path);
-    if !source_path.exists() {
-        return Err(AppError::Message(format!("File not found: {}", path)));
-    }
-    let file = fs::File::open(&source_path)?;
-    let index: ParserIndex = serde_json::from_reader(BufReader::new(file))?;
+fn import_index_blocking(
+    state: &AppState,
+    path: &str,
+    index: ParserIndex,
+) -> AppResult<ImportReport> {
     let total = index.canonical_grenades.len() as u64;
     set_status(state, "preparing", 0, total, "Preparing local database");
     let is_core_snapshot = index.core_nades.unwrap_or(false);
@@ -1643,8 +1687,11 @@ fn map_overview_by(
          WHERE import_id=? AND map=? AND {x_col} IS NOT NULL AND {y_col} IS NOT NULL {}{}{}
          GROUP BY cx, cy
          ORDER BY COUNT(*) DESC
-         LIMIT 420",
-        visibility, filter, radar_filter
+         LIMIT {}",
+        visibility,
+        filter,
+        radar_filter,
+        MAX_OVERVIEW_CLUSTERS + 1
     );
     let cluster_radar_level = if summary.has_lower_radar {
         filters
@@ -1656,7 +1703,7 @@ fn map_overview_by(
         "default".to_string()
     };
     let mut stmt = conn.prepare(&cluster_sql)?;
-    let clusters = stmt
+    let mut clusters = stmt
         .query_map(params_ref, |row| {
             let cx: i64 = row.get(0)?;
             let cy: i64 = row.get(1)?;
@@ -1686,6 +1733,8 @@ fn map_overview_by(
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
+    let clusters_truncated = clusters.len() > MAX_OVERVIEW_CLUSTERS;
+    clusters.truncate(MAX_OVERVIEW_CLUSTERS);
 
     let type_counts = grouped_counts(&conn, import_id, &map, &summary, &filters, "grenade_type")?;
     let side_counts = grouped_counts(&conn, import_id, &map, &summary, &filters, "side")?;
@@ -1693,6 +1742,7 @@ fn map_overview_by(
         map: summary,
         grenade_count,
         clusters,
+        clusters_truncated,
         type_counts,
         side_counts,
     })
@@ -1973,13 +2023,11 @@ fn export_core_nades(
     }))
 }
 
-fn import_core_nades_snapshot_blocking(state: &AppState, path: &str) -> AppResult<ImportReport> {
-    let source_path = PathBuf::from(path);
-    if !source_path.exists() {
-        return Err(AppError::Message(format!("File not found: {}", path)));
-    }
-    let file = fs::File::open(&source_path)?;
-    let core_file: CoreNadesFile = serde_json::from_reader(BufReader::new(file))?;
+fn import_core_nades_snapshot_blocking(
+    state: &AppState,
+    path: &str,
+    core_file: CoreNadesFile,
+) -> AppResult<ImportReport> {
     let total = core_file.grenades.len() as u64;
     set_status(
         state,
@@ -2346,6 +2394,24 @@ mod tests {
         assert_eq!(radar.pos_y, 200.0);
         assert_eq!(radar.scale, 2.5);
         assert_eq!(radar.split_z, Some(-64.25));
+    }
+
+    #[test]
+    fn deserializes_supported_import_formats_to_typed_data() {
+        let index: ImportFile =
+            serde_json::from_str(r#"{"version":1,"updated_at":"now","canonical_grenades":[]}"#)
+                .unwrap();
+        assert!(matches!(
+            index.into_typed().unwrap(),
+            TypedImportFile::GrenadeIndex(_)
+        ));
+
+        let core: ImportFile =
+            serde_json::from_str(r#"{"version":1,"exported_at":"now","grenades":[]}"#).unwrap();
+        assert!(matches!(
+            core.into_typed().unwrap(),
+            TypedImportFile::CoreNades(_)
+        ));
     }
 
     #[test]
