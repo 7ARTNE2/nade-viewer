@@ -359,6 +359,8 @@ export default function MapPage({ activeImportId }: MapPageProps) {
   };
 
   const handleCoreToggle = async (id: number, isCore: boolean) => {
+    const requestId = overviewRequestRef.current + 1;
+    overviewRequestRef.current = requestId;
     const previousGrenades = grenades;
     const previousMapGrenades = mapGrenades;
     setGrenades((list) =>
@@ -374,12 +376,17 @@ export default function MapPage({ activeImportId }: MapPageProps) {
 
     try {
       await setGrenadeCore(id, isCore);
-      const nextOverview = await getMapOverview(decodedMap, { ...filters, radar_level: radarMode });
-      setOverview(nextOverview);
+      const overviewLoader = grenadeMode === "throw" ? getThrowOverview : getMapOverview;
+      const nextOverview = await overviewLoader(decodedMap, { ...filters, radar_level: radarMode });
+      if (overviewRequestRef.current === requestId) {
+        setOverview(nextOverview);
+      }
     } catch (error) {
       console.error(error);
-      setGrenades(previousGrenades);
-      setMapGrenades(previousMapGrenades);
+      if (overviewRequestRef.current === requestId) {
+        setGrenades(previousGrenades);
+        setMapGrenades(previousMapGrenades);
+      }
     }
   };
 
