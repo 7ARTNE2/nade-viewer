@@ -15,7 +15,6 @@ use tauri::{AppHandle, Manager};
 use thiserror::Error;
 
 const WORLD: f64 = 1024.0;
-const MAX_OVERVIEW_CLUSTERS: usize = 2_000;
 const SUPPORTED_IMPORT_VERSION: i64 = 1;
 const GRENADE_PREVIEW_COLUMNS: &str = "g.id, g.map, g.side, g.grenade_type, g.is_core,
     g.throw_description, g.coordinates, g.thrower, g.airtime, g.usage_count,
@@ -271,7 +270,6 @@ struct MapOverview {
     map: MapSummary,
     grenade_count: i64,
     clusters: Vec<LandingCluster>,
-    clusters_truncated: bool,
     type_counts: BTreeMap<String, i64>,
     side_counts: BTreeMap<String, i64>,
 }
@@ -1782,12 +1780,8 @@ fn map_overview_by(
          FROM grenades
          WHERE import_id=? AND map=? AND {x_col} IS NOT NULL AND {y_col} IS NOT NULL {}{}{}
          GROUP BY cx, cy
-         ORDER BY COUNT(*) DESC
-         LIMIT {}",
-        visibility,
-        filter,
-        radar_filter,
-        MAX_OVERVIEW_CLUSTERS + 1
+         ORDER BY COUNT(*) DESC",
+        visibility, filter, radar_filter
     );
     let cluster_radar_level = if summary.has_lower_radar {
         filters
@@ -1799,7 +1793,7 @@ fn map_overview_by(
         "default".to_string()
     };
     let mut stmt = conn.prepare(&cluster_sql)?;
-    let mut clusters = stmt
+    let clusters = stmt
         .query_map(params_ref, |row| {
             let cx: i64 = row.get(0)?;
             let cy: i64 = row.get(1)?;
@@ -1829,16 +1823,12 @@ fn map_overview_by(
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
-    let clusters_truncated = clusters.len() > MAX_OVERVIEW_CLUSTERS;
-    clusters.truncate(MAX_OVERVIEW_CLUSTERS);
-
     let type_counts = grouped_counts(&conn, import_id, &map, &summary, &filters, "grenade_type")?;
     let side_counts = grouped_counts(&conn, import_id, &map, &summary, &filters, "side")?;
     Ok(MapOverview {
         map: summary,
         grenade_count,
         clusters,
-        clusters_truncated,
         type_counts,
         side_counts,
     })
@@ -1921,18 +1911,23 @@ fn cluster_grenades_by(
     let visibility = visibility_sql(&conn, &mut args)?;
     let filter = filter_sql(&filters, &mut args);
     let radar_filter = radar_level_sql(filters.radar_level.as_deref(), &summary, &mut args);
-    args.push(Box::new(limit.max(1) as i64));
-    args.push(Box::new(offset as i64));
     let split_literal = summary
         .radar_split_z
         .map(|v| v.to_string())
         .unwrap_or_else(|| "NULL".to_string());
     let has_lower_literal = if summary.has_lower_radar { 1 } else { 0 };
+    let pagination = if limit == 0 {
+        String::new()
+    } else {
+        args.push(Box::new(limit as i64));
+        args.push(Box::new(offset as i64));
+        " LIMIT ? OFFSET ?".to_string()
+    };
     let sql = format!(
         "SELECT {GRENADE_PREVIEW_COLUMNS}, {split_literal} AS radar_split_z, {has_lower_literal} AS has_lower_radar FROM grenades g
          WHERE import_id=? AND map=? AND CAST({x_col} / {cell} AS INTEGER)=? AND CAST({y_col} / {cell} AS INTEGER)=?{}{}{}
-         ORDER BY usage_count DESC, id ASC LIMIT ? OFFSET ?",
-        visibility, filter, radar_filter
+         ORDER BY usage_count DESC, id ASC{}",
+        visibility, filter, radar_filter, pagination
     );
     let params_ref = rusqlite::params_from_iter(args.iter().map(|b| &**b));
     let mut stmt = conn.prepare(&sql)?;

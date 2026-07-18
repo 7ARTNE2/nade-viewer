@@ -85,7 +85,6 @@ export type MapOverview = {
   map: MapSummary;
   grenade_count: number;
   clusters: LandingCluster[];
-  clusters_truncated: boolean;
   type_counts: Record<string, number>;
   side_counts: Record<string, number>;
 };

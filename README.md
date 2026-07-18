@@ -165,24 +165,16 @@ would be lossy and potentially incorrect.
 See [Core Nades formats](docs/data-formats.md#core-nades-formats) for the exact
 JSON fields.
 
-### Map preview limits
+### Map rendering
 
-Opening a large cluster does not send every grenade and every trajectory to the
-frontend at once:
+The map overview returns every cluster matching the current filters. Selecting a
+cluster loads all of its grenade markers and trajectories for display on the
+map. These map requests are not capped or truncated.
 
-- The paginated lineup list loads 30 grenades per page.
-- The map requests at most 120 grenades from the selected cluster for trajectory
-  and marker preview. This limits SQLite-to-Tauri serialization and SVG/DOM work;
-  it does not remove grenades from the imported library or from list pagination.
-- A map overview returns at most the 2,000 largest clusters. The backend checks
-  for one additional result, sets `clusters_truncated`, and the UI displays
-  `Showing the 2,000 largest clusters` (or its Russian translation) when more
-  clusters match the current filters.
-
-The cluster limit affects only overview markers and cluster navigation for the
-current filter result. The displayed total grenade count still describes the
-full matching dataset. Narrow the filters to inspect clusters outside the 2,000
-largest results.
+The lineup list still shows 30 records per page to keep navigation manageable,
+but this pagination does not limit which points or trajectories are rendered on
+the map. Very large datasets can therefore require more query, IPC, memory, and
+rendering work; use filters when a less crowded view is preferable.
 
 ## Maps and radar assets
 

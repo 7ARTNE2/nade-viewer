@@ -55,7 +55,6 @@ const clusterAccentRgb: Record<string, string> = {
 };
 const clusterPageSize = 12;
 const grenadePageSize = 30;
-const mapTrajectoryPreviewLimit = 120;
 
 type MapPageProps = {
   activeImportId: number;
@@ -315,7 +314,7 @@ export default function MapPage({ activeImportId }: MapPageProps) {
       decodedMap,
       cluster.id,
       { ...filters, radar_level: radarMode },
-      mapTrajectoryPreviewLimit,
+      0,
       0,
     );
     if (mapTrajectoriesRequestRef.current === requestId) {
@@ -802,14 +801,6 @@ export default function MapPage({ activeImportId }: MapPageProps) {
               >
                 <ChevronRight size={14} />
               </button>
-            </div>
-          ) : null}
-          {overview?.clusters_truncated ? (
-            <div className="cluster-limit-note">
-              {tr(
-                'Showing the 2,000 largest clusters.',
-                'Показаны 2 000 крупнейших кластеров.',
-              )}
             </div>
           ) : null}
         </div>
