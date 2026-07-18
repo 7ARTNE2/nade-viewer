@@ -400,6 +400,7 @@ fn init_state(app: &AppHandle) -> Result<AppState, Box<dyn std::error::Error>> {
     let app_dir = app.path().app_data_dir()?;
     fs::create_dir_all(&app_dir)?;
     let resource_dir = resolve_resource_dir(app)?;
+    allow_asset_directories(app, &resource_dir)?;
     let db_path = app_dir.join("nadeviewer.sqlite");
     let state = AppState {
         db_path,
@@ -411,6 +412,26 @@ fn init_state(app: &AppHandle) -> Result<AppState, Box<dyn std::error::Error>> {
     seed_assets(&conn, &state.resource_dir)?;
     seed_spawn_points(&conn, &state.resource_dir)?;
     Ok(state)
+}
+
+fn asset_directories(resource_dir: &Path) -> [PathBuf; 2] {
+    [
+        resource_dir.join("maps").join("2d"),
+        resource_dir.join("maps").join("preview"),
+    ]
+}
+
+fn allow_asset_directories(
+    app: &AppHandle,
+    resource_dir: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    // The resolved directory can differ between dev and bundled layouts, so add only
+    // the two directories that contain images to the asset protocol at runtime.
+    let scope = app.asset_protocol_scope();
+    for directory in asset_directories(resource_dir) {
+        scope.allow_directory(directory, true)?;
+    }
+    Ok(())
 }
 
 fn resolve_resource_dir(app: &AppHandle) -> Result<PathBuf, Box<dyn std::error::Error>> {
@@ -2433,6 +2454,18 @@ mod tests {
             params![id, format!("import-{id}")],
         )
         .unwrap();
+    }
+
+    #[test]
+    fn asset_directories_are_limited_to_image_directories() {
+        let root = Path::new("/resolved/resources");
+        assert_eq!(
+            asset_directories(root),
+            [
+                root.join("maps").join("2d"),
+                root.join("maps").join("preview")
+            ]
+        );
     }
 
     fn count(conn: &Connection, sql: &str) -> i64 {
