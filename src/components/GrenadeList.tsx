@@ -43,9 +43,10 @@ export default function GrenadeList({ grenades, compact, showCopy, spawnPoints =
             className={`nade-row type-${String(g.grenade_type).toLowerCase()} ${g.is_core ? "core" : ""} ${isInsta ? "insta" : ""}`}
             role="button"
             tabIndex={0}
+            aria-label={`${grenadeLabel(g.grenade_type)} ${g.thrower || `${tr("Grenade", "Граната")} #${g.id}`}`}
             onClick={() => navigate(`/grenade/${g.id}`)}
             onKeyDown={(event) => {
-              if (event.key === "Enter" || event.key === " ") {
+                if ((event.key === "Enter" || event.key === " ") && event.target === event.currentTarget) {
                 event.preventDefault();
                 navigate(`/grenade/${g.id}`);
               }

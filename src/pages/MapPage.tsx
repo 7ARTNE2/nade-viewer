@@ -420,7 +420,7 @@ export default function MapPage({ activeImportId }: MapPageProps) {
     <div className="map-workspace">
       <section className="map-main-panel">
           <div className="map-toolbar" data-tour="map-workspace-toolbar">
-          <button className="icon-btn" onClick={() => navigate("/maps")}>
+          <button className="icon-btn" onClick={() => navigate("/maps")} aria-label={tr("Back to maps", "К картам")}>
             <ArrowLeft size={16} />
           </button>
           <div className="map-heading">
@@ -437,16 +437,17 @@ export default function MapPage({ activeImportId }: MapPageProps) {
             <Shapes size={15} />
             {tr("Icons", "Значки")}
           </button>
-          <button className={`toggle core-toolbar-toggle ${filters.is_core ? "active" : ""}`} onClick={() => setFilters((state) => ({ ...state, is_core: !state.is_core }))}>
+           <button aria-pressed={filters.is_core} className={`toggle core-toolbar-toggle ${filters.is_core ? "active" : ""}`} onClick={() => setFilters((state) => ({ ...state, is_core: !state.is_core }))}>
             <BadgeCheck size={15} />
              {tr("Core", "Core")}
           </button>
-          <button className={`toggle ${showSpawns ? "active" : ""}`} onClick={() => setShowSpawns((value) => !value)}>
+           <button aria-pressed={showSpawns} className={`toggle ${showSpawns ? "active" : ""}`} onClick={() => setShowSpawns((value) => !value)}>
             <LocateFixed size={15} />
             {tr("Spawns", "Спавны")}
           </button>
           <button
-            className={`toggle throw-toolbar-toggle ${grenadeMode === "throw" ? "active" : ""}`}
+             aria-pressed={grenadeMode === "throw"}
+             className={`toggle throw-toolbar-toggle ${grenadeMode === "throw" ? "active" : ""}`}
             onClick={() => switchGrenadeMode(grenadeMode === "throw" ? "landing" : "throw")}
             data-tip={tr("Group by throw position", "Группировать по позиции броска")}
           >

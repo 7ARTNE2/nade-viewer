@@ -37,6 +37,7 @@ import GrenadePage from "./pages/GrenadePage";
 import Tooltip from "./components/Tooltip";
 import OnboardingModal from "./components/OnboardingModal";
 import { useI18n } from "./i18n";
+import { useModalAccessibility } from "./lib/useModalAccessibility";
 
 function importFileName(path: string) {
   return path.split(/[\\/]/).filter(Boolean).pop() || path;
@@ -62,6 +63,8 @@ function Shell() {
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const importsRequestRef = useRef(0);
   const [operationError, setOperationError] = useState<string | null>(null);
+  const closeDeleteModal = useCallback(() => setDeleteSnapshotOpen(false), []);
+  const deleteDialogRef = useModalAccessibility<HTMLDivElement>(deleteSnapshotOpen, closeDeleteModal);
 
   const restartTutorial = async () => {
     await resetOnboarding();
@@ -211,8 +214,8 @@ function Shell() {
                           {isEditing ? (
                             <form className="snapshot-edit-row" onSubmit={(event) => { event.preventDefault(); void saveSnapshotLabel(item); }}>
                               <input className="snapshot-edit-input" value={editingLabel} onChange={(event) => setEditingLabel(event.target.value)} placeholder={importFileName(item.source_path)} autoFocus />
-                              <button className="snapshot-edit-action" type="submit"><Check size={14} /></button>
-                              <button className="snapshot-edit-action" type="button" onClick={() => setEditingSnapshotId(null)}><X size={14} /></button>
+                              <button className="snapshot-edit-action" type="submit" aria-label={tr("Save library name", "Сохранить название библиотеки")}><Check size={14} /></button>
+                              <button className="snapshot-edit-action" type="button" onClick={() => setEditingSnapshotId(null)} aria-label={tr("Cancel renaming", "Отменить переименование")}><X size={14} /></button>
                             </form>
                           ) : (
                             <>
@@ -232,11 +235,11 @@ function Shell() {
             ) : (
               <button className="btn primary" onClick={() => navigate("/maps?import=1")}><FolderOpen size={16} />{tr("Import data", "Импортировать")}</button>
             )}
-            {activeImport ? <button className="icon-btn core-transfer" onClick={handleCoreExport} disabled={coreTransferBusy} data-tip={tr("Export Core Nades", "Экспорт Core Nades")}><Upload size={15} /></button> : null}
+            {activeImport ? <button className="icon-btn core-transfer" onClick={handleCoreExport} disabled={coreTransferBusy} aria-label={tr("Export Core Nades", "Экспорт Core Nades")} data-tip={tr("Export Core Nades", "Экспорт Core Nades")}><Upload size={15} /></button> : null}
             {coreTransferStatus ? <span className="core-status-chip">{coreTransferStatus}</span> : null}
             {operationError ? <span className="operation-error-chip">{operationError}</span> : null}
-            {activeImport ? <button className="icon-btn danger" onClick={() => setDeleteSnapshotOpen(true)} data-tip={tr("Delete active library", "Удалить активную библиотеку")}><Trash2 size={15} /></button> : null}
-            <button className="icon-btn" onClick={() => window.location.reload()} data-tip={tr("Refresh", "Обновить")}><RotateCw size={15} /></button>
+            {activeImport ? <button className="icon-btn danger" onClick={() => setDeleteSnapshotOpen(true)} aria-label={tr("Delete active library", "Удалить активную библиотеку")} data-tip={tr("Delete active library", "Удалить активную библиотеку")}><Trash2 size={15} /></button> : null}
+            <button className="icon-btn" onClick={() => window.location.reload()} aria-label={tr("Refresh", "Обновить")} data-tip={tr("Refresh", "Обновить")}><RotateCw size={15} /></button>
           </div>
         </header>
 
@@ -254,9 +257,9 @@ function Shell() {
 
       {deleteSnapshotOpen && activeImport ? (
         <div className="modal-scrim" role="presentation" onMouseDown={() => setDeleteSnapshotOpen(false)}>
-          <div className="snapshot-delete-dialog" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}>
+          <div ref={deleteDialogRef} className="snapshot-delete-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-library-title" onMouseDown={(event) => event.stopPropagation()}>
             <div className="snapshot-delete-mark"><AlertTriangle size={19} /></div>
-            <div className="snapshot-delete-copy"><div className="eyebrow">{tr("Delete library", "Удаление библиотеки")}</div><h2>{snapshotDisplayName(activeImport)}</h2><p>{tr(`Library #${activeImport.id} and ${formatNumber(activeImport.grenade_count)} grenade rows will be removed.`, `Библиотека #${activeImport.id} и ${formatNumber(activeImport.grenade_count)} записей будут удалены.`)}</p></div>
+            <div className="snapshot-delete-copy"><div className="eyebrow">{tr("Delete library", "Удаление библиотеки")}</div><h2 id="delete-library-title">{snapshotDisplayName(activeImport)}</h2><p>{tr(`Library #${activeImport.id} and ${formatNumber(activeImport.grenade_count)} grenade rows will be removed.`, `Библиотека #${activeImport.id} и ${formatNumber(activeImport.grenade_count)} записей будут удалены.`)}</p></div>
             <div className="snapshot-delete-meta"><span>{tr("Source", "Источник")}</span><strong>{importFileName(activeImport.source_path)}</strong><span>{tr("Imported", "Импортирована")}</span><strong>{compactDate(activeImport.imported_at)}</strong></div>
             <div className="snapshot-delete-actions"><button className="btn" onClick={() => setDeleteSnapshotOpen(false)}>{tr("Cancel", "Отмена")}</button><button className="btn danger-action" onClick={confirmDeleteSnapshot}><Trash2 size={15} />{tr("Delete", "Удалить")}</button></div>
           </div>

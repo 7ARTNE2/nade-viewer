@@ -1,6 +1,7 @@
 import { ArrowRight, Check, Database } from "lucide-react";
-import { useEffect, useLayoutEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useState } from "react";
 import { useI18n } from "../i18n";
+import { useModalAccessibility } from "../lib/useModalAccessibility";
 
 type OnboardingModalProps = {
   onComplete: () => Promise<void>;
@@ -28,6 +29,8 @@ export default function OnboardingModal({ onComplete, onShowImport, onShowMaps, 
   const [error, setError] = useState<string | null>(null);
   const [rect, setRect] = useState<DOMRect | null>(null);
   const target = started ? steps[step] : null;
+  const close = useCallback(() => { if (!busy) void onComplete(); }, [busy, onComplete]);
+  const dialogRef = useModalAccessibility(true, close);
 
   useEffect(() => {
     if (!started) return;
@@ -63,7 +66,7 @@ export default function OnboardingModal({ onComplete, onShowImport, onShowMaps, 
   return (
     <div className={`onboarding-layer ${started ? "tour-active" : ""}`}>
       {rect ? <div className="onboarding-highlight" style={{ left: rect.left - 5, top: rect.top - 5, width: rect.width + 10, height: rect.height + 10 }} /> : null}
-      <section className="onboarding-dialog" role="dialog" aria-modal={!started} aria-labelledby="onboarding-title" style={started && rect ? { left: Math.min(Math.max(16, rect.left), window.innerWidth - 420), top: Math.min(rect.bottom + 14, window.innerHeight - 250) } : undefined}>
+      <section ref={dialogRef} className="onboarding-dialog" role="dialog" aria-modal="true" aria-labelledby="onboarding-title" style={started && rect ? { left: Math.min(Math.max(16, rect.left), window.innerWidth - 420), top: Math.min(rect.bottom + 14, window.innerHeight - 250) } : undefined}>
         {!started ? <div className="onboarding-icon"><Database size={23} /></div> : null}
         <div className="eyebrow">{started && locale === "ru" ? ["Шаг 1: импорт", "Шаг 2: Dust II", "Шаг 3: фильтры", "Шаг 4: тактическая карта", "Шаг 5: раскидки"][step] : started ? target?.eyebrow : tr("Your local playbook", "Ваш локальный плейбук")}</div>
         <h1 id="onboarding-title">{started && locale === "ru" ? ["Выберите библиотеку гранат", "Откройте Dust II", "Настройте фильтры", "Изучите карту", "Выберите кластер"][step] : started ? target?.title : tr("Welcome to Nade Viewer", "Добро пожаловать в Nade Viewer")}</h1>

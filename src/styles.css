@@ -65,6 +65,8 @@
 .cluster-limit-note{margin-top:8px;color:var(--dim);font-size:10px;line-height:1.4;text-align:center}
 .empty-note,.empty-inline{font-size:11px}
 
+button:focus-visible,[role="button"]:focus-visible,[role="link"]:focus-visible{outline:2px solid var(--acid);outline-offset:3px;box-shadow:0 0 0 4px rgba(var(--acid-rgb),.16)}
+
 .nade-row{min-height:58px;gap:9px;padding:10px}
 .type-pill{height:22px;padding:0 7px;font-size:9px}
 .side-mini{font-size:10px}
@@ -235,6 +237,7 @@
 .legend-line{display:inline-block;width:12px;height:2px;background:var(--orange)}
 .legend-spawn{border:2px solid var(--acid);background:transparent;box-shadow:0 0 6px rgba(var(--acid-rgb),.7)}
 
+@media (prefers-reduced-motion: reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;scroll-behavior:auto!important;transition-duration:.01ms!important}}
 @media(max-width:760px){
   .topnav-shell .viewer-topbar{padding:0 10px}
   .topbar-actions{margin-left:auto}

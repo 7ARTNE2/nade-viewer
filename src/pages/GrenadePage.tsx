@@ -108,7 +108,7 @@ export default function GrenadePage() {
     <div className="grenade-detail">
       <section className="detail-map-panel">
         <div className="map-toolbar">
-          <button className="icon-btn" onClick={goBack}>
+           <button className="icon-btn" onClick={goBack} aria-label={tr("Back to maps", "К картам")}>
             <ArrowLeft size={16} />
           </button>
           <div className="map-heading">
