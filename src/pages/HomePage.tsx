@@ -102,7 +102,7 @@ export default function HomePage({ activeImportId, onImported, lastImport }: Hom
         </div>
         <div className="map-grid">
           {visible.map((map) => (
-            <button key={map.name} className="map-tile" data-tour="map-tile" data-map-key={String(map.name).toLowerCase().replace(/^de_/, "")} onClick={() => navigate(`/map/${encodeURIComponent(map.name)}`)}>
+            <button key={map.name} className="map-tile" data-tour={map.name === maps[0]?.name ? "map-target" : "map-tile"} data-map-key={String(map.name).toLowerCase().replace(/^de_/, "")} onClick={() => navigate(`/map/${encodeURIComponent(map.name)}`)}>
               <div className="map-orb">
                 {map.preview_image_path ? <img src={assetUrl(map.preview_image_path)} alt="" /> : <span>{String(map.label || map.name || "??").slice(0, 2)}</span>}
               </div>
