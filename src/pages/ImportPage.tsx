@@ -53,7 +53,7 @@ export default function ImportPage({ onImported, lastImport }: Props) {
       setStatus(await getImportStatus());
       await onImported();
       if (report.kind === "core_nades") {
-        setMessage(`Imported ${formatNumber(report.grenade_count)} Core Nades snapshot`);
+        setMessage(tr(`Imported ${formatNumber(report.grenade_count)} Core Nades snapshot`, `Импортирован снимок Core Nades: ${formatNumber(report.grenade_count)} гранат`));
       }
       navigate("/maps", { replace: true });
     } catch (error) {
@@ -77,9 +77,9 @@ export default function ImportPage({ onImported, lastImport }: Props) {
       };
       if (importError) {
         const summary = translated[importError.code] ?? tr("Import failed", "Ошибка импорта");
-        setMessage(importError.message && importError.message !== summary ? `${summary}: ${importError.message}` : summary);
+        setMessage(summary);
       } else {
-        setMessage(typeof error === "string" ? error : error instanceof Error ? error.message : tr("Import failed", "Ошибка импорта"));
+        setMessage(tr("Import failed", "Ошибка импорта"));
       }
     } finally {
       setBusy(false);
@@ -140,7 +140,7 @@ export default function ImportPage({ onImported, lastImport }: Props) {
           <div className={`drop-zone ${busy ? "working" : ""} ${dragging ? "dragging" : ""}`}>
             <Database size={24} />
             <strong>{busy ? status.message : dragging ? tr("Release to import JSON", "Отпустите для импорта JSON") : message ?? tr("Drop JSON file here", "Перетащите JSON-файл сюда")}</strong>
-            <span>{busy ? tr(`${progress}% complete`, `Выполнено ${progress}%`) : "grenade_index.json or Core Nades JSON"}</span>
+             <span>{busy ? tr(`${progress}% complete`, `Выполнено ${progress}%`) : tr("grenade_index.json or Core Nades JSON", "grenade_index.json или JSON Core Nades")}</span>
           </div>
 
           {busy ? <div className="progress-shell"><div className="progress-bar" style={{ width: `${Math.max(progress, 6)}%` }} /></div> : null}

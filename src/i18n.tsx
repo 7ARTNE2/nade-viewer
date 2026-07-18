@@ -6,6 +6,7 @@ type I18nValue = {
   locale: Locale;
   setLocale: (locale: Locale) => void;
   tr: (english: string, russian: string) => string;
+  count: (value: number, englishOne: string, englishMany: string, russianOne: string, russianFew: string, russianMany: string) => string;
 };
 
 const I18nContext = createContext<I18nValue | null>(null);
@@ -24,7 +25,14 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     document.documentElement.lang = locale;
   }, [locale]);
 
-  return <I18nContext.Provider value={{ locale, setLocale, tr: (english, russian) => locale === "ru" ? russian : english }}>{children}</I18nContext.Provider>;
+  const count = (value: number, englishOne: string, englishMany: string, russianOne: string, russianFew: string, russianMany: string) => {
+    if (locale === "en") return `${value} ${value === 1 ? englishOne : englishMany}`;
+    const mod10 = value % 10;
+    const mod100 = value % 100;
+    const word = value % 1 !== 0 || mod10 === 0 || mod10 >= 5 || (mod100 >= 11 && mod100 <= 14) ? russianMany : mod10 === 1 ? russianOne : russianFew;
+    return `${value} ${word}`;
+  };
+  return <I18nContext.Provider value={{ locale, setLocale, tr: (english, russian) => locale === "ru" ? russian : english, count }}>{children}</I18nContext.Provider>;
 }
 
 export function useI18n() {

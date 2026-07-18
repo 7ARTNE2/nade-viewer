@@ -47,7 +47,7 @@ function snapshotDisplayName(snapshot: ImportSummary) {
 }
 
 function Shell() {
-  const { locale, setLocale, tr } = useI18n();
+  const { locale, setLocale, tr, count } = useI18n();
   const navigate = useNavigate();
   const location = useLocation();
   const [activeImport, setActive] = useState<ImportSummary | null>(null);
@@ -146,7 +146,7 @@ function Shell() {
     setCoreTransferStatus(null);
     try {
       const report = await exportCoreNades();
-      if (report) setCoreTransferStatus(`${formatNumber(report.grenade_count)} saved`);
+      if (report) setCoreTransferStatus(count(report.grenade_count, "grenade saved", "grenades saved", "граната сохранена", "гранаты сохранены", "гранат сохранено"));
     } catch (error) {
       console.error(error);
       setCoreTransferStatus(tr("Export failed", "Ошибка экспорта"));
@@ -172,7 +172,7 @@ function Shell() {
       <main className="app-main viewer-main">
         <header className="viewer-topbar">
           <div className="topbar-navigation">
-            <button className="topbar-brand" onClick={() => navigate("/maps")} aria-label="Nade Viewer home">
+            <button className="topbar-brand" onClick={() => navigate("/maps")} aria-label={tr("Nade Viewer home", "Главная Nade Viewer")}>
               <span className="viewer-brand-mark">NV</span>
               <span className="topbar-brand-copy"><strong>Nade Viewer</strong><small>v{version}</small></span>
             </button>
@@ -198,7 +198,7 @@ function Shell() {
                   <Database size={14} />
                   <span className="active-library-id">{tr("Library", "Библиотека")} #{activeImport.id}</span>
                   <strong>{snapshotDisplayName(activeImport)}</strong>
-                  <span className="active-library-count">{formatNumber(activeImport.grenade_count)} {tr("nades", "гранат")}</span>
+                  <span className="active-library-count">{count(activeImport.grenade_count, "grenade", "grenades", "граната", "гранаты", "гранат")}</span>
                   <ChevronDown size={14} />
                 </button>
                 {snapshotMenuOpen ? (
@@ -217,7 +217,7 @@ function Shell() {
                           ) : (
                             <>
                               <button className="snapshot-option-main" type="button" onClick={() => item.id === activeImport.id ? setSnapshotMenuOpen(false) : switchImport(item.id)}>
-                                <span className="snapshot-main"><strong>{snapshotDisplayName(item)}</strong><small>{formatNumber(item.grenade_count)} {tr("grenades", "гранат")}</small></span>
+                                <span className="snapshot-main"><strong>{snapshotDisplayName(item)}</strong><small>{count(item.grenade_count, "grenade", "grenades", "граната", "гранаты", "гранат")}</small></span>
                                 {item.id === activeImport.id ? <span className="snapshot-current">{tr("Active", "Активна")}</span> : null}
                               </button>
                               <button className="snapshot-rename-btn" type="button" onClick={() => { setEditingSnapshotId(item.id); setEditingLabel(item.label?.trim() || ""); }}><Pencil size={13} /></button>

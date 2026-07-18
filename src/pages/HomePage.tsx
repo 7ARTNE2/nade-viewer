@@ -14,7 +14,7 @@ type HomePageProps = {
 };
 
 export default function HomePage({ activeImportId, onImported, lastImport }: HomePageProps) {
-  const { tr } = useI18n();
+  const { tr, count } = useI18n();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [maps, setMaps] = useState<MapSummary[]>([]);
@@ -62,8 +62,8 @@ export default function HomePage({ activeImportId, onImported, lastImport }: Hom
         <h1>{tr("Choose a map", "Выберите карту")}</h1>
         <p className="muted">{tr("Explore lineups by landing zone, throw position and trajectory.", "Изучайте раскидки по точке приземления, позиции броска и траектории.")}</p>
         <div className="library-stats">
-          <div className="stat-line"><span>{formatNumber(maps.length)}</span><small>{tr("Maps", "Карты")}</small></div>
-          <div className="stat-line"><span>{formatNumber(total)}</span><small>{tr("Lineups", "Раскидки")}</small></div>
+           <div className="stat-line"><span>{formatNumber(maps.length)}</span><small>{tr("Maps", "Карты")}</small></div>
+           <div className="stat-line"><span>{formatNumber(total)}</span><small>{tr("Lineups", "Раскидки")}</small></div>
         </div>
         <button className="library-import-btn" type="button" onClick={() => setSearchParams({ import: "1" })}>
           <Plus size={15} /> {tr("Import library", "Импорт библиотеки")}
@@ -79,7 +79,7 @@ export default function HomePage({ activeImportId, onImported, lastImport }: Hom
                 <button key={grenade.id} type="button" onClick={() => navigate(`/grenade/${grenade.id}`)}>
                   <span className={`type-pill ${String(grenade.grenade_type).toLowerCase()}`}>{grenadeLabel(grenade.grenade_type)}</span>
                   <span className="recent-history-main">
-                    <strong>{grenade.thrower || `Grenade #${grenade.id}`}</strong>
+                    <strong>{grenade.thrower || `${tr("Grenade", "Граната")} #${grenade.id}`}</strong>
                     <small>{grenade.map} / {grenade.side}</small>
                   </span>
                   {grenade.view_count > 1 ? <span className="recent-history-count">{formatNumber(grenade.view_count)}x</span> : null}
@@ -94,7 +94,7 @@ export default function HomePage({ activeImportId, onImported, lastImport }: Hom
 
       <section className="map-grid-section">
         <div className="library-heading">
-          <div><span className="eyebrow">{tr("Map pool", "Набор карт")}</span><strong>{visible.length} {tr("available", "доступно")}</strong></div>
+           <div><span className="eyebrow">{tr("Map pool", "Набор карт")}</span><strong>{count(visible.length, "map available", "maps available", "карта доступна", "карты доступны", "карт доступно")}</strong></div>
           <div className="search-box">
             <Search size={16} />
             <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={tr("Find a map", "Найти карту")} />
@@ -107,7 +107,7 @@ export default function HomePage({ activeImportId, onImported, lastImport }: Hom
                 {map.preview_image_path ? <img src={assetUrl(map.preview_image_path)} alt="" /> : <span>{String(map.label || map.name || "??").slice(0, 2)}</span>}
               </div>
               <div className="map-tile-footer">
-                  <span><strong>{map.label}</strong><small>{formatNumber(map.grenade_count)} {tr("lineups", "раскидок")}</small></span>
+                  <span><strong>{map.label}</strong><small>{count(map.grenade_count, "lineup", "lineups", "раскидка", "раскидки", "раскидок")}</small></span>
                 <ArrowUpRight size={17} />
               </div>
             </button>

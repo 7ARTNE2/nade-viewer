@@ -58,7 +58,7 @@ export default function GrenadePage() {
       .catch((error) => {
         if (cancelled) return;
         console.error(error);
-        setLoadError("This grenade is no longer available in the active library.");
+        setLoadError(tr("This grenade is no longer available in the active library.", "Этой гранаты больше нет в активной библиотеке."));
       });
     return () => {
       cancelled = true;
@@ -135,7 +135,7 @@ export default function GrenadePage() {
           <div><Timer size={14} /><span>{tr("Airtime", "Время полета")}</span><strong>{typeof grenade.airtime === "number" ? `${grenade.airtime.toFixed(2)}s` : "-"}</strong></div>
           <div><Clock size={14} /><span>{tr("Round", "Раунд")}</span><strong>{formatClock(grenade.round_time_seconds)}</strong></div>
           <div><Crosshair size={14} /><span>{tr("Usage", "Использования")}</span><strong>{formatNumber(grenade.usage_count)}</strong></div>
-          <div><MapPinned size={14} /><span>Tickrate</span><strong>{grenade.tickrate ?? "-"}</strong></div>
+          <div><MapPinned size={14} /><span>{tr("Tickrate", "Тикрейт")}</span><strong>{grenade.tickrate ?? "-"}</strong></div>
         </div>
 
         <div className="info-block">

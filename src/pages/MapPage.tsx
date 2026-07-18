@@ -10,7 +10,7 @@ import { useI18n } from "../i18n";
 
 const grenadeTypes = ["all", "smoke", "flash", "molotov", "HE"];
 const sides = ["Any", "T", "CT"];
-const radarLevels = [
+  const radarLevels = [
   { key: "default", label: "Main" },
   { key: "lower", label: "Lower" },
 ] as const;
@@ -106,7 +106,7 @@ function writeStoredMapViewState(key: string, state: StoredMapViewState) {
 }
 
 export default function MapPage({ activeImportId }: MapPageProps) {
-  const { locale, tr } = useI18n();
+  const { locale, tr, count } = useI18n();
   const { mapName = "" } = useParams();
   const navigate = useNavigate();
   const decodedMap = useMemo(() => {
@@ -425,7 +425,7 @@ export default function MapPage({ activeImportId }: MapPageProps) {
           </button>
           <div className="map-heading">
             <strong>{overview?.map.label ?? decodedMap}</strong>
-            <span>{loading ? tr("Loading overview", "Загрузка обзора") : `${formatNumber(overview?.grenade_count ?? 0)} ${tr("filtered grenades", "гранат по фильтру")}`}</span>
+             <span>{loading ? tr("Loading overview", "Загрузка обзора") : count(overview?.grenade_count ?? 0, "filtered grenade", "filtered grenades", "граната по фильтру", "гранаты по фильтру", "гранат по фильтру")}</span>
           </div>
           <div className="toolbar-spacer" />
           <button
@@ -439,7 +439,7 @@ export default function MapPage({ activeImportId }: MapPageProps) {
           </button>
           <button className={`toggle core-toolbar-toggle ${filters.is_core ? "active" : ""}`} onClick={() => setFilters((state) => ({ ...state, is_core: !state.is_core }))}>
             <BadgeCheck size={15} />
-            Core
+             {tr("Core", "Core")}
           </button>
           <button className={`toggle ${showSpawns ? "active" : ""}`} onClick={() => setShowSpawns((value) => !value)}>
             <LocateFixed size={15} />
@@ -454,7 +454,7 @@ export default function MapPage({ activeImportId }: MapPageProps) {
             {tr("Throw", "Бросок")}
           </button>
           {hasLowerRadar ? (
-            <div className="radar-switch" aria-label="Radar level">
+             <div className="radar-switch" aria-label={tr("Radar level", "Уровень радара")}>
               {radarLevels.map((level) => (
                 <button
                   key={level.key}
@@ -470,7 +470,7 @@ export default function MapPage({ activeImportId }: MapPageProps) {
                     mapTrajectoriesRequestRef.current += 1;
                   }}
                 >
-                  {level.label}
+                   {level.key === "default" ? tr("Main", "Основной") : tr("Lower", "Нижний")}
                 </button>
               ))}
             </div>
@@ -582,11 +582,11 @@ export default function MapPage({ activeImportId }: MapPageProps) {
           </div>
           {clusterPageCount > 1 ? (
             <div className="panel-pager">
-              <button onClick={() => setClusterPage((page) => Math.max(0, page - 1))} disabled={clusterPage === 0} aria-label="Previous landing clusters">
+                 <button onClick={() => setClusterPage((page) => Math.max(0, page - 1))} disabled={clusterPage === 0} aria-label={tr("Previous landing clusters", "Предыдущие кластеры приземления")}>
                 <ChevronLeft size={14} />
               </button>
               <span>{clusterPage * clusterPageSize + 1}-{Math.min(clusters.length, (clusterPage + 1) * clusterPageSize)} of {formatNumber(clusters.length)}</span>
-              <button onClick={() => setClusterPage((page) => Math.min(clusterPageCount - 1, page + 1))} disabled={clusterPage >= clusterPageCount - 1} aria-label="Next landing clusters">
+               <button onClick={() => setClusterPage((page) => Math.min(clusterPageCount - 1, page + 1))} disabled={clusterPage >= clusterPageCount - 1} aria-label={tr("Next landing clusters", "Следующие кластеры приземления")}>
                 <ChevronRight size={14} />
               </button>
             </div>
@@ -620,14 +620,14 @@ export default function MapPage({ activeImportId }: MapPageProps) {
           )}
           {selectedCluster && selectedCluster.count > grenadePageSize ? (
             <div className="panel-pager">
-              <button onClick={() => loadClusterGrenades(selectedCluster, Math.max(0, grenadePage - 1))} disabled={grenadeLoading || grenadePage === 0} aria-label="Previous selected grenades">
+               <button onClick={() => loadClusterGrenades(selectedCluster, Math.max(0, grenadePage - 1))} disabled={grenadeLoading || grenadePage === 0} aria-label={tr("Previous selected grenades", "Предыдущие выбранные гранаты")}>
                 <ChevronLeft size={14} />
               </button>
               <span>{grenadeStart}-{grenadeEnd} of {formatNumber(selectedCluster.count)}</span>
               <button
                 onClick={() => loadClusterGrenades(selectedCluster, Math.min(grenadePageCount - 1, grenadePage + 1))}
                 disabled={grenadeLoading || grenadePage >= grenadePageCount - 1}
-                aria-label="Next selected grenades"
+                 aria-label={tr("Next selected grenades", "Следующие выбранные гранаты")}
               >
                 <ChevronRight size={14} />
               </button>

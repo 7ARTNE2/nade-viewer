@@ -75,7 +75,7 @@ export default function GrenadeList({ grenades, compact, showCopy, spawnPoints =
               <span className="nade-title-line">
                 <strong>{g.thrower || `${tr("Grenade", "Граната")} #${g.id}`}</strong>
                 {isInsta ? <span className="insta-badge">{INSTA_LABEL}</span> : null}
-                {g.is_core ? <span className="core-badge">Core</span> : null}
+                 {g.is_core ? <span className="core-badge">{tr("Core", "Core")}</span> : null}
               </span>
               <small>{g.throw_description || g.coordinates || tr("No command metadata", "Нет данных команды")}</small>
             </span>
