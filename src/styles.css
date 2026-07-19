@@ -283,3 +283,5 @@ html[lang="ru"] .detail-load-error strong{font-family:Inter,"Segoe UI",sans-seri
 .detail-load-error strong{font:600 15px Orbitron}
 .topnav-shell .view-frame{min-height:0;overflow:hidden}
 .drop-zone.dragging{border-color:var(--acid);background:rgba(var(--acid-rgb),.08);box-shadow:inset 0 0 0 1px rgba(var(--acid-rgb),.25)}
+.recent-history{display:flex;flex:1;flex-direction:column;margin-top:19px}
+.recent-history-list{min-height:0;flex:1;align-content:start;overflow-y:auto;padding-right:4px;scrollbar-gutter:stable}

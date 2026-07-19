@@ -31,7 +31,7 @@ export default function HomePage({
     mapsRequestRef.current = requestId;
     Promise.all([
       getMaps().catch(() => [] as MapSummary[]),
-      getRecentlyViewedGrenades(8).catch(() => [] as ViewedGrenade[]),
+      getRecentlyViewedGrenades(10).catch(() => [] as ViewedGrenade[]),
     ])
       .then(([nextMaps, nextRecentlyViewed]) => {
         if (mapsRequestRef.current === requestId) {
