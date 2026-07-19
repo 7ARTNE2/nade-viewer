@@ -69,6 +69,63 @@ npm run tauri:build
 Tauri build artifacts are written below `src-tauri/target/release/`; installers
 are placed below `src-tauri/target/release/bundle/`.
 
+## GitHub Releases
+
+The repository contains a GitHub Actions workflow at
+`.github/workflows/release.yml`. It builds the Windows MSI and NSIS installers
+and attaches them to a GitHub Release. The workflow supports both version tags
+and manual runs.
+
+### Release from a version tag
+
+Keep the version synchronized in these files before creating a release:
+
+- `package.json`
+- `src-tauri/tauri.conf.json`
+- `src-tauri/Cargo.toml`
+
+Create and push a semantic-version tag from the repository root:
+
+```powershell
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+Pushing the tag starts the `Release` workflow automatically. It builds the
+installers and creates a GitHub Release with files from:
+
+```text
+src-tauri/target/release/bundle/msi/*.msi
+src-tauri/target/release/bundle/nsis/*.exe
+```
+
+Use a new version tag for each release, for example:
+
+```powershell
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+Check existing local tags with `git tag` and tags on GitHub with:
+
+```powershell
+git ls-remote --tags origin
+```
+
+### Run a release manually
+
+To rebuild an existing tag without creating a new one:
+
+1. Open the repository's `Actions` tab on GitHub.
+2. Select the `Release` workflow.
+3. Click `Run workflow`.
+4. Enter an existing tag, for example `v0.1.0`.
+5. Click `Run workflow` again.
+
+The manual workflow also requires a tag in the `vMAJOR.MINOR.PATCH` format,
+such as `v1.2.3`. Pull requests and normal branch pushes do not publish
+installers.
+
 ## Tests and checks
 
 Run the complete local quality check (formatting, lint, TypeScript, frontend
