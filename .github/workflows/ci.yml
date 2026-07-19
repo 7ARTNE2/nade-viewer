@@ -3,6 +3,7 @@ name: CI
 on:
   push:
   pull_request:
+  workflow_dispatch:
 
 jobs:
   quality:
@@ -16,6 +17,11 @@ jobs:
         with:
           node-version: 22
           cache: npm
+
+      - name: Report Node.js versions
+        run: |
+          node --version
+          npm --version
 
       - name: Install JavaScript dependencies
         run: npm ci
@@ -37,6 +43,11 @@ jobs:
         with:
           toolchain: stable-x86_64-pc-windows-msvc
           components: rustfmt, clippy
+
+      - name: Report Rust versions
+        run: |
+          rustc --version
+          cargo --version
 
       - name: Cache Rust dependencies
         uses: actions/cache@v4
