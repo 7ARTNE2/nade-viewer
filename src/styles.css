@@ -138,16 +138,17 @@ button:focus-visible,[role="button"]:focus-visible,[role="link"]:focus-visible{o
 .throw-preview-key-icon.mouse{border-color:rgba(255,116,71,.25);background:rgba(255,116,71,.08);color:#ffad92}
 .throw-preview-key-icon.key{border-color:rgba(101,167,255,.25);background:rgba(101,167,255,.08);color:#9dc7ff}
 .icon-theme-asset .throw-dot,.icon-theme-asset .throw-strip-dot{border-color:transparent;background:transparent;box-shadow:none;color:var(--dot)}
-.icon-theme-asset .throw-dot:hover,.icon-theme-asset .throw-strip-dot:hover{background:rgba(5,7,10,.45);filter:drop-shadow(0 0 7px var(--dot))}
+.icon-theme-asset .throw-dot,.icon-theme-asset .throw-strip-dot{width:22px;height:30px;overflow:visible}
+.icon-theme-asset .throw-dot:hover,.icon-theme-asset .throw-strip-dot:hover{background:transparent;filter:none}
 .icon-theme-asset .throw-dot.core,.icon-theme-asset .throw-strip-dot.core{box-shadow:0 0 0 2px rgba(var(--acid-rgb),.8),0 0 10px rgba(var(--acid-rgb),.35)}
 .icon-theme-asset .throw-dot.spawn-match{box-shadow:0 0 0 2px #fbbf24,0 0 11px rgba(251,191,36,.6)}
 .icon-theme-asset .grenade-map-icon{display:block;width:17px;height:23px;color:var(--dot);filter:drop-shadow(0 1px 2px #000)}
 .icon-theme-asset .grenade-map-icon svg{display:block;width:100%;height:100%;overflow:visible}
 .icon-theme-asset .grenade-map-icon path{fill:currentColor}
 .icon-theme-asset .throw-stack-dot{position:relative}
-.icon-theme-asset .throw-stack-dot .grenade-map-icon{opacity:.42}
+.icon-theme-asset .throw-stack-dot .grenade-map-icon{opacity:1}
 .icon-theme-asset .throw-stack-dot span{position:absolute;z-index:1;right:-5px;bottom:-5px;min-width:13px;height:13px;padding:0 3px;border:1px solid rgba(255,255,255,.24);border-radius:7px;background:#080b0f;color:#fff;font-size:8px;line-height:11px}
-.icon-theme-asset .cluster-dot.single-type{border-color:transparent;background:transparent;box-shadow:none;color:var(--dot)}
+.icon-theme-asset .cluster-dot.single-type{width:25px;height:33px;overflow:visible;border-color:transparent;background:transparent;box-shadow:none;color:var(--dot)}
 .icon-theme-asset .cluster-dot.single-type .grenade-map-icon{width:20px;height:27px;filter:drop-shadow(0 0 6px var(--dot)) drop-shadow(0 2px 2px #000)}
 .icon-theme-asset .cluster-dot.single-type span{position:absolute;right:-6px;bottom:-5px;min-width:14px;height:14px;padding:0 3px;border:1px solid rgba(255,255,255,.25);border-radius:8px;background:#080b0f;color:#fff;font-size:8px;line-height:12px}
 .icon-theme-asset .cluster-dot.single-type.selected{filter:drop-shadow(0 0 8px var(--dot))}
