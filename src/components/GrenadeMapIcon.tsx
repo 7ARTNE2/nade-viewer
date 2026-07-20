@@ -1,6 +1,7 @@
 import smokeIcon from '../assets/grenades_icons/smokegrenade.svg?raw';
 import flashIcon from '../assets/grenades_icons/flashbang.svg?raw';
 import molotovIcon from '../assets/grenades_icons/molotov.svg?raw';
+import incendiaryIcon from '../assets/grenades_icons/incgrenade.svg?raw';
 import heIcon from '../assets/grenades_icons/hegrenade.svg?raw';
 
 type Props = {
@@ -11,6 +12,7 @@ const icons: Record<string, string> = {
   smoke: smokeIcon,
   flash: flashIcon,
   molotov: molotovIcon,
+  'incendiary grenade': incendiaryIcon,
   HE: heIcon,
 };
 
