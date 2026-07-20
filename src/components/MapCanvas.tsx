@@ -645,9 +645,15 @@ export default function MapCanvas({
           <div
             className="throw-strip"
             data-map-control="1"
+            onClick={(event) => {
+              if (event.target === event.currentTarget) {
+                setActiveGroupId(null);
+                setPreview(null);
+              }
+            }}
             onWheel={(event) => {
               event.preventDefault();
-              event.currentTarget.scrollLeft += event.deltaY;
+              event.currentTarget.scrollTop += event.deltaY;
             }}
           >
             {activeGroup.grenades.map((grenade) => (

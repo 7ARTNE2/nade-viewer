@@ -141,6 +141,8 @@ button:focus-visible,[role="button"]:focus-visible,[role="link"]:focus-visible{o
 .icon-theme-asset .throw-dot,.icon-theme-asset .throw-strip-dot{width:22px;height:30px;overflow:visible}
 .icon-theme-asset .throw-dot:hover,.icon-theme-asset .throw-strip-dot:hover{background:transparent;filter:none}
 .icon-theme-asset .throw-dot.core,.icon-theme-asset .throw-strip-dot.core{box-shadow:0 0 0 2px rgba(var(--acid-rgb),.8),0 0 10px rgba(var(--acid-rgb),.35)}
+.throw-strip{top:14px;right:14px;bottom:auto;left:auto;display:flex;max-width:none;max-height:calc(100% - 28px);align-items:center;flex-direction:column;overflow-x:hidden;overflow-y:auto}
+.throw-strip-dot{display:grid;align-self:center;place-items:center;padding:0}
 .icon-theme-asset .throw-dot.spawn-match{box-shadow:0 0 0 2px #fbbf24,0 0 11px rgba(251,191,36,.6)}
 .icon-theme-asset .grenade-map-icon{display:block;width:17px;height:23px;color:var(--dot);filter:drop-shadow(0 1px 2px #000)}
 .icon-theme-asset .grenade-map-icon svg{display:block;width:100%;height:100%;overflow:visible}
