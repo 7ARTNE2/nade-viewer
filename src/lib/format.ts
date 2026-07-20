@@ -4,6 +4,7 @@ export function grenadeLabel(type?: string | null) {
   if (value === 'smoke') return 'Smoke';
   if (value === 'flash') return 'Flash';
   if (value === 'molotov') return 'Molotov';
+  if (value === 'incendiary grenade') return 'Incendiary';
   return type || '-';
 }
 

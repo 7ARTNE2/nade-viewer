@@ -40,6 +40,7 @@ const typeColor: Record<string, string> = {
   smoke: '#67e8f9',
   flash: '#fbbf24',
   molotov: '#fb7185',
+  'incendiary grenade': '#f97316',
   HE: '#34d399',
 };
 const sideColor: Record<string, string> = {

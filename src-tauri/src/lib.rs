@@ -1048,8 +1048,13 @@ fn filter_sql(filters: &MapFilters, args: &mut Vec<Box<dyn rusqlite::ToSql>>) ->
         .as_deref()
         .filter(|v| !v.is_empty() && *v != "all")
     {
-        parts.push("grenade_type = ?".to_string());
-        args.push(Box::new(t.to_string()));
+        if t == "molotov" {
+            // Both team-specific fire grenades belong to the same filter.
+            parts.push("grenade_type IN ('molotov', 'incendiary grenade')".to_string());
+        } else {
+            parts.push("grenade_type = ?".to_string());
+            args.push(Box::new(t.to_string()));
+        }
     }
     if let Some(side) = filters
         .side

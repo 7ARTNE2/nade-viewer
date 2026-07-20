@@ -34,6 +34,7 @@ const detailTypeColor: Record<string, string> = {
   smoke: '#67e8f9',
   flash: '#fbbf24',
   molotov: '#fb7185',
+  'incendiary grenade': '#f97316',
   HE: '#34d399',
 };
 
@@ -41,6 +42,7 @@ const detailTypeRgb: Record<string, string> = {
   smoke: '103, 232, 249',
   flash: '251, 191, 36',
   molotov: '251, 113, 133',
+  'incendiary grenade': '249, 115, 22',
   HE: '52, 211, 153',
 };
 

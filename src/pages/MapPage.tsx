@@ -661,7 +661,19 @@ export default function MapPage({ activeImportId }: MapPageProps) {
                   setFilters((state) => ({ ...state, grenade_type: type }))
                 }
               >
-                {type === 'all' ? tr('All', 'Все') : grenadeLabel(type)}
+                {type === 'all'
+                  ? tr('All', 'Все')
+                  : type === 'molotov'
+                    ? (
+                        <>
+                          <span className="filter-label-molotov">Molotov</span>
+                          /
+                          <span className="filter-label-incendiary">
+                            Incendiary
+                          </span>
+                        </>
+                      )
+                    : grenadeLabel(type)}
               </button>
             ))}
           </div>
