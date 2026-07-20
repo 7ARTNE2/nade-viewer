@@ -7,7 +7,7 @@ import {
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
 } from 'react';
-import { Crosshair, Minus, Plus, RotateCcw } from 'lucide-react';
+import { Crosshair, Minus, Plus, RotateCcw, X } from 'lucide-react';
 import { assetUrl } from '../lib/tauri';
 import { formatNumber, grenadeLabel } from '../lib/format';
 import { buildSpawnMapPoints, INSTA_LABEL, isInstaGrenade } from '../lib/insta';
@@ -672,6 +672,17 @@ export default function MapCanvas({
                 {markerIcon(grenade.grenade_type)}
               </button>
             ))}
+            <button
+              className="throw-strip-close"
+              type="button"
+              onClick={() => {
+                setActiveGroupId(null);
+                setPreview(null);
+              }}
+              aria-label={tr('Close throw cluster', 'Закрыть кластер броска')}
+            >
+              <X size={14} />
+            </button>
           </div>
         ) : null}
         {preview ? (
