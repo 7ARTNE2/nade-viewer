@@ -368,8 +368,10 @@ html[lang="ru"] .detail-load-error strong{font-weight:800;letter-spacing:-.035em
   .map-main-panel,.detail-map-panel{min-height:330px}
   .import-panel{min-height:0}
 }
-.segmented button.filter-molotov.active{background:var(--surface-3);color:var(--muted)}
-.filter-label-molotov{color:#ff8296}.filter-label-incendiary{color:#fb923c}
+.segmented button.filter-molotov.active{background:var(--surface-3)}
+.filter-label-molotov,.filter-label-incendiary{color:inherit}
+.segmented button.filter-molotov.active .filter-label-molotov{color:#ff8296}
+.segmented button.filter-molotov.active .filter-label-incendiary{color:#fb923c}
 .type-pill.incendiary{background:rgba(249,115,22,.1);color:#fb923c}
 
 /* Workspace hierarchy and feedback */
