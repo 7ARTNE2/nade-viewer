@@ -125,6 +125,9 @@ export default function MapPage({ activeImportId }: MapPageProps) {
   );
   const [inspectorVisible, setInspectorVisible] = useState(true);
   const [visibilityRulesOpen, setVisibilityRulesOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(() =>
+    Boolean(initialViewState?.filters.search?.trim()),
+  );
   const overviewRequestRef = useRef(0);
   const clusterRequestRef = useRef(0);
   const mapTrajectoriesRequestRef = useRef(0);
@@ -156,6 +159,7 @@ export default function MapPage({ activeImportId }: MapPageProps) {
     setRadarMode(nextViewState?.radarMode ?? 'default');
     setGrenadeMode(nextViewState?.grenadeMode ?? 'landing');
     setIconTheme(nextViewState?.iconTheme ?? 'base');
+    setSearchOpen(Boolean(nextViewState?.filters.search?.trim()));
     clusterRequestRef.current += 1;
     mapTrajectoriesRequestRef.current += 1;
   }, [stateStorageKey]);
@@ -595,7 +599,7 @@ export default function MapPage({ activeImportId }: MapPageProps) {
             }
           >
             <BadgeCheck size={15} />
-            {tr('Core', 'Core')}
+            {tr('Core', 'Избранные')}
           </button>
           <button
             aria-pressed={showSpawns}
@@ -741,19 +745,38 @@ export default function MapPage({ activeImportId }: MapPageProps) {
               </button>
             ))}
           </div>
-          <label className="mini-field">
-            <Search size={14} />
-            <input
-              value={filters.search ?? ''}
-              onChange={(event) =>
-                setFilters((state) => ({
-                  ...state,
-                  search: event.target.value,
-                }))
-              }
-              placeholder={tr('Thrower, demo, command', 'Игрок, демо, команда')}
-            />
-          </label>
+          <div className={`filter-search ${searchOpen ? 'open' : ''}`}>
+            <button
+              className="filter-search-toggle"
+              type="button"
+              onClick={() => setSearchOpen((open) => !open)}
+              aria-expanded={searchOpen}
+              aria-label={tr('Search grenades', 'Найти гранату')}
+              data-tip={tr('Search grenades', 'Найти гранату')}
+            >
+              <Search size={14} />
+              <span>{tr('Search', 'Поиск')}</span>
+            </button>
+            {searchOpen ? (
+              <label className="mini-field">
+                <Search size={14} />
+                <input
+                  autoFocus
+                  value={filters.search ?? ''}
+                  onChange={(event) =>
+                    setFilters((state) => ({
+                      ...state,
+                      search: event.target.value,
+                    }))
+                  }
+                  placeholder={tr(
+                    'Thrower, demo, command',
+                    'Игрок, демо, команда',
+                  )}
+                />
+              </label>
+            ) : null}
+          </div>
         </div>
 
         <div className="panel-section inspector-visibility">
@@ -925,7 +948,7 @@ export default function MapPage({ activeImportId }: MapPageProps) {
                   : filters.is_core
                     ? tr(
                         'No Core Nades in this cluster.',
-                        'В этом кластере нет Core Nades.',
+                        'В этом кластере нет избранных гранат.',
                       )
                     : undefined
               }

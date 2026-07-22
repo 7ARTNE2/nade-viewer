@@ -221,8 +221,8 @@ export default function GrenadePage() {
           >
             <BadgeCheck size={14} />
             {grenade.is_core
-              ? tr('In Core', 'В Core')
-              : tr('Add to Core', 'Добавить в Core')}
+              ? tr('In Core', 'В избранном')
+              : tr('Add to Core', 'Добавить в избранное')}
           </button>
         </div>
 

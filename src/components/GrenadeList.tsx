@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight, BadgeCheck, Check, Clipboard, Timer } from 'lucide-react';
+import { BadgeCheck, Check, Clipboard, Timer } from 'lucide-react';
 import { grenadeLabel } from '../lib/format';
 import { buildSpawnMapPoints, INSTA_LABEL, isInstaGrenade } from '../lib/insta';
 import type { GrenadePreview, SpawnPoint } from '../types/domain';
@@ -113,7 +113,7 @@ export default function GrenadeList({
                   <span className="insta-badge">{INSTA_LABEL}</span>
                 ) : null}
                 {g.is_core ? (
-                  <span className="core-badge">{tr('Core', 'Core')}</span>
+                  <span className="core-badge">{tr('Core', 'Избранное')}</span>
                 ) : null}
               </span>
               <small>
@@ -132,20 +132,20 @@ export default function GrenadeList({
                 }}
                 aria-label={
                   g.is_core
-                    ? tr('Remove from Core', 'Удалить из Core')
-                    : tr('Add to Core', 'Добавить в Core')
+                    ? tr('Remove from Core', 'Удалить из избранного')
+                    : tr('Add to Core', 'Добавить в избранное')
                 }
                 data-tip={
                   g.is_core
-                    ? tr('In Core', 'В Core')
-                    : tr('Add to Core', 'Добавить в Core')
+                    ? tr('In Core', 'В избранном')
+                    : tr('Add to Core', 'Добавить в избранное')
                 }
               >
                 <BadgeCheck size={14} />
                 <span>
                   {g.is_core
-                    ? tr('In Core', 'В Core')
-                    : tr('Add to Core', 'Добавить в Core')}
+                    ? tr('In Core', 'В избранном')
+                    : tr('Add to Core', 'Добавить в избранное')}
                 </span>
               </button>
               <span className="row-meta">
@@ -159,14 +159,6 @@ export default function GrenadeList({
                 )}
               </span>
             </div>
-            <button
-              className="nade-arrow-action"
-              type="button"
-              onClick={() => navigate(`/grenade/${g.id}`)}
-              aria-label={tr('Open grenade details', 'Открыть детали гранаты')}
-            >
-              <ArrowRight size={14} />
-            </button>
           </div>
         );
       })}

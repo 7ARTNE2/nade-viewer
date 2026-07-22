@@ -483,8 +483,8 @@ function Shell() {
                     >
                       <Upload size={15} />
                       {coreTransferBusy
-                        ? tr('Exporting Core Nades', 'Экспорт Core Nades')
-                        : tr('Export Core Nades', 'Экспорт Core Nades')}
+                        ? tr('Exporting Core Nades', 'Экспорт избранных гранат')
+                        : tr('Export Core Nades', 'Экспорт избранных гранат')}
                     </button>
                   ) : null}
                   <button

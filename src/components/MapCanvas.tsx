@@ -391,7 +391,7 @@ export default function MapCanvas({
       <details className="map-legend" data-map-control="1">
         <summary>{tr('Map legend', 'Легенда карты')}</summary>
         <div className="map-legend-content">
-          <div className="legend-group">
+          <div className="legend-group legend-clusters">
             <strong>{tr('Clusters', 'Кластеры')}</strong>
             <span>
               <i className="legend-dot t" /> {tr('T side', 'Сторона T')}
@@ -404,7 +404,7 @@ export default function MapCanvas({
               {tr('Mixed sides', 'Смешанные стороны')}
             </span>
           </div>
-          <div className="legend-group">
+          <div className="legend-group legend-lineups">
             <strong>{tr('Lineups', 'Раскидки')}</strong>
             <span>
               <i className="legend-throw" />{' '}
@@ -422,7 +422,7 @@ export default function MapCanvas({
             </span>
             <span>
               <i className="legend-throw legend-core" />{' '}
-              {tr('Core lineup', 'Core-раскидка')}
+              {tr('Core lineup', 'Избранная раскидка')}
             </span>
             <span>
               <i className="legend-throw legend-insta" />{' '}
@@ -749,7 +749,9 @@ export default function MapCanvas({
               {isInstaGrenade(preview.grenade, spawnMapPoints) ? (
                 <em className="insta">{INSTA_LABEL}</em>
               ) : null}
-              {preview.grenade.is_core ? <em>{tr('Core', 'Core')}</em> : null}
+              {preview.grenade.is_core ? (
+                <em>{tr('Core', 'Избранное')}</em>
+              ) : null}
             </div>
             {previewKeys.length ? (
               <div className="throw-preview-keys">
