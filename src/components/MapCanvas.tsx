@@ -391,32 +391,80 @@ export default function MapCanvas({
       <details className="map-legend" data-map-control="1">
         <summary>{tr('Map legend', 'Легенда карты')}</summary>
         <div className="map-legend-content">
-          <span>
-            <i className="legend-dot t" /> {tr('T-side cluster', 'Кластер T')}
-          </span>
-          <span>
-            <i className="legend-dot ct" />{' '}
-            {tr('CT-side cluster', 'Кластер CT')}
-          </span>
-          <span>
-            <i className="legend-line" /> {tr('Trajectory', 'Траектория')}
-          </span>
-          <span>
-            <i className="legend-dot smoke" /> {tr('Smoke', 'Смок')}
-          </span>
-          <span>
-            <i className="legend-dot flash" /> {tr('Flash', 'Флешка')}
-          </span>
-          <span>
-            <i className="legend-dot molotov" /> {tr('Molotov', 'Молотов')}
-          </span>
-          <span>
-            <i className="legend-dot he" /> HE
-          </span>
-          <span>
-            <i className="legend-spawn" />{' '}
-            {tr('Spawn: click to copy', 'Спавн: нажмите для копирования')}
-          </span>
+          <div className="legend-group">
+            <strong>{tr('Clusters', 'Кластеры')}</strong>
+            <span>
+              <i className="legend-dot t" /> {tr('T side', 'Сторона T')}
+            </span>
+            <span>
+              <i className="legend-dot ct" /> {tr('CT side', 'Сторона CT')}
+            </span>
+            <span>
+              <i className="legend-dot mix" />{' '}
+              {tr('Mixed sides', 'Смешанные стороны')}
+            </span>
+          </div>
+          <div className="legend-group">
+            <strong>{tr('Lineups', 'Раскидки')}</strong>
+            <span>
+              <i className="legend-throw" />{' '}
+              {tr(
+                'One lineup: click to open',
+                'Одна раскидка: нажмите, чтобы открыть',
+              )}
+            </span>
+            <span>
+              <i className="legend-throw legend-stack">2</i>{' '}
+              {tr(
+                'Several lineups: click to choose',
+                'Несколько раскидок: нажмите для выбора',
+              )}
+            </span>
+            <span>
+              <i className="legend-throw legend-core" />{' '}
+              {tr('Core lineup', 'Core-раскидка')}
+            </span>
+            <span>
+              <i className="legend-throw legend-insta" />{' '}
+              {tr('Spawn match', 'Совпадение со спавном')}
+            </span>
+          </div>
+          <div className="legend-group legend-types">
+            <strong>
+              {tr('Grenade type and trajectory', 'Тип гранаты и траектория')}
+            </strong>
+            <span>
+              <i className="legend-line smoke" /> {tr('Smoke', 'Смок')}
+            </span>
+            <span>
+              <i className="legend-line flash" /> {tr('Flash', 'Флешка')}
+            </span>
+            <span>
+              <i className="legend-line molotov" /> {tr('Molotov', 'Молотов')}
+            </span>
+            <span>
+              <i className="legend-line incendiary" />{' '}
+              {tr('Incendiary', 'Зажигательная')}
+            </span>
+            <span>
+              <i className="legend-line he" /> HE
+            </span>
+          </div>
+          <div className="legend-group legend-spawns">
+            <strong>{tr('Spawns', 'Спавны')}</strong>
+            <span>
+              <i className="legend-spawn t" /> {tr('T spawn', 'Спавн T')}
+            </span>
+            <span>
+              <i className="legend-spawn ct" /> {tr('CT spawn', 'Спавн CT')}
+            </span>
+            <small>
+              {tr(
+                'Click a spawn to copy its command',
+                'Нажмите на спавн, чтобы скопировать команду',
+              )}
+            </small>
+          </div>
         </div>
       </details>
       <div
