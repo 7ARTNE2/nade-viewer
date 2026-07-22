@@ -5,7 +5,11 @@ import {
   BadgeCheck,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
   Filter,
+  PanelRightClose,
+  PanelRightOpen,
   LocateFixed,
   RotateCcw,
   Search,
@@ -119,6 +123,8 @@ export default function MapPage({ activeImportId }: MapPageProps) {
   const [pendingSiteMinUsage, setPendingSiteMinUsage] = useState<number | null>(
     null,
   );
+  const [inspectorVisible, setInspectorVisible] = useState(true);
+  const [visibilityRulesOpen, setVisibilityRulesOpen] = useState(false);
   const overviewRequestRef = useRef(0);
   const clusterRequestRef = useRef(0);
   const mapTrajectoriesRequestRef = useRef(0);
@@ -401,6 +407,22 @@ export default function MapPage({ activeImportId }: MapPageProps) {
     grenadePage !== 0;
   const siteValue = pendingSiteMinUsage ?? siteMinUsage;
   const siteProgress = ((siteValue - 1) / 49) * 100;
+  const activeFilterCount = [
+    filters.grenade_type !== 'all',
+    filters.side !== 'Any',
+    Boolean(filters.search?.trim()),
+    filters.is_core,
+  ].filter(Boolean).length;
+  const filterSummary = activeFilterCount
+    ? count(
+        activeFilterCount,
+        'active filter',
+        'active filters',
+        'активный фильтр',
+        'активных фильтра',
+        'активных фильтров',
+      )
+    : tr('All grenades', 'Все гранаты');
 
   const switchGrenadeMode = (mode: GrenadeMode) => {
     if (grenadeMode === mode) return;
@@ -498,7 +520,9 @@ export default function MapPage({ activeImportId }: MapPageProps) {
   };
 
   return (
-    <div className="map-workspace">
+    <div
+      className={`map-workspace ${inspectorVisible ? '' : 'inspector-hidden'}`}
+    >
       <section className="map-main-panel">
         <div className="map-toolbar" data-tour="map-workspace-toolbar">
           <button
@@ -524,6 +548,28 @@ export default function MapPage({ activeImportId }: MapPageProps) {
             </span>
           </div>
           <div className="toolbar-spacer" />
+          <button
+            className="toggle inspector-toggle"
+            type="button"
+            onClick={() => setInspectorVisible((visible) => !visible)}
+            data-tip={
+              inspectorVisible
+                ? tr('Focus on map', 'Сфокусироваться на карте')
+                : tr('Show workspace panel', 'Показать рабочую панель')
+            }
+            aria-label={
+              inspectorVisible
+                ? tr('Focus on map', 'Сфокусироваться на карте')
+                : tr('Show workspace panel', 'Показать рабочую панель')
+            }
+          >
+            {inspectorVisible ? (
+              <PanelRightClose size={15} />
+            ) : (
+              <PanelRightOpen size={15} />
+            )}
+            {inspectorVisible ? tr('Focus', 'Фокус') : tr('Panel', 'Панель')}
+          </button>
           <button
             className={`toggle map-appearance-toggle ${iconTheme === 'asset' ? 'active' : ''}`}
             onClick={() =>
@@ -652,6 +698,16 @@ export default function MapPage({ activeImportId }: MapPageProps) {
               {tr('Reset', 'Сбросить')}
             </button>
           </div>
+          <div
+            className={`filter-summary ${activeFilterCount ? 'active' : ''}`}
+          >
+            <span>{filterSummary}</span>
+            {filters.search?.trim() ? (
+              <span className="filter-summary-query">
+                &quot;{filters.search.trim()}&quot;
+              </span>
+            ) : null}
+          </div>
           <div className="segmented">
             {grenadeTypes.map((type) => (
               <button
@@ -661,19 +717,16 @@ export default function MapPage({ activeImportId }: MapPageProps) {
                   setFilters((state) => ({ ...state, grenade_type: type }))
                 }
               >
-                {type === 'all'
-                  ? tr('All', 'Все')
-                  : type === 'molotov'
-                    ? (
-                        <>
-                          <span className="filter-label-molotov">Molotov</span>
-                          /
-                          <span className="filter-label-incendiary">
-                            Incendiary
-                          </span>
-                        </>
-                      )
-                    : grenadeLabel(type)}
+                {type === 'all' ? (
+                  tr('All', 'Все')
+                ) : type === 'molotov' ? (
+                  <>
+                    <span className="filter-label-molotov">Molotov</span>/
+                    <span className="filter-label-incendiary">Incendiary</span>
+                  </>
+                ) : (
+                  grenadeLabel(type)
+                )}
               </button>
             ))}
           </div>
@@ -704,44 +757,59 @@ export default function MapPage({ activeImportId }: MapPageProps) {
         </div>
 
         <div className="panel-section inspector-visibility">
-          <div className="section-title">
-            {tr('Visibility rules', 'Правила видимости')}
-          </div>
-          <div className="setting-card">
-            <div className="setting-row">
-              <span>{tr('Public min usage', 'Минимум использований')}</span>
-              <strong>{siteValue}</strong>
-            </div>
-            <input
-              className="range"
-              type="range"
-              min="1"
-              max="50"
-              step="1"
-              value={siteValue}
-              onChange={(event) =>
-                setPendingSiteMinUsage(Number(event.target.value))
-              }
-              style={
-                {
-                  '--range-progress': `${siteProgress}%`,
-                } as React.CSSProperties
-              }
-            />
-            {pendingSiteMinUsage !== null &&
-            pendingSiteMinUsage !== siteMinUsage ? (
-              <div className="setting-actions">
-                <button
-                  onClick={() => applySiteSettings().catch(console.error)}
-                >
-                  {tr('Apply', 'Применить')}
-                </button>
-                <button onClick={() => setPendingSiteMinUsage(null)}>
-                  {tr('Cancel', 'Отмена')}
-                </button>
+          <button
+            className="section-title section-toggle"
+            type="button"
+            onClick={() => setVisibilityRulesOpen((open) => !open)}
+            aria-expanded={visibilityRulesOpen}
+          >
+            <span>{tr('Visibility rules', 'Правила видимости')}</span>
+            <span className="section-toggle-meta">
+              {tr(`Min. ${siteValue}`, `Мин. ${siteValue}`)}
+              {visibilityRulesOpen ? (
+                <ChevronUp size={14} />
+              ) : (
+                <ChevronDown size={14} />
+              )}
+            </span>
+          </button>
+          {visibilityRulesOpen ? (
+            <div className="setting-card">
+              <div className="setting-row">
+                <span>{tr('Public min usage', 'Минимум использований')}</span>
+                <strong>{siteValue}</strong>
               </div>
-            ) : null}
-          </div>
+              <input
+                className="range"
+                type="range"
+                min="1"
+                max="50"
+                step="1"
+                value={siteValue}
+                onChange={(event) =>
+                  setPendingSiteMinUsage(Number(event.target.value))
+                }
+                style={
+                  {
+                    '--range-progress': `${siteProgress}%`,
+                  } as React.CSSProperties
+                }
+              />
+              {pendingSiteMinUsage !== null &&
+              pendingSiteMinUsage !== siteMinUsage ? (
+                <div className="setting-actions">
+                  <button
+                    onClick={() => applySiteSettings().catch(console.error)}
+                  >
+                    {tr('Apply', 'Применить')}
+                  </button>
+                  <button onClick={() => setPendingSiteMinUsage(null)}>
+                    {tr('Cancel', 'Отмена')}
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
         </div>
 
         <div
@@ -797,7 +865,7 @@ export default function MapPage({ activeImportId }: MapPageProps) {
               <span>
                 {clusterPage * clusterPageSize + 1}-
                 {Math.min(clusters.length, (clusterPage + 1) * clusterPageSize)}{' '}
-                of {formatNumber(clusters.length)}
+                {tr('of', 'из')} {formatNumber(clusters.length)}
               </span>
               <button
                 onClick={() =>
@@ -819,7 +887,15 @@ export default function MapPage({ activeImportId }: MapPageProps) {
 
         <div className="panel-section grenade-panel inspector-grenades">
           <div className="section-title">
-            {tr('Selected grenades', 'Выбранные гранаты')}
+            <span>
+              {tr('Selected grenades', 'Выбранные гранаты')}
+              {selectedCluster
+                ? tr(
+                    `Cluster ${selectedCluster.side_key}`,
+                    `Кластер ${selectedCluster.side_key}`,
+                  )
+                : null}
+            </span>
             {selectedCluster ? (
               <span className="section-count">
                 {formatNumber(selectedCluster.count)}
@@ -873,7 +949,7 @@ export default function MapPage({ activeImportId }: MapPageProps) {
                 <ChevronLeft size={14} />
               </button>
               <span>
-                {grenadeStart}-{grenadeEnd} of{' '}
+                {grenadeStart}-{grenadeEnd} {tr('of', 'из')}{' '}
                 {formatNumber(selectedCluster.count)}
               </span>
               <button

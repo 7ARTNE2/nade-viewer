@@ -59,21 +59,8 @@ export default function GrenadeList({
           <div
             key={g.id}
             className={`nade-row type-${String(g.grenade_type).toLowerCase()} ${g.is_core ? 'core' : ''} ${isInsta ? 'insta' : ''}`}
-            role="button"
-            tabIndex={0}
-            aria-label={`${grenadeLabel(g.grenade_type)} ${g.thrower || `${tr('Grenade', 'Граната')} #${g.id}`}`}
-            onClick={() => navigate(`/grenade/${g.id}`)}
-            onKeyDown={(event) => {
-              if (
-                (event.key === 'Enter' || event.key === ' ') &&
-                event.target === event.currentTarget
-              ) {
-                event.preventDefault();
-                navigate(`/grenade/${g.id}`);
-              }
-            }}
           >
-            <span className="nade-type-stack">
+            <div className="nade-type-stack">
               <span
                 className={`type-pill ${String(g.grenade_type).toLowerCase()}`}
               >
@@ -110,9 +97,14 @@ export default function GrenadeList({
                   </span>
                 </button>
               ) : null}
-            </span>
+            </div>
             <span className="side-mini">{g.side}</span>
-            <span className="nade-main">
+            <button
+              className="nade-main nade-open-action"
+              type="button"
+              onClick={() => navigate(`/grenade/${g.id}`)}
+              aria-label={`${grenadeLabel(g.grenade_type)} ${g.thrower || `${tr('Grenade', 'Граната')} #${g.id}`}`}
+            >
               <span className="nade-title-line">
                 <strong>
                   {g.thrower || `${tr('Grenade', 'Граната')} #${g.id}`}
@@ -129,8 +121,8 @@ export default function GrenadeList({
                   g.coordinates ||
                   tr('No command metadata', 'Нет данных команды')}
               </small>
-            </span>
-            <span className="nade-action-stack">
+            </button>
+            <div className="nade-action-stack">
               <button
                 type="button"
                 className={`core-action ${g.is_core ? 'active' : ''}`}
@@ -166,8 +158,15 @@ export default function GrenadeList({
                   `${g.usage_count}x`
                 )}
               </span>
-            </span>
-            <ArrowRight size={14} />
+            </div>
+            <button
+              className="nade-arrow-action"
+              type="button"
+              onClick={() => navigate(`/grenade/${g.id}`)}
+              aria-label={tr('Open grenade details', 'Открыть детали гранаты')}
+            >
+              <ArrowRight size={14} />
+            </button>
           </div>
         );
       })}

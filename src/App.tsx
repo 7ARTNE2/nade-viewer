@@ -12,6 +12,7 @@ import {
   ChevronDown,
   Database,
   Download,
+  Ellipsis,
   FolderOpen,
   Map,
   Pencil,
@@ -65,6 +66,7 @@ function Shell() {
     null,
   );
   const [snapshotMenuOpen, setSnapshotMenuOpen] = useState(false);
+  const [libraryActionsOpen, setLibraryActionsOpen] = useState(false);
   const [editingSnapshotId, setEditingSnapshotId] = useState<number | null>(
     null,
   );
@@ -129,6 +131,15 @@ function Shell() {
 
   useEffect(() => startWindowActiveTracking(), []);
 
+  useEffect(() => {
+    if (!coreTransferStatus && !operationError) return;
+    const timeout = window.setTimeout(() => {
+      setCoreTransferStatus(null);
+      setOperationError(null);
+    }, 5000);
+    return () => window.clearTimeout(timeout);
+  }, [coreTransferStatus, operationError]);
+
   const switchImport = async (id: number) => {
     setOperationError(null);
     try {
@@ -137,6 +148,7 @@ function Shell() {
       setActive(next);
       setImports(Array.isArray(all) ? all : []);
       setSnapshotMenuOpen(false);
+      setLibraryActionsOpen(false);
       setEditingSnapshotId(null);
       navigate('/maps');
     } catch (error) {
@@ -171,6 +183,7 @@ function Shell() {
     try {
       const next = await deleteImport(activeImport.id);
       setDeleteSnapshotOpen(false);
+      setLibraryActionsOpen(false);
       await refreshImports();
       navigate(next ? '/maps' : '/maps?import=1', { replace: true });
     } catch (error) {
@@ -263,7 +276,12 @@ function Shell() {
               onClick={() =>
                 restartTutorial().catch((error) => {
                   console.error(error);
-                  setOperationError('Could not restart tutorial');
+                  setOperationError(
+                    tr(
+                      'Could not restart tutorial',
+                      'Не удалось перезапустить обучение',
+                    ),
+                  );
                 })
               }
             >
@@ -431,47 +449,70 @@ function Shell() {
                 {tr('Import data', 'Импортировать')}
               </button>
             )}
-            {activeImport ? (
-              <button
-                className="icon-btn core-transfer"
-                onClick={handleCoreExport}
-                disabled={coreTransferBusy}
-                aria-label={tr('Export Core Nades', 'Экспорт Core Nades')}
-                data-tip={tr('Export Core Nades', 'Экспорт Core Nades')}
-              >
-                <Upload size={15} />
-              </button>
-            ) : null}
-            {coreTransferStatus ? (
-              <span className="core-status-chip">{coreTransferStatus}</span>
-            ) : null}
-            {operationError ? (
-              <span className="operation-error-chip">{operationError}</span>
-            ) : null}
-            {activeImport ? (
-              <button
-                className="icon-btn danger"
-                onClick={() => setDeleteSnapshotOpen(true)}
-                aria-label={tr(
-                  'Delete active library',
-                  'Удалить активную библиотеку',
-                )}
-                data-tip={tr(
-                  'Delete active library',
-                  'Удалить активную библиотеку',
-                )}
-              >
-                <Trash2 size={15} />
-              </button>
-            ) : null}
-            <button
-              className="icon-btn"
-              onClick={() => window.location.reload()}
-              aria-label={tr('Refresh', 'Обновить')}
-              data-tip={tr('Refresh', 'Обновить')}
+            <div
+              className="library-actions-menu"
+              onBlur={(event) => {
+                if (
+                  !event.currentTarget.contains(
+                    event.relatedTarget as Node | null,
+                  )
+                )
+                  setLibraryActionsOpen(false);
+              }}
             >
-              <RotateCw size={15} />
-            </button>
+              <button
+                className={`icon-btn ${libraryActionsOpen ? 'active' : ''}`}
+                type="button"
+                onClick={() => setLibraryActionsOpen((open) => !open)}
+                aria-expanded={libraryActionsOpen}
+                aria-label={tr('Library actions', 'Действия с библиотекой')}
+                data-tip={tr('Library actions', 'Действия с библиотекой')}
+              >
+                <Ellipsis size={17} />
+              </button>
+              {libraryActionsOpen ? (
+                <div className="library-actions-popover">
+                  {activeImport ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setLibraryActionsOpen(false);
+                        void handleCoreExport();
+                      }}
+                      disabled={coreTransferBusy}
+                    >
+                      <Upload size={15} />
+                      {coreTransferBusy
+                        ? tr('Exporting Core Nades', 'Экспорт Core Nades')
+                        : tr('Export Core Nades', 'Экспорт Core Nades')}
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={() => window.location.reload()}
+                  >
+                    <RotateCw size={15} />
+                    {tr('Refresh application', 'Обновить приложение')}
+                  </button>
+                  {activeImport ? (
+                    <button
+                      className="danger"
+                      type="button"
+                      onClick={() => {
+                        setLibraryActionsOpen(false);
+                        setDeleteSnapshotOpen(true);
+                      }}
+                    >
+                      <Trash2 size={15} />
+                      {tr(
+                        'Delete active library',
+                        'Удалить активную библиотеку',
+                      )}
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
           </div>
         </header>
 
@@ -532,6 +573,15 @@ function Shell() {
           </Routes>
         </div>
       </main>
+
+      {coreTransferStatus || operationError ? (
+        <div
+          className={`app-notice ${operationError ? 'error' : 'success'}`}
+          role="status"
+        >
+          {operationError ?? coreTransferStatus}
+        </div>
+      ) : null}
 
       {deleteSnapshotOpen && activeImport ? (
         <div

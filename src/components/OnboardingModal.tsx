@@ -103,7 +103,12 @@ export default function OnboardingModal({
       await action();
     } catch (cause) {
       console.error(cause);
-      setError('Could not save tutorial progress. Please try again.');
+      setError(
+        tr(
+          'Could not save tutorial progress. Please try again.',
+          'Не удалось сохранить прогресс обучения. Попробуйте еще раз.',
+        ),
+      );
     } finally {
       setBusy(false);
     }
@@ -241,20 +246,27 @@ export default function OnboardingModal({
                 <ArrowRight size={15} />
               </button>
             ) : step === 1 ? (
-              <button
-                className="btn primary"
-                type="button"
-                disabled={busy || mapTargetAvailable}
-                onClick={() =>
-                  run(async () => {
-                    onShowImport();
-                  })
-                }
-              >
-                {mapTargetAvailable
-                  ? tr('Open the highlighted map', 'Откройте выделенную карту')
-                  : tr('Import a library', 'Импортировать библиотеку')}
-              </button>
+              mapTargetAvailable ? (
+                <span className="onboarding-next-hint">
+                  {tr(
+                    'Click the highlighted map to continue',
+                    'Нажмите на выделенную карту, чтобы продолжить',
+                  )}
+                </span>
+              ) : (
+                <button
+                  className="btn primary"
+                  type="button"
+                  disabled={busy}
+                  onClick={() =>
+                    run(async () => {
+                      onShowImport();
+                    })
+                  }
+                >
+                  {tr('Import a library', 'Импортировать библиотеку')}
+                </button>
+              )
             ) : step < steps.length - 1 ? (
               <button
                 className="btn primary"

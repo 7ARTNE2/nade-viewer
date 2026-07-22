@@ -24,11 +24,13 @@ export default function HomePage({
   const [maps, setMaps] = useState<MapSummary[]>([]);
   const [recentlyViewed, setRecentlyViewed] = useState<ViewedGrenade[]>([]);
   const [search, setSearch] = useState('');
+  const [mapsLoading, setMapsLoading] = useState(true);
   const mapsRequestRef = useRef(0);
 
   useEffect(() => {
     const requestId = mapsRequestRef.current + 1;
     mapsRequestRef.current = requestId;
+    setMapsLoading(true);
     Promise.all([
       getMaps().catch(() => [] as MapSummary[]),
       getRecentlyViewedGrenades(10).catch(() => [] as ViewedGrenade[]),
@@ -39,12 +41,14 @@ export default function HomePage({
           setRecentlyViewed(
             Array.isArray(nextRecentlyViewed) ? nextRecentlyViewed : [],
           );
+          setMapsLoading(false);
         }
       })
       .catch(() => {
         if (mapsRequestRef.current === requestId) {
           setMaps([]);
           setRecentlyViewed([]);
+          setMapsLoading(false);
         }
       });
   }, [activeImportId]);
@@ -172,42 +176,97 @@ export default function HomePage({
           </div>
         </div>
         <div className="map-grid">
-          {visible.map((map) => (
-            <button
-              key={map.name}
-              className="map-tile"
-              data-tour={map.name === maps[0]?.name ? 'map-target' : 'map-tile'}
-              data-map-key={String(map.name).toLowerCase().replace(/^de_/, '')}
-              onClick={() => navigate(`/map/${encodeURIComponent(map.name)}`)}
-            >
-              <div className="map-orb">
-                {map.preview_image_path ? (
-                  <img src={assetUrl(map.preview_image_path)} alt="" />
-                ) : (
-                  <span>
-                    {String(map.label || map.name || '??').slice(0, 2)}
-                  </span>
-                )}
-              </div>
-              <div className="map-tile-footer">
-                <span>
-                  <strong>{map.label}</strong>
-                  <small>
-                    {count(
-                      map.grenade_count,
-                      'lineup',
-                      'lineups',
-                      'раскидка',
-                      'раскидки',
-                      'раскидок',
+          {mapsLoading
+            ? Array.from({ length: 6 }, (_, index) => (
+                <div className="map-tile map-tile-skeleton" key={index}>
+                  <div className="map-orb" />
+                  <div className="map-tile-footer">
+                    <span>
+                      <i />
+                      <small />
+                    </span>
+                  </div>
+                </div>
+              ))
+            : visible.map((map) => (
+                <button
+                  key={map.name}
+                  className="map-tile"
+                  data-tour={
+                    map.name === maps[0]?.name ? 'map-target' : 'map-tile'
+                  }
+                  data-map-key={String(map.name)
+                    .toLowerCase()
+                    .replace(/^de_/, '')}
+                  onClick={() =>
+                    navigate(`/map/${encodeURIComponent(map.name)}`)
+                  }
+                >
+                  <div className="map-orb">
+                    {map.preview_image_path ? (
+                      <img src={assetUrl(map.preview_image_path)} alt="" />
+                    ) : (
+                      <span>
+                        {String(map.label || map.name || '??').slice(0, 2)}
+                      </span>
                     )}
-                  </small>
-                </span>
-                <ArrowUpRight size={17} />
-              </div>
-            </button>
-          ))}
+                  </div>
+                  <div className="map-tile-footer">
+                    <span>
+                      <strong>{map.label}</strong>
+                      <small>
+                        {count(
+                          map.grenade_count,
+                          'lineup',
+                          'lineups',
+                          'раскидка',
+                          'раскидки',
+                          'раскидок',
+                        )}
+                      </small>
+                    </span>
+                    <ArrowUpRight size={17} />
+                  </div>
+                </button>
+              ))}
         </div>
+        {!mapsLoading && !visible.length ? (
+          <div className="map-grid-empty">
+            <strong>
+              {search.trim()
+                ? tr(
+                    'No maps match this search',
+                    'Карты по этому запросу не найдены',
+                  )
+                : tr(
+                    'This library has no maps yet',
+                    'В этой библиотеке пока нет карт',
+                  )}
+            </strong>
+            <p>
+              {search.trim()
+                ? tr(
+                    `Nothing matched "${search.trim()}". Try another map name.`,
+                    `По запросу «${search.trim()}» ничего не найдено. Попробуйте другое название карты.`,
+                  )
+                : tr(
+                    'Import a grenade library with map data to start exploring lineups.',
+                    'Импортируйте библиотеку гранат с данными карт, чтобы начать изучение раскидок.',
+                  )}
+            </p>
+            <button
+              className="btn"
+              type="button"
+              onClick={() =>
+                search.trim() ? setSearch('') : setSearchParams({ import: '1' })
+              }
+            >
+              {search.trim()
+                ? tr('Clear search', 'Сбросить поиск')
+                : tr('Import library', 'Импортировать библиотеку')}
+            </button>
+          </div>
+        ) : null}
       </section>
 
       {importOpen ? (
