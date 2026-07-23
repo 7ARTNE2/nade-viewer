@@ -47,6 +47,17 @@ jobs:
             throw "Release tag must use semantic version format, for example v0.1.0. Received: $env:RELEASE_TAG"
           }
 
+          $releaseVersion = $env:RELEASE_TAG.Substring(1)
+          $versions = @(
+            (Get-Content package.json -Raw | ConvertFrom-Json).version,
+            (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version,
+            (& cargo metadata --manifest-path src-tauri/Cargo.toml --no-deps --format-version 1 | ConvertFrom-Json).packages[0].version
+          )
+
+          if ($versions | Where-Object { $_ -ne $releaseVersion }) {
+            throw "Release tag $env:RELEASE_TAG must match the project version $releaseVersion. Found: $($versions -join ', ')"
+          }
+
       - name: Build Windows installers
         run: npm run tauri:build
 
