@@ -17,7 +17,7 @@ use thiserror::Error;
 const WORLD: f64 = 1024.0;
 const SUPPORTED_IMPORT_VERSION: i64 = 1;
 const GRENADE_PREVIEW_COLUMNS: &str = "g.id, g.map, g.side, g.grenade_type, g.is_core,
-    g.throw_description, g.coordinates, g.thrower, g.airtime, g.usage_count,
+    g.throw_description, g.coordinates, g.thrower, g.thrower_team, g.airtime, g.usage_count,
     g.start_map_x, g.start_map_y, g.explode_map_x, g.explode_map_y, g.explode_pos_z,
     g.trajectory_preview_json";
 
@@ -190,6 +190,7 @@ struct CoreNadeRecord {
     throw_description: Option<String>,
     coordinates: Option<String>,
     thrower: Option<String>,
+    thrower_team: Option<String>,
     airtime: Option<f64>,
     usage_count: Option<i64>,
     usage_throwers: Option<Vec<String>>,
@@ -262,6 +263,7 @@ struct RawGrenade {
     trajectory: Option<Vec<Vec<f64>>>,
     trajectory_preview: Option<Value>,
     thrower: Option<String>,
+    thrower_team: Option<String>,
     airtime: Option<f64>,
 }
 
@@ -296,6 +298,7 @@ struct GrenadePreview {
     throw_description: Option<String>,
     coordinates: Option<String>,
     thrower: Option<String>,
+    thrower_team: Option<String>,
     airtime: Option<f64>,
     usage_count: i64,
     start_map_x: Option<f64>,
@@ -498,6 +501,7 @@ fn init_schema(conn: &Connection) -> AppResult<()> {
             throw_description TEXT,
             coordinates TEXT,
             thrower TEXT,
+            thrower_team TEXT,
             airtime REAL,
             usage_count INTEGER NOT NULL DEFAULT 1,
             usage_throwers_json TEXT,
@@ -575,6 +579,17 @@ fn init_schema(conn: &Connection) -> AppResult<()> {
     };
     if !has_trajectory_json {
         conn.execute("ALTER TABLE grenades ADD COLUMN trajectory_json TEXT", [])?;
+    }
+    let has_thrower_team = {
+        let mut stmt = conn.prepare("PRAGMA table_info(grenades)")?;
+        let columns = stmt.query_map([], |row| row.get::<_, String>(1))?;
+        columns
+            .collect::<Result<Vec<_>, _>>()?
+            .iter()
+            .any(|name| name == "thrower_team")
+    };
+    if !has_thrower_team {
+        conn.execute("ALTER TABLE grenades ADD COLUMN thrower_team TEXT", [])?;
     }
     let has_import_kind = {
         let mut stmt = conn.prepare("PRAGMA table_info(imports)")?;
@@ -1166,6 +1181,7 @@ fn grenade_preview_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Grenade
         throw_description: row.get("throw_description")?,
         coordinates: row.get("coordinates")?,
         thrower: row.get("thrower")?,
+        thrower_team: row.get("thrower_team")?,
         airtime: row.get("airtime")?,
         usage_count: row.get("usage_count")?,
         start_map_x: row.get("start_map_x")?,
@@ -1204,6 +1220,7 @@ fn raw_grenade_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<RawGrenade>
         trajectory: trajectory_json.and_then(|s| serde_json::from_str(&s).ok()),
         trajectory_preview: trajectory_preview_json.and_then(|s| serde_json::from_str(&s).ok()),
         thrower: row.get("thrower")?,
+        thrower_team: row.get("thrower_team")?,
         airtime: row.get("airtime")?,
     })
 }
@@ -1362,13 +1379,13 @@ fn import_index_blocking(
         let mut stmt = tx.prepare(
             "INSERT INTO grenades(
                 import_id, source_index, map, side, grenade_type, is_core, throw_description, coordinates,
-                thrower, airtime, usage_count, usage_throwers_json, demo_filename, throw_tick,
+                thrower, thrower_team, airtime, usage_count, usage_throwers_json, demo_filename, throw_tick,
                 lineup_tick, tickrate, round_time_seconds, start_pos_x, start_pos_y, start_pos_z,
                 explode_pos_x, explode_pos_y, explode_pos_z, start_map_x, start_map_y,
                 explode_map_x, explode_map_y, trajectory_preview_json, trajectory_json
             ) VALUES (
                 ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16,
-                ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29
+                ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30
             )",
         )?;
 
@@ -1408,6 +1425,7 @@ fn import_index_blocking(
                 g.throw_description,
                 g.coordinates,
                 g.thrower,
+                g.thrower_team,
                 g.airtime,
                 g.usage_count.unwrap_or(1),
                 serde_json::to_string(&g.usage_throwers.clone().unwrap_or_default())?,
@@ -2096,7 +2114,7 @@ fn export_core_nades(
 
     let mut stmt = conn.prepare(
         "SELECT source_index, map, side, grenade_type, throw_description, coordinates,
-            thrower, airtime, usage_count, usage_throwers_json, demo_filename, throw_tick,
+            thrower, thrower_team, airtime, usage_count, usage_throwers_json, demo_filename, throw_tick,
             lineup_tick, tickrate, round_time_seconds, start_pos_x, start_pos_y, start_pos_z,
             explode_pos_x, explode_pos_y, explode_pos_z, trajectory_json,
             trajectory_preview_json
@@ -2175,13 +2193,13 @@ fn import_core_nades_snapshot_blocking(
         let mut stmt = tx.prepare(
             "INSERT INTO grenades(
                 import_id, source_index, map, side, grenade_type, is_core, throw_description, coordinates,
-                thrower, airtime, usage_count, usage_throwers_json, demo_filename, throw_tick,
+                thrower, thrower_team, airtime, usage_count, usage_throwers_json, demo_filename, throw_tick,
                 lineup_tick, tickrate, round_time_seconds, start_pos_x, start_pos_y, start_pos_z,
                 explode_pos_x, explode_pos_y, explode_pos_z, start_map_x, start_map_y,
                 explode_map_x, explode_map_y, trajectory_preview_json, trajectory_json
             ) VALUES (
                 ?1, ?2, ?3, ?4, ?5, 1, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15,
-                ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28
+                ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29
             )",
         )?;
 
@@ -2220,6 +2238,7 @@ fn import_core_nades_snapshot_blocking(
                 g.throw_description,
                 g.coordinates,
                 g.thrower,
+                g.thrower_team,
                 g.airtime,
                 g.usage_count.unwrap_or(1),
                 serde_json::to_string(&g.usage_throwers.clone().unwrap_or_default())?,

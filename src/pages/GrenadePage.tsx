@@ -210,10 +210,19 @@ export default function GrenadePage() {
           >
             {grenadeLabel(grenade.grenade_type)}
           </span>
-          <span className="side-mini">{grenade.side}</span>
+            <span className={`side-mini side-${grenade.side.toLowerCase()}`}>
+              {grenade.side}
+            </span>
           <strong>
             {grenade.thrower || tr('Parsed grenade', 'Распознанная граната')}
           </strong>
+          {grenade.thrower_team ? (
+            <span
+              className={`detail-thrower-team side-accent-${grenade.side.toLowerCase()}`}
+            >
+              {grenade.thrower_team}
+            </span>
+          ) : null}
           {isInsta ? <span className="insta-badge">{INSTA_LABEL}</span> : null}
           <button
             className={`core-action detail-core ${grenade.is_core ? 'active' : ''}`}

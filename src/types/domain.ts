@@ -98,6 +98,7 @@ export type GrenadePreview = {
   throw_description?: string | null;
   coordinates?: string | null;
   thrower?: string | null;
+  thrower_team?: string | null;
   airtime?: number | null;
   usage_count: number;
   start_map_x?: number | null;

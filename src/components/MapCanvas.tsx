@@ -786,6 +786,13 @@ export default function MapCanvas({
                 {preview.grenade.thrower ||
                   tr('Parsed throw', 'Распознанный бросок')}
               </span>
+              {preview.grenade.thrower_team ? (
+                <span
+                  className={`throw-preview-team side-accent-${preview.grenade.side.toLowerCase()}`}
+                >
+                  {preview.grenade.thrower_team}
+                </span>
+              ) : null}
               <span>
                 {tr('Airtime', 'Время полета')}:{' '}
                 <strong>

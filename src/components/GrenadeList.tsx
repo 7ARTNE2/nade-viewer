@@ -98,7 +98,9 @@ export default function GrenadeList({
                 </button>
               ) : null}
             </div>
-            <span className="side-mini">{g.side}</span>
+            <span className={`side-mini side-${g.side.toLowerCase()}`}>
+              {g.side}
+            </span>
             <button
               className="nade-main nade-open-action"
               type="button"
@@ -109,6 +111,13 @@ export default function GrenadeList({
                 <strong>
                   {g.thrower || `${tr('Grenade', 'Граната')} #${g.id}`}
                 </strong>
+                {g.thrower_team ? (
+                  <span
+                    className={`nade-thrower-team side-accent-${g.side.toLowerCase()}`}
+                  >
+                    {g.thrower_team}
+                  </span>
+                ) : null}
                 {isInsta ? (
                   <span className="insta-badge">{INSTA_LABEL}</span>
                 ) : null}
