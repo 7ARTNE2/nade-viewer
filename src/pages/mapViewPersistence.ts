@@ -24,6 +24,7 @@ export const defaultMapFilters = (): MapFilters => ({
   grenade_type: 'smoke',
   side: 'T',
   search: '',
+  thrower_team: '',
   min_usage: 0,
   is_core: false,
 });
@@ -34,6 +35,7 @@ export function filtersMatchDefault(filters: MapFilters) {
     filters.grenade_type === defaults.grenade_type &&
     filters.side === defaults.side &&
     (filters.search ?? '') === defaults.search &&
+    (filters.thrower_team ?? '') === defaults.thrower_team &&
     (filters.min_usage ?? 0) === defaults.min_usage &&
     Boolean(filters.is_core) === Boolean(defaults.is_core)
   );

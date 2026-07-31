@@ -154,6 +154,7 @@ struct MapFilters {
     grenade_type: Option<String>,
     side: Option<String>,
     search: Option<String>,
+    thrower_team: Option<String>,
     min_usage: Option<i64>,
     radar_level: Option<String>,
     is_core: Option<bool>,
@@ -1082,6 +1083,15 @@ fn filter_sql(filters: &MapFilters, args: &mut Vec<Box<dyn rusqlite::ToSql>>) ->
     if let Some(min_usage) = filters.min_usage.filter(|v| *v > 0) {
         parts.push("usage_count >= ?".to_string());
         args.push(Box::new(min_usage));
+    }
+    if let Some(team) = filters
+        .thrower_team
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+    {
+        parts.push("LOWER(COALESCE(thrower_team, '')) LIKE ? ESCAPE '\\'".to_string());
+        args.push(Box::new(format!("%{}%", escape_like_pattern(&team.to_lowercase()))));
     }
     if filters.is_core.unwrap_or(false) {
         parts.push("is_core = 1".to_string());

@@ -124,10 +124,7 @@ export default function MapPage({ activeImportId }: MapPageProps) {
     null,
   );
   const [inspectorVisible, setInspectorVisible] = useState(true);
-  const [visibilityRulesOpen, setVisibilityRulesOpen] = useState(false);
-  const [searchOpen, setSearchOpen] = useState(() =>
-    Boolean(initialViewState?.filters.search?.trim()),
-  );
+  const [visibilityRulesOpen, setVisibilityRulesOpen] = useState(true);
   const overviewRequestRef = useRef(0);
   const clusterRequestRef = useRef(0);
   const mapTrajectoriesRequestRef = useRef(0);
@@ -159,7 +156,6 @@ export default function MapPage({ activeImportId }: MapPageProps) {
     setRadarMode(nextViewState?.radarMode ?? 'default');
     setGrenadeMode(nextViewState?.grenadeMode ?? 'landing');
     setIconTheme(nextViewState?.iconTheme ?? 'base');
-    setSearchOpen(Boolean(nextViewState?.filters.search?.trim()));
     clusterRequestRef.current += 1;
     mapTrajectoriesRequestRef.current += 1;
   }, [stateStorageKey]);
@@ -745,38 +741,37 @@ export default function MapPage({ activeImportId }: MapPageProps) {
               </button>
             ))}
           </div>
-          <div className={`filter-search ${searchOpen ? 'open' : ''}`}>
-            <button
-              className="filter-search-toggle"
-              type="button"
-              onClick={() => setSearchOpen((open) => !open)}
-              aria-expanded={searchOpen}
+          <label className="mini-field filter-search-visible">
+            <Search size={14} />
+            <input
+              value={filters.search ?? ''}
+              onChange={(event) =>
+                setFilters((state) => ({
+                  ...state,
+                  search: event.target.value,
+                }))
+              }
+              placeholder={tr(
+                'Thrower, demo name, coordinates',
+                'Игрок, имя демо, координаты',
+              )}
               aria-label={tr('Search grenades', 'Найти гранату')}
-              data-tip={tr('Search grenades', 'Найти гранату')}
-            >
-              <Search size={14} />
-              <span>{tr('Search', 'Поиск')}</span>
-            </button>
-            {searchOpen ? (
-              <label className="mini-field">
-                <Search size={14} />
-                <input
-                  autoFocus
-                  value={filters.search ?? ''}
-                  onChange={(event) =>
-                    setFilters((state) => ({
-                      ...state,
-                      search: event.target.value,
-                    }))
-                  }
-                  placeholder={tr(
-                    'Thrower, demo name, coordinates',
-                    'Игрок, имя демо, координаты',
-                  )}
-                />
-              </label>
-            ) : null}
-          </div>
+            />
+          </label>
+          <label className="mini-field team-search-field">
+            <Search size={14} />
+            <input
+              value={filters.thrower_team ?? ''}
+              onChange={(event) =>
+                setFilters((state) => ({
+                  ...state,
+                  thrower_team: event.target.value,
+                }))
+              }
+              placeholder={tr('Thrower team', 'Команда игрока')}
+              aria-label={tr('Search by thrower team', 'Поиск по команде игрока')}
+            />
+          </label>
         </div>
 
         <div className="panel-section inspector-visibility">
