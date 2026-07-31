@@ -770,8 +770,8 @@ export default function MapPage({ activeImportId }: MapPageProps) {
                     }))
                   }
                   placeholder={tr(
-                    'Thrower, demo, command',
-                    'Игрок, демо, команда',
+                    'Thrower, demo name, coordinates',
+                    'Игрок, имя демо, координаты',
                   )}
                 />
               </label>
