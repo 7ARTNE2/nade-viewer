@@ -298,7 +298,8 @@ export default function GrenadePage() {
           <div className="block-title">
             {tr('Coordinates', 'Координаты')}
             <button
-              className="micro-btn"
+              className="micro-btn detail-copy-button"
+              type="button"
               onClick={() => copy(grenade.coordinates)}
             >
               <Clipboard size={13} />
