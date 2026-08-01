@@ -20,6 +20,7 @@ import type {
   SpawnPoint,
 } from '../types/domain';
 import { useI18n } from '../i18n';
+import { useToast } from './Toast';
 
 type Props = {
   mapImagePath?: string | null;
@@ -133,6 +134,7 @@ export default function MapCanvas({
   onGrenadeOpen,
 }: Props) {
   const { tr, count } = useI18n();
+  const { showToast } = useToast();
   const viewportRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{
@@ -285,9 +287,22 @@ export default function MapCanvas({
     try {
       await navigator.clipboard.writeText(spawn.command);
       setCopied(index);
+      showToast(
+        tr('Spawn coordinates copied', 'Координаты спавна скопированы'),
+        {
+          tone: 'success',
+        },
+      );
       window.setTimeout(() => setCopied(null), 1400);
-    } catch {
-      /* clipboard can be unavailable in webviews */
+    } catch (error) {
+      console.error(error);
+      showToast(
+        tr(
+          'Could not copy spawn coordinates',
+          'Не удалось скопировать координаты спавна',
+        ),
+        { tone: 'error' },
+      );
     }
   };
   const onMouseDown = (event: ReactMouseEvent<HTMLDivElement>) => {

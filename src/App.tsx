@@ -45,6 +45,7 @@ import Tooltip from './components/Tooltip';
 import OnboardingModal from './components/OnboardingModal';
 import { useI18n } from './i18n';
 import { useModalAccessibility } from './lib/useModalAccessibility';
+import { useToast } from './components/Toast';
 
 function importFileName(path: string) {
   return path.split(/[\\/]/).filter(Boolean).pop() || path;
@@ -56,6 +57,7 @@ function snapshotDisplayName(snapshot: ImportSummary) {
 
 function Shell() {
   const { locale, setLocale, tr, count } = useI18n();
+  const { showToast } = useToast();
   const navigate = useNavigate();
   const location = useLocation();
   const [activeImport, setActive] = useState<ImportSummary | null>(null);
@@ -133,12 +135,13 @@ function Shell() {
 
   useEffect(() => {
     if (!coreTransferStatus && !operationError) return;
-    const timeout = window.setTimeout(() => {
-      setCoreTransferStatus(null);
-      setOperationError(null);
-    }, 5000);
-    return () => window.clearTimeout(timeout);
-  }, [coreTransferStatus, operationError]);
+    showToast(operationError ?? coreTransferStatus!, {
+      tone: operationError ? 'error' : 'success',
+      duration: 5000,
+    });
+    setCoreTransferStatus(null);
+    setOperationError(null);
+  }, [coreTransferStatus, operationError, showToast]);
 
   const switchImport = async (id: number) => {
     setOperationError(null);
@@ -151,6 +154,9 @@ function Shell() {
       setLibraryActionsOpen(false);
       setEditingSnapshotId(null);
       navigate('/maps');
+      showToast(tr('Library switched', 'Библиотека переключена'), {
+        tone: 'success',
+      });
     } catch (error) {
       console.error(error);
       setOperationError(
@@ -169,6 +175,9 @@ function Shell() {
       if (activeImport?.id === updated.id) setActive(updated);
       setEditingSnapshotId(null);
       setEditingLabel('');
+      showToast(tr('Library renamed', 'Библиотека переименована'), {
+        tone: 'success',
+      });
     } catch (error) {
       console.error(error);
       setOperationError(
@@ -179,6 +188,7 @@ function Shell() {
 
   const confirmDeleteSnapshot = async () => {
     if (!activeImport) return;
+    const deletedName = snapshotDisplayName(activeImport);
     setOperationError(null);
     try {
       const next = await deleteImport(activeImport.id);
@@ -186,6 +196,13 @@ function Shell() {
       setLibraryActionsOpen(false);
       await refreshImports();
       navigate(next ? '/maps' : '/maps?import=1', { replace: true });
+      showToast(
+        tr(
+          `Library “${deletedName}” deleted`,
+          `Библиотека «${deletedName}» удалена`,
+        ),
+        { tone: 'success' },
+      );
     } catch (error) {
       console.error(error);
       setOperationError(
@@ -212,7 +229,7 @@ function Shell() {
         );
     } catch (error) {
       console.error(error);
-      setCoreTransferStatus(tr('Export failed', 'Ошибка экспорта'));
+      setOperationError(tr('Export failed', 'Ошибка экспорта'));
     } finally {
       setCoreTransferBusy(false);
     }
@@ -573,15 +590,6 @@ function Shell() {
           </Routes>
         </div>
       </main>
-
-      {coreTransferStatus || operationError ? (
-        <div
-          className={`app-notice ${operationError ? 'error' : 'success'}`}
-          role="status"
-        >
-          {operationError ?? coreTransferStatus}
-        </div>
-      ) : null}
 
       {deleteSnapshotOpen && activeImport ? (
         <div

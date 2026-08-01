@@ -19,6 +19,7 @@ import {
 import { compactDate, formatNumber } from '../lib/format';
 import type { ImportStatus, ImportSummary } from '../types/domain';
 import { useI18n } from '../i18n';
+import { useToast } from '../components/Toast';
 
 type Props = {
   onImported: () => Promise<void>;
@@ -27,6 +28,7 @@ type Props = {
 
 export default function ImportPage({ onImported, lastImport }: Props) {
   const { locale, tr } = useI18n();
+  const { showToast } = useToast();
   const navigate = useNavigate();
   const [path, setPath] = useState('');
   const [status, setStatus] = useState<ImportStatus>({
@@ -77,8 +79,9 @@ export default function ImportPage({ onImported, lastImport }: Props) {
       if (selected) setPath(selected);
     } catch (error) {
       console.error(error);
-      setMessage(
+      showToast(
         tr('Unable to open the file picker', 'Не удалось открыть выбор файла'),
+        { tone: 'error' },
       );
     }
   };
@@ -92,11 +95,12 @@ export default function ImportPage({ onImported, lastImport }: Props) {
       setStatus(await getImportStatus());
       await onImported();
       if (report.kind === 'core_nades') {
-        setMessage(
+        showToast(
           tr(
             `Imported ${formatNumber(report.grenade_count)} Core Nades snapshot`,
             `Импортирован снимок Core Nades: ${formatNumber(report.grenade_count)} гранат`,
           ),
+          { tone: 'success', duration: 5200 },
         );
       }
       navigate('/maps', { replace: true });
@@ -159,8 +163,11 @@ export default function ImportPage({ onImported, lastImport }: Props) {
         const summary =
           translated[importError.code] ?? tr('Import failed', 'Ошибка импорта');
         setMessage(summary);
+        showToast(summary, { tone: 'error', duration: 5600 });
       } else {
-        setMessage(tr('Import failed', 'Ошибка импорта'));
+        const summary = tr('Import failed', 'Ошибка импорта');
+        setMessage(summary);
+        showToast(summary, { tone: 'error' });
       }
     } finally {
       setBusy(false);
@@ -187,10 +194,14 @@ export default function ImportPage({ onImported, lastImport }: Props) {
             setPath(droppedPath);
             runImportRef.current(droppedPath).catch((error) => {
               console.error('Unable to import dropped file', error);
-              setMessage(tr('Import failed', 'Ошибка импорта'));
+              const summary = tr('Import failed', 'Ошибка импорта');
+              setMessage(summary);
+              showToast(summary, { tone: 'error' });
             });
           } else {
-            setMessage(tr('Drop a JSON file', 'Перетащите JSON-файл'));
+            const summary = tr('Drop a JSON file', 'Перетащите JSON-файл');
+            setMessage(summary);
+            showToast(summary, { tone: 'info' });
           }
         }
       })
@@ -200,15 +211,18 @@ export default function ImportPage({ onImported, lastImport }: Props) {
       })
       .catch((error) => {
         console.error('Unable to listen for file drops', error);
-        setMessage(
-          tr('File drop is unavailable', 'Перетаскивание файлов недоступно'),
+        const summary = tr(
+          'File drop is unavailable',
+          'Перетаскивание файлов недоступно',
         );
+        setMessage(summary);
+        showToast(summary, { tone: 'error' });
       });
     return () => {
       disposed = true;
       unlisten?.();
     };
-  }, [locale]);
+  }, [locale, showToast]);
 
   return (
     <div className="import-view">

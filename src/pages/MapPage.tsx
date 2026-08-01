@@ -37,6 +37,7 @@ import type {
   SpawnPoint,
 } from '../types/domain';
 import { useI18n } from '../i18n';
+import { useToast } from '../components/Toast';
 import {
   defaultMapFilters,
   filtersMatchDefault,
@@ -66,6 +67,7 @@ type MapPageProps = {
 
 export default function MapPage({ activeImportId }: MapPageProps) {
   const { locale, tr, count } = useI18n();
+  const { showToast } = useToast();
   const { mapName = '' } = useParams();
   const navigate = useNavigate();
   const decodedMap = useMemo(() => {
@@ -497,12 +499,21 @@ export default function MapPage({ activeImportId }: MapPageProps) {
       if (overviewRequestRef.current === requestId) {
         setOverview(nextOverview);
       }
+      showToast(
+        isCore
+          ? tr('Added to Core', 'Добавлено в избранное')
+          : tr('Removed from Core', 'Удалено из избранного'),
+        { tone: 'success' },
+      );
     } catch (error) {
       console.error(error);
       if (overviewRequestRef.current === requestId) {
         setGrenades(previousGrenades);
         setMapGrenades(previousMapGrenades);
       }
+      showToast(tr('Could not update Core', 'Не удалось обновить избранное'), {
+        tone: 'error',
+      });
     }
   };
 
@@ -769,7 +780,10 @@ export default function MapPage({ activeImportId }: MapPageProps) {
                 }))
               }
               placeholder={tr('Thrower team', 'Команда игрока')}
-              aria-label={tr('Search by thrower team', 'Поиск по команде игрока')}
+              aria-label={tr(
+                'Search by thrower team',
+                'Поиск по команде игрока',
+              )}
             />
           </label>
         </div>

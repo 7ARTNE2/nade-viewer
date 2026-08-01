@@ -29,6 +29,7 @@ import type {
   SpawnPoint,
 } from '../types/domain';
 import { useI18n } from '../i18n';
+import { useToast } from '../components/Toast';
 
 const detailTypeColor: Record<string, string> = {
   smoke: '#67e8f9',
@@ -48,6 +49,7 @@ const detailTypeRgb: Record<string, string> = {
 
 export default function GrenadePage() {
   const { tr } = useI18n();
+  const { showToast } = useToast();
   const { id = '' } = useParams();
   const navigate = useNavigate();
   const grenadeId = Number(id);
@@ -121,9 +123,20 @@ export default function GrenadePage() {
 
   const copy = async (text?: string | null) => {
     if (!text) return;
-    await navigator.clipboard.writeText(text);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 900);
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      showToast(tr('Coordinates copied', 'Координаты скопированы'), {
+        tone: 'success',
+      });
+      window.setTimeout(() => setCopied(false), 900);
+    } catch (error) {
+      console.error(error);
+      showToast(
+        tr('Could not copy coordinates', 'Не удалось скопировать координаты'),
+        { tone: 'error' },
+      );
+    }
   };
 
   const goBack = () => {
@@ -137,15 +150,30 @@ export default function GrenadePage() {
   };
 
   const handleCoreToggle = async (id: number, isCore: boolean) => {
-    await setGrenadeCore(id, isCore);
-    setSimilar((list) =>
-      list.map((item) =>
-        item.id === id ? { ...item, is_core: isCore } : item,
-      ),
-    );
-    setGrenade((current) =>
-      current && current.id === id ? { ...current, is_core: isCore } : current,
-    );
+    try {
+      await setGrenadeCore(id, isCore);
+      setSimilar((list) =>
+        list.map((item) =>
+          item.id === id ? { ...item, is_core: isCore } : item,
+        ),
+      );
+      setGrenade((current) =>
+        current && current.id === id
+          ? { ...current, is_core: isCore }
+          : current,
+      );
+      showToast(
+        isCore
+          ? tr('Added to Core', 'Добавлено в избранное')
+          : tr('Removed from Core', 'Удалено из избранного'),
+        { tone: 'success' },
+      );
+    } catch (error) {
+      console.error(error);
+      showToast(tr('Could not update Core', 'Не удалось обновить избранное'), {
+        tone: 'error',
+      });
+    }
   };
 
   if (!grenade) {
@@ -210,9 +238,9 @@ export default function GrenadePage() {
           >
             {grenadeLabel(grenade.grenade_type)}
           </span>
-            <span className={`side-mini side-${grenade.side.toLowerCase()}`}>
-              {grenade.side}
-            </span>
+          <span className={`side-mini side-${grenade.side.toLowerCase()}`}>
+            {grenade.side}
+          </span>
           <strong>
             {grenade.thrower || tr('Parsed grenade', 'Распознанная граната')}
           </strong>

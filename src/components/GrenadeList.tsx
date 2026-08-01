@@ -5,6 +5,7 @@ import { grenadeLabel } from '../lib/format';
 import { buildSpawnMapPoints, INSTA_LABEL, isInstaGrenade } from '../lib/insta';
 import type { GrenadePreview, SpawnPoint } from '../types/domain';
 import { useI18n } from '../i18n';
+import { useToast } from './Toast';
 
 type Props = {
   grenades: GrenadePreview[];
@@ -24,6 +25,7 @@ export default function GrenadeList({
   emptyLabel,
 }: Props) {
   const { tr } = useI18n();
+  const { showToast } = useToast();
   const navigate = useNavigate();
   const [copiedId, setCopiedId] = useState<number | null>(null);
   const spawnMapPoints = useMemo(
@@ -34,9 +36,20 @@ export default function GrenadeList({
   const copyGrenadeText = async (grenade: GrenadePreview) => {
     const text = grenade.coordinates || grenade.throw_description;
     if (!text) return;
-    await navigator.clipboard.writeText(text);
-    setCopiedId(grenade.id);
-    window.setTimeout(() => setCopiedId(null), 900);
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedId(grenade.id);
+      showToast(tr('Coordinates copied', 'Координаты скопированы'), {
+        tone: 'success',
+      });
+      window.setTimeout(() => setCopiedId(null), 900);
+    } catch (error) {
+      console.error(error);
+      showToast(
+        tr('Could not copy coordinates', 'Не удалось скопировать координаты'),
+        { tone: 'error' },
+      );
+    }
   };
 
   if (!grenades.length) {
