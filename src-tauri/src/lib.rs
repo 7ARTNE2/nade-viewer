@@ -1091,7 +1091,10 @@ fn filter_sql(filters: &MapFilters, args: &mut Vec<Box<dyn rusqlite::ToSql>>) ->
         .filter(|v| !v.is_empty())
     {
         parts.push("LOWER(COALESCE(thrower_team, '')) LIKE ? ESCAPE '\\'".to_string());
-        args.push(Box::new(format!("%{}%", escape_like_pattern(&team.to_lowercase()))));
+        args.push(Box::new(format!(
+            "%{}%",
+            escape_like_pattern(&team.to_lowercase())
+        )));
     }
     if filters.is_core.unwrap_or(false) {
         parts.push("is_core = 1".to_string());
@@ -2510,7 +2513,7 @@ mod tests {
         let exported = conn
             .query_row(
                 "SELECT source_index, map, side, grenade_type, throw_description, coordinates,
-                    thrower, airtime, usage_count, usage_throwers_json, demo_filename, throw_tick,
+                    thrower, thrower_team, airtime, usage_count, usage_throwers_json, demo_filename, throw_tick,
                     lineup_tick, tickrate, round_time_seconds, start_pos_x, start_pos_y, start_pos_z,
                     explode_pos_x, explode_pos_y, explode_pos_z, trajectory_json,
                     trajectory_preview_json
