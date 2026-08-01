@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowLeft,
   BadgeCheck,
@@ -70,6 +70,7 @@ export default function MapPage({ activeImportId }: MapPageProps) {
   const { showToast } = useToast();
   const { mapName = '' } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const decodedMap = useMemo(() => {
     try {
       return decodeURIComponent(mapName);
@@ -88,9 +89,15 @@ export default function MapPage({ activeImportId }: MapPageProps) {
     initialViewStateRef.current = readStoredMapViewState(stateStorageKey);
   }
   const initialViewState = initialViewStateRef.current;
-  const [filters, setFilters] = useState<MapFilters>(
-    () => initialViewState?.filters ?? defaultMapFilters(),
-  );
+  const navigationSearch =
+    typeof (location.state as { search?: unknown } | null)?.search === 'string'
+      ? (location.state as { search: string }).search.trim()
+      : '';
+  const hasNavigationSearch = navigationSearch.length > 0;
+  const [filters, setFilters] = useState<MapFilters>(() => ({
+    ...(initialViewState?.filters ?? defaultMapFilters()),
+    ...(hasNavigationSearch ? { search: navigationSearch } : {}),
+  }));
   const [overview, setOverview] = useState<MapOverview | null>(null);
   const [spawns, setSpawns] = useState<SpawnPoint[]>([]);
   const [selectedCluster, setSelectedCluster] = useState<LandingCluster | null>(
@@ -99,10 +106,10 @@ export default function MapPage({ activeImportId }: MapPageProps) {
   const [grenades, setGrenades] = useState<GrenadePreview[]>([]);
   const [mapGrenades, setMapGrenades] = useState<GrenadePreview[]>([]);
   const [clusterPage, setClusterPage] = useState(
-    initialViewState?.clusterPage ?? 0,
+    hasNavigationSearch ? 0 : (initialViewState?.clusterPage ?? 0),
   );
   const [grenadePage, setGrenadePage] = useState(
-    initialViewState?.grenadePage ?? 0,
+    hasNavigationSearch ? 0 : (initialViewState?.grenadePage ?? 0),
   );
   const [grenadeLoading, setGrenadeLoading] = useState(false);
   const [showSpawns, setShowSpawns] = useState(
@@ -131,9 +138,11 @@ export default function MapPage({ activeImportId }: MapPageProps) {
   const clusterRequestRef = useRef(0);
   const mapTrajectoriesRequestRef = useRef(0);
   const restoredClusterIdRef = useRef<string | null>(
-    initialViewState?.selectedClusterId ?? null,
+    hasNavigationSearch ? null : (initialViewState?.selectedClusterId ?? null),
   );
-  const restoredGrenadePageRef = useRef(initialViewState?.grenadePage ?? 0);
+  const restoredGrenadePageRef = useRef(
+    hasNavigationSearch ? 0 : (initialViewState?.grenadePage ?? 0),
+  );
   const previousStorageKeyRef = useRef(stateStorageKey);
 
   useEffect(() => {

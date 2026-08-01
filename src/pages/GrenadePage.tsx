@@ -149,6 +149,13 @@ export default function GrenadePage() {
     navigate(`/map/${encodeURIComponent(grenade.map)}`, { replace: true });
   };
 
+  const searchByThrower = (thrower: string) => {
+    if (!grenade) return;
+    navigate(`/map/${encodeURIComponent(grenade.map)}`, {
+      state: { search: thrower },
+    });
+  };
+
   const handleCoreToggle = async (id: number, isCore: boolean) => {
     try {
       await setGrenadeCore(id, isCore);
@@ -366,9 +373,14 @@ export default function GrenadePage() {
           {grenade.usage_throwers.length ? (
             <div className="thrower-list">
               {grenade.usage_throwers.map((thrower, index) => (
-                <span key={`${thrower}-${index}`} data-tip={thrower}>
+                <button
+                  key={`${thrower}-${index}`}
+                  type="button"
+                  data-tip={thrower}
+                  onClick={() => searchByThrower(thrower)}
+                >
                   {thrower}
-                </span>
+                </button>
               ))}
             </div>
           ) : (
