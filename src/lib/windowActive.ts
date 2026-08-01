@@ -1,3 +1,5 @@
+import { getCurrentWindow } from '@tauri-apps/api/window';
+
 // Single source of truth for whether the viewer window is active and visible.
 //
 // When the window loses focus (e.g. the user tabs into CS2 running on top of
@@ -71,12 +73,12 @@ export function startWindowActiveTracking(): () => void {
   recompute();
 
   // Tauri focus is the most reliable signal for a fullscreen/borderless game
-  // sitting on top of our window. Wire it up lazily so the app still works in a
-  // plain browser dev context.
+  // sitting on top of our window. Keep failures isolated so the app still works
+  // in a plain browser dev context.
   let unlistenTauri: (() => void) | null = null;
   let disposed = false;
-  void import('@tauri-apps/api/window')
-    .then(({ getCurrentWindow }) => {
+  void Promise.resolve()
+    .then(() => {
       if (disposed) return;
       const win = getCurrentWindow();
       return win.onFocusChanged(({ payload: focused }) => {
