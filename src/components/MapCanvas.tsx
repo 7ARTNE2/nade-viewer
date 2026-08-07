@@ -841,7 +841,6 @@ export default function MapCanvas({
                   style={style}
                   data-map-control="1"
                   onPointerEnter={(event) => showPreview(event, grenade)}
-                  onPointerMove={(event) => showPreview(event, grenade)}
                   onPointerLeave={() => setPreview(null)}
                   onClick={() => onGrenadeOpen?.(grenade.id)}
                   onContextMenu={(event) =>

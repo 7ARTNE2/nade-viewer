@@ -340,6 +340,8 @@ function Shell() {
                   className={`snapshot-trigger active-library-trigger ${snapshotMenuOpen ? 'active' : ''}`}
                   onClick={() => setSnapshotMenuOpen((open) => !open)}
                   aria-expanded={snapshotMenuOpen}
+                  aria-haspopup="dialog"
+                  aria-controls="library-picker-popover"
                   data-tip={activeImport.source_path}
                   data-tip-pos="bottom"
                 >
@@ -361,7 +363,15 @@ function Shell() {
                   <ChevronDown size={14} />
                 </button>
                 {snapshotMenuOpen ? (
-                  <div className="snapshot-menu" role="listbox">
+                  <div
+                    className="snapshot-menu"
+                    id="library-picker-popover"
+                    role="dialog"
+                    aria-label={tr(
+                      'Choose or rename library',
+                      'Выбрать или переименовать библиотеку',
+                    )}
+                  >
                     {imports.map((item) => {
                       const isEditing = editingSnapshotId === item.id;
                       return (
@@ -385,6 +395,10 @@ function Shell() {
                                   setEditingLabel(event.target.value)
                                 }
                                 placeholder={importFileName(item.source_path)}
+                                aria-label={tr(
+                                  `Library name for ${snapshotDisplayName(item)}`,
+                                  `Название библиотеки ${snapshotDisplayName(item)}`,
+                                )}
                                 autoFocus
                               />
                               <button
@@ -446,6 +460,10 @@ function Shell() {
                                   setEditingSnapshotId(item.id);
                                   setEditingLabel(item.label?.trim() || '');
                                 }}
+                                aria-label={tr(
+                                  `Rename ${snapshotDisplayName(item)}`,
+                                  `Переименовать ${snapshotDisplayName(item)}`,
+                                )}
                               >
                                 <Pencil size={13} />
                               </button>
