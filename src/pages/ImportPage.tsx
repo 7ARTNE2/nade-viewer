@@ -76,7 +76,9 @@ export default function ImportPage({ onImported, lastImport }: Props) {
   const choose = async () => {
     try {
       const selected = await selectImportFile();
-      if (selected) setPath(selected);
+      if (!selected) return;
+      setPath(selected);
+      await runImportRef.current(selected);
     } catch (error) {
       console.error(error);
       showToast(

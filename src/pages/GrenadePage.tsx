@@ -126,9 +126,13 @@ export default function GrenadePage() {
     try {
       await navigator.clipboard.writeText(text);
       setCopied(true);
-      showToast(tr('Coordinates copied', 'Координаты скопированы'), {
-        tone: 'success',
-      });
+      showToast(
+        tr(
+          'Coordinates copied. In CS2, enable sv_cheats 1, then paste setpos / setang into the console.',
+          'Координаты скопированы. В CS2 включите sv_cheats 1, затем вставьте setpos / setang в консоль.',
+        ),
+        { tone: 'success', duration: 6200 },
+      );
       window.setTimeout(() => setCopied(false), 900);
     } catch (error) {
       console.error(error);

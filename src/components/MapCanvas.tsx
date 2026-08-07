@@ -288,10 +288,11 @@ export default function MapCanvas({
       await navigator.clipboard.writeText(spawn.command);
       setCopied(index);
       showToast(
-        tr('Spawn coordinates copied', 'Координаты спавна скопированы'),
-        {
-          tone: 'success',
-        },
+        tr(
+          'Spawn coordinates copied. In CS2, enable sv_cheats 1, then paste setpos / setang into the console.',
+          'Координаты спавна скопированы. В CS2 включите sv_cheats 1, затем вставьте setpos / setang в консоль.',
+        ),
+        { tone: 'success', duration: 6200 },
       );
       window.setTimeout(() => setCopied(null), 1400);
     } catch (error) {
