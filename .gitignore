@@ -19,6 +19,11 @@ src-tauri/gen/
 .vscode/
 .idea/
 
+# Local AI coding-tool skills
+.agents/
+.opencode/
+skills-lock.json
+
 # Logs and operating system files
 *.log
 npm-debug.log*

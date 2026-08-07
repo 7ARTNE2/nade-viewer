@@ -684,6 +684,7 @@ export default function MapPage({ activeImportId }: MapPageProps) {
         ) : (
           <MapCanvas
             mapImagePath={mapImagePath}
+            mapLabel={overview?.map.label ?? decodedMap}
             clusters={overview?.clusters}
             selectedClusterId={selectedCluster?.id}
             grenades={mapGrenades}

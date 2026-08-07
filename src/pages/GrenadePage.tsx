@@ -229,6 +229,7 @@ export default function GrenadePage() {
         </div>
         <MapCanvas
           mapImagePath={grenade.map_image_path}
+          mapLabel={grenade.map}
           grenades={previewPoint}
           spawnPoints={spawnPoints}
         />

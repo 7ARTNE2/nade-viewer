@@ -24,6 +24,7 @@ import { useToast } from './Toast';
 
 type Props = {
   mapImagePath?: string | null;
+  mapLabel?: string | null;
   clusters?: LandingCluster[];
   selectedClusterId?: string | null;
   grenades?: GrenadePreview[];
@@ -123,6 +124,7 @@ const groupThrowPoints = (
 
 export default function MapCanvas({
   mapImagePath,
+  mapLabel,
   clusters = [],
   selectedClusterId,
   grenades = [],
@@ -389,6 +391,49 @@ export default function MapCanvas({
         event.clientY - rect.top,
       );
   };
+  const panBy = (x: number, y: number) => {
+    setView((current) => clampView(current.s, current.tx + x, current.ty + y));
+  };
+  const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.target !== event.currentTarget) return;
+    const panDistance = Math.max(
+      32,
+      Math.min(stageSize.width, stageSize.height) * 0.1,
+    );
+    switch (event.key) {
+      case '+':
+      case '=':
+        event.preventDefault();
+        zoomAt(1.18);
+        break;
+      case '-':
+      case '_':
+        event.preventDefault();
+        zoomAt(1 / 1.18);
+        break;
+      case '0':
+      case 'Home':
+        event.preventDefault();
+        resetView();
+        break;
+      case 'ArrowUp':
+        event.preventDefault();
+        panBy(0, panDistance);
+        break;
+      case 'ArrowDown':
+        event.preventDefault();
+        panBy(0, -panDistance);
+        break;
+      case 'ArrowLeft':
+        event.preventDefault();
+        panBy(panDistance, 0);
+        break;
+      case 'ArrowRight':
+        event.preventDefault();
+        panBy(-panDistance, 0);
+        break;
+    }
+  };
   const showPreview = (event: ReactPointerEvent, grenade: GrenadePreview) => {
     const rect = viewportRef.current?.getBoundingClientRect();
     if (rect)
@@ -537,9 +582,22 @@ export default function MapCanvas({
           </div>
         </div>
       </details>
+      <div className="map-interaction-hint" id="map-interaction-hint">
+        {tr(
+          'Mouse wheel: zoom. Drag: pan when zoomed. Arrow keys: pan. + / -: zoom. 0: reset.',
+          'Колесо: масштаб. Перетаскивание: перемещение при увеличении. Стрелки: перемещение. + / -: масштаб. 0: сброс.',
+        )}
+      </div>
       <div
         ref={viewportRef}
         className={`map-viewport ${view.s > 1 ? 'is-draggable' : ''}`}
+        tabIndex={0}
+        role="region"
+        aria-label={tr(
+          `Interactive tactical map of ${mapLabel ?? 'the selected map'}`,
+          `Интерактивная тактическая карта ${mapLabel ?? 'выбранной карты'}`,
+        )}
+        aria-describedby="map-interaction-hint"
         onMouseDownCapture={onMouseDown}
         onClickCapture={suppressDraggedClick}
         onContextMenu={(event) => {
@@ -550,6 +608,7 @@ export default function MapCanvas({
         }}
         onDragStart={(event) => event.preventDefault()}
         onWheel={onWheel}
+        onKeyDown={onKeyDown}
       >
         <div
           ref={stageRef}
@@ -569,7 +628,10 @@ export default function MapCanvas({
             {image ? (
               <img
                 src={image}
-                alt="map"
+                alt={tr(
+                  `Tactical map of ${mapLabel ?? 'the selected map'}`,
+                  `Тактическая карта ${mapLabel ?? 'выбранной карты'}`,
+                )}
                 className="map-image"
                 draggable={false}
                 style={{
@@ -671,6 +733,10 @@ export default function MapCanvas({
                       copySpawn(spawn, index);
                     }}
                     data-tip={`${spawn.command} / ${spawn.side}`}
+                    aria-label={tr(
+                      `${spawn.side} spawn. Copy coordinates.`,
+                      `Спавн ${spawn.side}. Копировать координаты.`,
+                    )}
                   >
                     <span className="spawn-pulse" />
                     <span
@@ -710,6 +776,10 @@ export default function MapCanvas({
                       'гранаты',
                       'гранат',
                     )}
+                    aria-label={tr(
+                      `${cluster.side_key} cluster, ${cluster.count} grenades. Open cluster.`,
+                      `Кластер ${cluster.side_key}, ${cluster.count} гранат. Открыть кластер.`,
+                    )}
                   >
                     {iconTheme === 'asset' && singleType ? (
                       <GrenadeMapIcon grenadeType={singleType} />
@@ -747,6 +817,10 @@ export default function MapCanvas({
                       showCoordinateMenu(event, group.grenades)
                     }
                     data-tip={`${matched ? `${INSTA_LABEL} / ` : ''}${group.grenades.length} points`}
+                    aria-label={tr(
+                      `${group.grenades.length} grenade points. Choose a lineup.`,
+                      `${group.grenades.length} точек гранат. Выбрать раскидку.`,
+                    )}
                   >
                     {iconTheme === 'asset'
                       ? markerIcon(grenade.grenade_type)
@@ -773,7 +847,10 @@ export default function MapCanvas({
                   onContextMenu={(event) =>
                     showCoordinateMenu(event, [grenade])
                   }
-                  aria-label={`#${grenade.id} ${grenadeLabel(grenade.grenade_type)}`}
+                  aria-label={tr(
+                    `${grenadeLabel(grenade.grenade_type)} grenade #${grenade.id}. Open details. Right-click to copy coordinates.`,
+                    `${grenadeLabel(grenade.grenade_type)} граната #${grenade.id}. Открыть детали. ПКМ для копирования координат.`,
+                  )}
                 >
                   {grenade.id === copiedGrenadeId ? (
                     <Check size={13} />
@@ -813,6 +890,10 @@ export default function MapCanvas({
                 onPointerEnter={(event) => showPreview(event, grenade)}
                 onPointerLeave={() => setPreview(null)}
                 onContextMenu={(event) => showCoordinateMenu(event, [grenade])}
+                aria-label={tr(
+                  `${grenadeLabel(grenade.grenade_type)} grenade #${grenade.id}. Open details.`,
+                  `${grenadeLabel(grenade.grenade_type)} граната #${grenade.id}. Открыть детали.`,
+                )}
               >
                 {grenade.id === copiedGrenadeId ? (
                   <Check size={13} />
