@@ -7,7 +7,7 @@ import {
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
 } from 'react';
-import { Crosshair, Minus, Plus, RotateCcw, X } from 'lucide-react';
+import { Check, Crosshair, Minus, Plus, RotateCcw, X } from 'lucide-react';
 import { assetUrl } from '../lib/tauri';
 import { formatNumber, grenadeLabel } from '../lib/format';
 import { buildSpawnMapPoints, INSTA_LABEL, isInstaGrenade } from '../lib/insta';
@@ -150,6 +150,7 @@ export default function MapCanvas({
   const [stageSize, setStageSize] = useState({ width: 0, height: 0 });
   const [view, setView] = useState({ s: 1, tx: 0, ty: 0 });
   const [copied, setCopied] = useState<number | null>(null);
+  const [copiedGrenadeId, setCopiedGrenadeId] = useState<number | null>(null);
   const [activeGroupId, setActiveGroupId] = useState<string | null>(null);
   const [preview, setPreview] = useState<{
     grenade: GrenadePreview;
@@ -315,6 +316,7 @@ export default function MapCanvas({
     if (!grenade.coordinates) return;
     try {
       await navigator.clipboard.writeText(grenade.coordinates);
+      setCopiedGrenadeId(grenade.id);
       showToast(
         tr(
           'Coordinates copied. In CS2, enable sv_cheats 1, then paste setpos / setang into the console.',
@@ -322,6 +324,7 @@ export default function MapCanvas({
         ),
         { tone: 'success', duration: 6200 },
       );
+      window.setTimeout(() => setCopiedGrenadeId(null), 1400);
     } catch (error) {
       console.error(error);
       showToast(
@@ -659,7 +662,7 @@ export default function MapCanvas({
                 typeof spawn.map_y === 'number' ? (
                   <button
                     key={`${spawn.side}-${index}-${spawn.pos_x}-${spawn.pos_y}`}
-                    className={`spawn-dot ${spawn.side === 'CT' ? 'ct' : 't'}`}
+                    className={`spawn-dot ${spawn.side === 'CT' ? 'ct' : 't'} ${copied === index ? 'coordinates-copied' : ''}`}
                     style={project(spawn.map_x, spawn.map_y)}
                     data-map-control="1"
                     onClick={() => copySpawn(spawn, index)}
@@ -734,7 +737,7 @@ export default function MapCanvas({
                   data-map-control="1"
                 >
                   <button
-                    className={`throw-dot throw-stack-dot ${group.grenades.some((item) => item.is_core) ? 'core' : ''} ${matched ? 'spawn-match' : ''}`}
+                    className={`throw-dot throw-stack-dot ${group.grenades.some((item) => item.is_core) ? 'core' : ''} ${matched ? 'spawn-match' : ''} ${group.grenades.some((item) => item.id === copiedGrenadeId) ? 'coordinates-copied' : ''}`}
                     onClick={() =>
                       setActiveGroupId(
                         activeGroupId === group.id ? null : group.id,
@@ -748,13 +751,19 @@ export default function MapCanvas({
                     {iconTheme === 'asset'
                       ? markerIcon(grenade.grenade_type)
                       : null}
-                    <span>{group.grenades.length}</span>
+                    {group.grenades.some(
+                      (item) => item.id === copiedGrenadeId,
+                    ) ? (
+                      <Check size={13} />
+                    ) : (
+                      <span>{group.grenades.length}</span>
+                    )}
                   </button>
                 </div>
               ) : (
                 <button
                   key={group.id}
-                  className={`throw-dot ${grenade.is_core ? 'core' : ''} ${matched ? 'spawn-match' : ''}`}
+                  className={`throw-dot ${grenade.is_core ? 'core' : ''} ${matched ? 'spawn-match' : ''} ${grenade.id === copiedGrenadeId ? 'coordinates-copied' : ''}`}
                   style={style}
                   data-map-control="1"
                   onPointerEnter={(event) => showPreview(event, grenade)}
@@ -766,7 +775,11 @@ export default function MapCanvas({
                   }
                   aria-label={`#${grenade.id} ${grenadeLabel(grenade.grenade_type)}`}
                 >
-                  {markerIcon(grenade.grenade_type)}
+                  {grenade.id === copiedGrenadeId ? (
+                    <Check size={13} />
+                  ) : (
+                    markerIcon(grenade.grenade_type)
+                  )}
                 </button>
               );
             })}
@@ -790,7 +803,7 @@ export default function MapCanvas({
             {activeGroup.grenades.map((grenade) => (
               <button
                 key={grenade.id}
-                className={`throw-strip-dot ${grenade.is_core ? 'core' : ''}`}
+                className={`throw-strip-dot ${grenade.is_core ? 'core' : ''} ${grenade.id === copiedGrenadeId ? 'coordinates-copied' : ''}`}
                 style={
                   {
                     '--dot': typeColor[grenade.grenade_type] ?? '#fff',
@@ -801,7 +814,11 @@ export default function MapCanvas({
                 onPointerLeave={() => setPreview(null)}
                 onContextMenu={(event) => showCoordinateMenu(event, [grenade])}
               >
-                {markerIcon(grenade.grenade_type)}
+                {grenade.id === copiedGrenadeId ? (
+                  <Check size={13} />
+                ) : (
+                  markerIcon(grenade.grenade_type)
+                )}
               </button>
             ))}
             <button
