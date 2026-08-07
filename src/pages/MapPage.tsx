@@ -422,6 +422,7 @@ export default function MapPage({ activeImportId }: MapPageProps) {
     filters.grenade_type !== 'all',
     filters.side !== 'Any',
     Boolean(filters.search?.trim()),
+    Boolean(filters.thrower_team?.trim()),
     filters.is_core,
   ].filter(Boolean).length;
   const filterSummary = activeFilterCount
@@ -723,9 +724,19 @@ export default function MapPage({ activeImportId }: MapPageProps) {
             className={`filter-summary ${activeFilterCount ? 'active' : ''}`}
           >
             <span>{filterSummary}</span>
-            {filters.search?.trim() ? (
-              <span className="filter-summary-query">
-                &quot;{filters.search.trim()}&quot;
+            {filters.search?.trim() || filters.thrower_team?.trim() ? (
+              <span className="filter-summary-queries">
+                {filters.search?.trim() ? (
+                  <span className="filter-summary-query">
+                    &quot;{filters.search.trim()}&quot;
+                  </span>
+                ) : null}
+                {filters.thrower_team?.trim() ? (
+                  <span className="filter-summary-query">
+                    {tr('Team', 'Команда')}: &quot;{filters.thrower_team.trim()}
+                    &quot;
+                  </span>
+                ) : null}
               </span>
             ) : null}
           </div>
