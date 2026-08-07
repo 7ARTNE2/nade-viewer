@@ -156,6 +156,11 @@ export default function MapCanvas({
     x: number;
     y: number;
   } | null>(null);
+  const [coordinateMenu, setCoordinateMenu] = useState<{
+    grenades: GrenadePreview[];
+    x: number;
+    y: number;
+  } | null>(null);
 
   useEffect(() => {
     const viewport = viewportRef.current;
@@ -306,6 +311,46 @@ export default function MapCanvas({
       );
     }
   };
+  const copyGrenadeCoordinates = async (grenade: GrenadePreview) => {
+    if (!grenade.coordinates) return;
+    try {
+      await navigator.clipboard.writeText(grenade.coordinates);
+      showToast(
+        tr(
+          'Coordinates copied. In CS2, enable sv_cheats 1, then paste setpos / setang into the console.',
+          'Координаты скопированы. В CS2 включите sv_cheats 1, затем вставьте setpos / setang в консоль.',
+        ),
+        { tone: 'success', duration: 6200 },
+      );
+    } catch (error) {
+      console.error(error);
+      showToast(
+        tr('Could not copy coordinates', 'Не удалось скопировать координаты'),
+        { tone: 'error' },
+      );
+    }
+  };
+  const showCoordinateMenu = (
+    event: ReactMouseEvent,
+    grenades: GrenadePreview[],
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const items = grenades.filter((grenade) => grenade.coordinates);
+    if (!items.length) return;
+    if (items.length === 1) {
+      copyGrenadeCoordinates(items[0]);
+      return;
+    }
+    const rect = viewportRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    setPreview(null);
+    setCoordinateMenu({
+      grenades: items,
+      x: event.clientX - rect.left,
+      y: event.clientY - rect.top,
+    });
+  };
   const onMouseDown = (event: ReactMouseEvent<HTMLDivElement>) => {
     if (event.button !== 0) return;
     const target = event.target as HTMLElement;
@@ -444,6 +489,12 @@ export default function MapCanvas({
               <i className="legend-throw legend-insta" />{' '}
               {tr('Spawn match', 'Совпадение со спавном')}
             </span>
+            <small>
+              {tr(
+                'Right-click a lineup point to copy coordinates',
+                'ПКМ по точке раскидки: копировать координаты',
+              )}
+            </small>
           </div>
           <div className="legend-group legend-types">
             <strong>
@@ -488,6 +539,12 @@ export default function MapCanvas({
         className={`map-viewport ${view.s > 1 ? 'is-draggable' : ''}`}
         onMouseDownCapture={onMouseDown}
         onClickCapture={suppressDraggedClick}
+        onContextMenu={(event) => {
+          if (coordinateMenu) {
+            event.preventDefault();
+            setCoordinateMenu(null);
+          }
+        }}
         onDragStart={(event) => event.preventDefault()}
         onWheel={onWheel}
       >
@@ -606,6 +663,10 @@ export default function MapCanvas({
                     style={project(spawn.map_x, spawn.map_y)}
                     data-map-control="1"
                     onClick={() => copySpawn(spawn, index)}
+                    onContextMenu={(event) => {
+                      event.preventDefault();
+                      copySpawn(spawn, index);
+                    }}
                     data-tip={`${spawn.command} / ${spawn.side}`}
                   >
                     <span className="spawn-pulse" />
@@ -679,6 +740,9 @@ export default function MapCanvas({
                         activeGroupId === group.id ? null : group.id,
                       )
                     }
+                    onContextMenu={(event) =>
+                      showCoordinateMenu(event, group.grenades)
+                    }
                     data-tip={`${matched ? `${INSTA_LABEL} / ` : ''}${group.grenades.length} points`}
                   >
                     {iconTheme === 'asset'
@@ -697,6 +761,9 @@ export default function MapCanvas({
                   onPointerMove={(event) => showPreview(event, grenade)}
                   onPointerLeave={() => setPreview(null)}
                   onClick={() => onGrenadeOpen?.(grenade.id)}
+                  onContextMenu={(event) =>
+                    showCoordinateMenu(event, [grenade])
+                  }
                   aria-label={`#${grenade.id} ${grenadeLabel(grenade.grenade_type)}`}
                 >
                   {markerIcon(grenade.grenade_type)}
@@ -732,6 +799,7 @@ export default function MapCanvas({
                 onClick={() => onGrenadeOpen?.(grenade.id)}
                 onPointerEnter={(event) => showPreview(event, grenade)}
                 onPointerLeave={() => setPreview(null)}
+                onContextMenu={(event) => showCoordinateMenu(event, [grenade])}
               >
                 {markerIcon(grenade.grenade_type)}
               </button>
@@ -829,6 +897,43 @@ export default function MapCanvas({
                 ))}
               </div>
             ) : null}
+          </div>
+        ) : null}
+        {coordinateMenu ? (
+          <div
+            className="coordinate-copy-menu"
+            style={{
+              left: clamp(
+                coordinateMenu.x,
+                12,
+                Math.max(12, (viewportRef.current?.clientWidth ?? 0) - 268),
+              ),
+              top: clamp(
+                coordinateMenu.y,
+                12,
+                Math.max(12, (viewportRef.current?.clientHeight ?? 0) - 160),
+              ),
+            }}
+            data-map-control="1"
+          >
+            <strong>{tr('Copy coordinates', 'Копировать координаты')}</strong>
+            {coordinateMenu.grenades.map((grenade) => (
+              <button
+                key={grenade.id}
+                type="button"
+                onClick={() => {
+                  copyGrenadeCoordinates(grenade);
+                  setCoordinateMenu(null);
+                }}
+              >
+                <span>
+                  {grenadeLabel(grenade.grenade_type)} #{grenade.id}
+                </span>
+                <small>
+                  {grenade.thrower || tr('Parsed throw', 'Распознанный бросок')}
+                </small>
+              </button>
+            ))}
           </div>
         ) : null}
       </div>
