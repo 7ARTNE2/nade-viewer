@@ -14,6 +14,7 @@ type Props = {
   spawnPoints?: SpawnPoint[];
   onCoreToggle?: (id: number, isCore: boolean) => void;
   emptyLabel?: string;
+  loading?: boolean;
 };
 
 export default function GrenadeList({
@@ -23,6 +24,7 @@ export default function GrenadeList({
   spawnPoints = [],
   onCoreToggle,
   emptyLabel,
+  loading = false,
 }: Props) {
   const { tr } = useI18n();
   const { showToast } = useToast();
@@ -55,6 +57,27 @@ export default function GrenadeList({
       );
     }
   };
+
+  if (loading) {
+    return (
+      <div className="nade-list compact nade-list-skeleton" aria-live="polite">
+        <span className="sr-only">
+          {tr('Loading grenades', 'Загрузка гранат')}
+        </span>
+        {Array.from({ length: 4 }, (_, index) => (
+          <div className="nade-row" key={index} aria-hidden="true">
+            <span className="nade-skeleton-type" />
+            <span className="nade-skeleton-side" />
+            <span className="nade-skeleton-main">
+              <i />
+              <i />
+            </span>
+            <span className="nade-skeleton-action" />
+          </div>
+        ))}
+      </div>
+    );
+  }
 
   if (!grenades.length) {
     return (

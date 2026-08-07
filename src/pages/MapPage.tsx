@@ -133,7 +133,7 @@ export default function MapPage({ activeImportId }: MapPageProps) {
     null,
   );
   const [inspectorVisible, setInspectorVisible] = useState(true);
-  const [visibilityRulesOpen, setVisibilityRulesOpen] = useState(true);
+  const [visibilityRulesOpen, setVisibilityRulesOpen] = useState(false);
   const overviewRequestRef = useRef(0);
   const clusterRequestRef = useRef(0);
   const mapTrajectoriesRequestRef = useRef(0);
@@ -779,22 +779,25 @@ export default function MapPage({ activeImportId }: MapPageProps) {
               aria-label={tr('Search grenades', 'Найти гранату')}
             />
           </label>
-          <label className="mini-field team-search-field">
-            <Search size={14} />
-            <input
-              value={filters.thrower_team ?? ''}
-              onChange={(event) =>
-                setFilters((state) => ({
-                  ...state,
-                  thrower_team: event.target.value,
-                }))
-              }
-              placeholder={tr('Thrower team', 'Команда игрока')}
-              aria-label={tr(
-                'Search by thrower team',
-                'Поиск по команде игрока',
-              )}
-            />
+          <label className="secondary-filter-field">
+            <span>{tr('Narrow by team', 'Уточнить по команде')}</span>
+            <span className="mini-field team-search-field">
+              <Search size={14} />
+              <input
+                value={filters.thrower_team ?? ''}
+                onChange={(event) =>
+                  setFilters((state) => ({
+                    ...state,
+                    thrower_team: event.target.value,
+                  }))
+                }
+                placeholder={tr('Thrower team', 'Команда игрока')}
+                aria-label={tr(
+                  'Search by thrower team',
+                  'Поиск по команде игрока',
+                )}
+              />
+            </span>
           </label>
         </div>
 
@@ -927,16 +930,14 @@ export default function MapPage({ activeImportId }: MapPageProps) {
           ) : null}
         </div>
 
-        <div className="panel-section grenade-panel inspector-grenades">
+        <div
+          className={`panel-section grenade-panel inspector-grenades ${selectedCluster ? 'has-selection' : ''}`}
+        >
           <div className="section-title">
             <span>
-              {tr('Selected grenades', 'Выбранные гранаты')}
               {selectedCluster
-                ? tr(
-                    `Cluster ${selectedCluster.side_key}`,
-                    `Кластер ${selectedCluster.side_key}`,
-                  )
-                : null}
+                ? tr('Cluster lineups', 'Раскидки кластера')
+                : tr('Selected grenades', 'Выбранные гранаты')}
             </span>
             {selectedCluster ? (
               <span className="section-count">
@@ -944,6 +945,30 @@ export default function MapPage({ activeImportId }: MapPageProps) {
               </span>
             ) : null}
           </div>
+          {selectedCluster ? (
+            <div className="selected-cluster-context">
+              <span
+                className={`cluster-side ${selectedCluster.side_key.toLowerCase()}`}
+              >
+                {selectedCluster.side_key}
+              </span>
+              <span>
+                <strong>
+                  {count(
+                    selectedCluster.count,
+                    'lineup selected',
+                    'lineups selected',
+                    'раскидка выбрана',
+                    'раскидки выбрано',
+                    'раскидок выбрано',
+                  )}
+                </strong>
+                <small>
+                  {selectedCluster.unique_types.map(grenadeLabel).join(', ')}
+                </small>
+              </span>
+            </div>
+          ) : null}
           {grenadeError && selectedCluster ? (
             <div className="panel-load-error">
               <span>{grenadeError}</span>
@@ -959,17 +984,19 @@ export default function MapPage({ activeImportId }: MapPageProps) {
               grenades={grenades}
               compact
               showCopy
+              loading={grenadeLoading}
               spawnPoints={visibleSpawns}
               onCoreToggle={handleCoreToggle}
               emptyLabel={
-                grenadeLoading
-                  ? tr('Loading grenades.', 'Загрузка гранат.')
-                  : filters.is_core
-                    ? tr(
-                        'No Core Nades in this cluster.',
-                        'В этом кластере нет избранных гранат.',
-                      )
-                    : undefined
+                filters.is_core
+                  ? tr(
+                      'No Core Nades in this cluster.',
+                      'В этом кластере нет избранных гранат.',
+                    )
+                  : tr(
+                      'Choose a cluster on the map or from the list to inspect its lineups.',
+                      'Выберите кластер на карте или в списке, чтобы изучить его раскидки.',
+                    )
               }
             />
           )}

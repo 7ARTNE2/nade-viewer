@@ -65,6 +65,7 @@ export default function OnboardingModal({
   const [error, setError] = useState<string | null>(null);
   const [rect, setRect] = useState<DOMRect | null>(null);
   const [mapTargetAvailable, setMapTargetAvailable] = useState(false);
+  const [mapSelectionPending, setMapSelectionPending] = useState(false);
   const target = started ? steps[step] : null;
   const close = useCallback(() => {
     if (!busy) void onComplete();
@@ -73,9 +74,27 @@ export default function OnboardingModal({
 
   useEffect(() => {
     if (!started) return;
-    if (activeImport && pathname === '/maps') setStep(1);
-    if (pathname.startsWith('/map/')) setStep((value) => Math.max(value, 2));
+    if (activeImport && pathname === '/maps')
+      setStep((value) => Math.max(value, 1));
+    if (pathname.startsWith('/map/')) {
+      setMapSelectionPending(false);
+      setStep((value) => Math.max(value, 2));
+    }
   }, [activeImport, pathname, started]);
+
+  useEffect(() => {
+    if (!started || step !== 1) return;
+    const advanceAfterMapSelection = (event: MouseEvent) => {
+      if (
+        (event.target as Element | null)?.closest('[data-tour="map-target"]')
+      ) {
+        setMapSelectionPending(true);
+      }
+    };
+    window.addEventListener('click', advanceAfterMapSelection, true);
+    return () =>
+      window.removeEventListener('click', advanceAfterMapSelection, true);
+  }, [started, step]);
 
   useLayoutEffect(() => {
     if (!target) return;
@@ -163,6 +182,14 @@ export default function OnboardingModal({
               ? target?.eyebrow
               : tr('Your local playbook', 'Ваш локальный плейбук')}
         </div>
+        {started ? (
+          <div className="onboarding-progress" aria-live="polite">
+            {tr(
+              `Step ${step + 1} of ${steps.length}`,
+              `Шаг ${step + 1} из ${steps.length}`,
+            )}
+          </div>
+        ) : null}
         <h1 id="onboarding-title">
           {started && locale === 'ru'
             ? [
@@ -248,10 +275,12 @@ export default function OnboardingModal({
             ) : step === 1 ? (
               mapTargetAvailable ? (
                 <span className="onboarding-next-hint">
-                  {tr(
-                    'Click the highlighted map to continue',
-                    'Нажмите на выделенную карту, чтобы продолжить',
-                  )}
+                  {mapSelectionPending
+                    ? tr('Opening map...', 'Открываем карту...')
+                    : tr(
+                        'Click the highlighted map to continue',
+                        'Нажмите на выделенную карту, чтобы продолжить',
+                      )}
                 </span>
               ) : (
                 <button
