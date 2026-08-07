@@ -159,11 +159,6 @@ export default function MapCanvas({
     x: number;
     y: number;
   } | null>(null);
-  const [coordinateMenu, setCoordinateMenu] = useState<{
-    grenades: GrenadePreview[];
-    x: number;
-    y: number;
-  } | null>(null);
 
   useEffect(() => {
     const viewport = viewportRef.current;
@@ -335,26 +330,14 @@ export default function MapCanvas({
       );
     }
   };
-  const showCoordinateMenu = (
+  const copyPointCoordinates = (
     event: ReactMouseEvent,
     grenades: GrenadePreview[],
   ) => {
     event.preventDefault();
     event.stopPropagation();
-    const items = grenades.filter((grenade) => grenade.coordinates);
-    if (!items.length) return;
-    if (items.length === 1) {
-      copyGrenadeCoordinates(items[0]);
-      return;
-    }
-    const rect = viewportRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    setPreview(null);
-    setCoordinateMenu({
-      grenades: items,
-      x: event.clientX - rect.left,
-      y: event.clientY - rect.top,
-    });
+    const grenade = grenades.find((item) => item.coordinates);
+    if (grenade) void copyGrenadeCoordinates(grenade);
   };
   const onMouseDown = (event: ReactMouseEvent<HTMLDivElement>) => {
     if (event.button !== 0) return;
@@ -600,12 +583,6 @@ export default function MapCanvas({
         aria-describedby="map-interaction-hint"
         onMouseDownCapture={onMouseDown}
         onClickCapture={suppressDraggedClick}
-        onContextMenu={(event) => {
-          if (coordinateMenu) {
-            event.preventDefault();
-            setCoordinateMenu(null);
-          }
-        }}
         onDragStart={(event) => event.preventDefault()}
         onWheel={onWheel}
         onKeyDown={onKeyDown}
@@ -813,9 +790,12 @@ export default function MapCanvas({
                         activeGroupId === group.id ? null : group.id,
                       )
                     }
-                    onContextMenu={(event) =>
-                      showCoordinateMenu(event, group.grenades)
-                    }
+                    onContextMenu={(event) => {
+                      event.preventDefault();
+                      setActiveGroupId(
+                        activeGroupId === group.id ? null : group.id,
+                      );
+                    }}
                     data-tip={`${matched ? `${INSTA_LABEL} / ` : ''}${group.grenades.length} points`}
                     aria-label={tr(
                       `${group.grenades.length} grenade points. Choose a lineup.`,
@@ -844,7 +824,7 @@ export default function MapCanvas({
                   onPointerLeave={() => setPreview(null)}
                   onClick={() => onGrenadeOpen?.(grenade.id)}
                   onContextMenu={(event) =>
-                    showCoordinateMenu(event, [grenade])
+                    copyPointCoordinates(event, [grenade])
                   }
                   aria-label={tr(
                     `${grenadeLabel(grenade.grenade_type)} grenade #${grenade.id}. Open details. Right-click to copy coordinates.`,
@@ -888,7 +868,9 @@ export default function MapCanvas({
                 onClick={() => onGrenadeOpen?.(grenade.id)}
                 onPointerEnter={(event) => showPreview(event, grenade)}
                 onPointerLeave={() => setPreview(null)}
-                onContextMenu={(event) => showCoordinateMenu(event, [grenade])}
+                onContextMenu={(event) =>
+                  copyPointCoordinates(event, [grenade])
+                }
                 aria-label={tr(
                   `${grenadeLabel(grenade.grenade_type)} grenade #${grenade.id}. Open details.`,
                   `${grenadeLabel(grenade.grenade_type)} граната #${grenade.id}. Открыть детали.`,
@@ -994,43 +976,6 @@ export default function MapCanvas({
                 ))}
               </div>
             ) : null}
-          </div>
-        ) : null}
-        {coordinateMenu ? (
-          <div
-            className="coordinate-copy-menu"
-            style={{
-              left: clamp(
-                coordinateMenu.x,
-                12,
-                Math.max(12, (viewportRef.current?.clientWidth ?? 0) - 268),
-              ),
-              top: clamp(
-                coordinateMenu.y,
-                12,
-                Math.max(12, (viewportRef.current?.clientHeight ?? 0) - 160),
-              ),
-            }}
-            data-map-control="1"
-          >
-            <strong>{tr('Copy coordinates', 'Копировать координаты')}</strong>
-            {coordinateMenu.grenades.map((grenade) => (
-              <button
-                key={grenade.id}
-                type="button"
-                onClick={() => {
-                  copyGrenadeCoordinates(grenade);
-                  setCoordinateMenu(null);
-                }}
-              >
-                <span>
-                  {grenadeLabel(grenade.grenade_type)} #{grenade.id}
-                </span>
-                <small>
-                  {grenade.thrower || tr('Parsed throw', 'Распознанный бросок')}
-                </small>
-              </button>
-            ))}
           </div>
         ) : null}
       </div>
