@@ -859,7 +859,7 @@ export default function MapCanvas({
             {activeGroup.grenades.map((grenade) => (
               <button
                 key={grenade.id}
-                className={`throw-strip-dot ${grenade.is_core ? 'core' : ''} ${grenade.id === copiedGrenadeId ? 'coordinates-copied' : ''}`}
+                className={`throw-strip-dot ${grenade.is_core ? 'core' : ''} ${grenadePointMode === 'throw' && isInstaGrenade(grenade, spawnMapPoints) ? 'spawn-match' : ''} ${grenade.id === copiedGrenadeId ? 'coordinates-copied' : ''}`}
                 style={
                   {
                     '--dot': typeColor[grenade.grenade_type] ?? '#fff',
