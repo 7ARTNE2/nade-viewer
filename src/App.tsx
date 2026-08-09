@@ -313,12 +313,14 @@ function Shell() {
               <button
                 className={locale === 'en' ? 'active' : ''}
                 onClick={() => setLocale('en')}
+                aria-pressed={locale === 'en'}
               >
                 EN
               </button>
               <button
                 className={locale === 'ru' ? 'active' : ''}
                 onClick={() => setLocale('ru')}
+                aria-pressed={locale === 'ru'}
               >
                 RU
               </button>
