@@ -527,7 +527,7 @@ function Shell() {
                     onClick={() => window.location.reload()}
                   >
                     <RotateCw size={15} />
-                    {tr('Refresh application', 'Обновить приложение')}
+                    {tr('Refresh application page', 'Обновить страницу приложения')}
                   </button>
                   {activeImport ? (
                     <button
