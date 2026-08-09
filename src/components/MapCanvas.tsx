@@ -7,7 +7,7 @@ import {
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
 } from 'react';
-import { Check, Crosshair, Minus, Plus, RotateCcw, X } from 'lucide-react';
+import { Check, CircleHelp, Crosshair, Minus, Plus, RotateCcw, X } from 'lucide-react';
 import { assetUrl } from '../lib/tauri';
 import { formatNumber, grenadeLabel } from '../lib/format';
 import { buildSpawnMapPoints, INSTA_LABEL, isInstaGrenade } from '../lib/insta';
@@ -481,7 +481,23 @@ export default function MapCanvas({
         </button>
       </div>
       <details className="map-legend" data-map-control="1">
-        <summary>{tr('Map legend', 'Легенда карты')}</summary>
+        <summary
+          aria-label={tr('Map legend', 'Легенда карты')}
+          data-tip={tr('Map legend', 'Легенда карты')}
+          data-tip-pos="right"
+        >
+          <CircleHelp size={15} aria-hidden="true" />
+        </summary>
+        <button
+          type="button"
+          className="map-legend-close"
+          aria-label={tr('Close map legend', 'Закрыть легенду карты')}
+          data-tip={tr('Close', 'Закрыть')}
+          data-tip-pos="right"
+          onClick={(event) => event.currentTarget.parentElement?.removeAttribute('open')}
+        >
+          <X size={14} aria-hidden="true" />
+        </button>
         <div className="map-legend-content">
           <div className="legend-group legend-clusters">
             <strong>{tr('Clusters', 'Кластеры')}</strong>
@@ -563,14 +579,27 @@ export default function MapCanvas({
               )}
             </small>
           </div>
+          <div className="legend-group legend-controls">
+            <strong>{tr('Hotkeys', 'Горячие клавиши')}</strong>
+            <span>
+              <kbd>{tr('Wheel', 'Колесо')}</kbd> {tr('Zoom', 'Масштаб')}
+            </span>
+            <span>
+              <kbd>{tr('Drag', 'Перетаскивание')}</kbd>{' '}
+              {tr('Pan when zoomed', 'Перемещение при увеличении')}
+            </span>
+            <span>
+              <kbd>{tr('Arrow keys', 'Стрелки')}</kbd> {tr('Pan', 'Перемещение')}
+            </span>
+            <span>
+              <kbd>+ / -</kbd> {tr('Zoom', 'Масштаб')}
+            </span>
+            <span>
+              <kbd>0</kbd> {tr('Reset view', 'Сбросить вид')}
+            </span>
+          </div>
         </div>
       </details>
-      <div className="map-interaction-hint" id="map-interaction-hint">
-        {tr(
-          'Mouse wheel: zoom. Drag: pan when zoomed. Arrow keys: pan. + / -: zoom. 0: reset.',
-          'Колесо: масштаб. Перетаскивание: перемещение при увеличении. Стрелки: перемещение. + / -: масштаб. 0: сброс.',
-        )}
-      </div>
       <div
         ref={viewportRef}
         className={`map-viewport ${view.s > 1 ? 'is-draggable' : ''}`}
@@ -580,7 +609,6 @@ export default function MapCanvas({
           `Interactive tactical map of ${mapLabel ?? 'the selected map'}`,
           `Интерактивная тактическая карта ${mapLabel ?? 'выбранной карты'}`,
         )}
-        aria-describedby="map-interaction-hint"
         onMouseDownCapture={onMouseDown}
         onClickCapture={suppressDraggedClick}
         onDragStart={(event) => event.preventDefault()}
