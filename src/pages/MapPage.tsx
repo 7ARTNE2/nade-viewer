@@ -620,7 +620,7 @@ export default function MapPage({ activeImportId }: MapPageProps) {
           </button>
           <button
             aria-pressed={showSpawns}
-            className={`toggle ${showSpawns ? 'active' : ''}`}
+            className={`toggle spawns-toolbar-toggle ${showSpawns ? 'active' : ''}`}
             onClick={() => setShowSpawns((value) => !value)}
           >
             <LocateFixed size={15} />
