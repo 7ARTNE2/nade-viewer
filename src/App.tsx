@@ -144,6 +144,7 @@ function Shell() {
   }, [coreTransferStatus, operationError, showToast]);
 
   const switchImport = async (id: number) => {
+    const isMapWorkspace = location.pathname.startsWith('/map/');
     setOperationError(null);
     try {
       const next = await setActiveImport(id);
@@ -153,7 +154,7 @@ function Shell() {
       setSnapshotMenuOpen(false);
       setLibraryActionsOpen(false);
       setEditingSnapshotId(null);
-      navigate('/maps');
+      if (!isMapWorkspace) navigate('/maps');
       showToast(tr('Library switched', 'Библиотека переключена'), {
         tone: 'success',
       });

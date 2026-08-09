@@ -144,6 +144,8 @@ export default function MapPage({ activeImportId }: MapPageProps) {
     hasNavigationSearch ? 0 : (initialViewState?.grenadePage ?? 0),
   );
   const previousStorageKeyRef = useRef(stateStorageKey);
+  const previousImportIdRef = useRef(activeImportId);
+  const skipNextStatePersistenceRef = useRef(false);
 
   useEffect(() => {
     getSiteSettings()
@@ -154,24 +156,36 @@ export default function MapPage({ activeImportId }: MapPageProps) {
   useEffect(() => {
     if (previousStorageKeyRef.current === stateStorageKey) return;
     previousStorageKeyRef.current = stateStorageKey;
+    const isImportSwitch = previousImportIdRef.current !== activeImportId;
+    previousImportIdRef.current = activeImportId;
     const nextViewState = readStoredMapViewState(stateStorageKey);
-    restoredClusterIdRef.current = nextViewState?.selectedClusterId ?? null;
-    restoredGrenadePageRef.current = nextViewState?.grenadePage ?? 0;
-    setFilters(nextViewState?.filters ?? defaultMapFilters());
+    skipNextStatePersistenceRef.current = true;
+    restoredClusterIdRef.current = isImportSwitch
+      ? selectedCluster?.id ?? null
+      : (nextViewState?.selectedClusterId ?? null);
+    restoredGrenadePageRef.current = isImportSwitch
+      ? grenadePage
+      : (nextViewState?.grenadePage ?? 0);
+    if (!isImportSwitch)
+      setFilters(nextViewState?.filters ?? defaultMapFilters());
     setSelectedCluster(null);
     setGrenades([]);
     setMapGrenades([]);
-    setClusterPage(nextViewState?.clusterPage ?? 0);
-    setGrenadePage(nextViewState?.grenadePage ?? 0);
+    setClusterPage(isImportSwitch ? clusterPage : (nextViewState?.clusterPage ?? 0));
+    setGrenadePage(isImportSwitch ? grenadePage : (nextViewState?.grenadePage ?? 0));
     setShowSpawns(nextViewState?.showSpawns ?? true);
     setRadarMode(nextViewState?.radarMode ?? 'default');
     setGrenadeMode(nextViewState?.grenadeMode ?? 'landing');
     setIconTheme(nextViewState?.iconTheme ?? 'base');
     clusterRequestRef.current += 1;
     mapTrajectoriesRequestRef.current += 1;
-  }, [stateStorageKey]);
+  }, [activeImportId, clusterPage, grenadePage, selectedCluster, stateStorageKey]);
 
   useEffect(() => {
+    if (skipNextStatePersistenceRef.current) {
+      skipNextStatePersistenceRef.current = false;
+      return;
+    }
     if (selectedCluster) {
       restoredClusterIdRef.current = selectedCluster.id;
       restoredGrenadePageRef.current = grenadePage;
