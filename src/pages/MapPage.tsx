@@ -614,6 +614,8 @@ export default function MapPage({ activeImportId }: MapPageProps) {
             onClick={() =>
               setFilters((state) => ({ ...state, is_core: !state.is_core }))
             }
+            data-tip={tr('Toggle core grenades', 'Переключить избранные гранаты')}
+            aria-label={tr('Toggle core grenades', 'Переключить избранные гранаты')}
           >
             <BadgeCheck size={15} />
             {tr('Core', 'Избранные')}
@@ -622,6 +624,8 @@ export default function MapPage({ activeImportId }: MapPageProps) {
             aria-pressed={showSpawns}
             className={`toggle spawns-toolbar-toggle ${showSpawns ? 'active' : ''}`}
             onClick={() => setShowSpawns((value) => !value)}
+            data-tip={tr('Toggle spawn points', 'Переключить точки спавнов')}
+            aria-label={tr('Toggle spawn points', 'Переключить точки спавнов')}
           >
             <LocateFixed size={15} />
             {tr('Spawns', 'Спавны')}
