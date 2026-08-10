@@ -636,9 +636,9 @@ export default function MapPage({ activeImportId }: MapPageProps) {
                   <strong>{displayedMap?.label ?? decodedMap}</strong>
                   <span className="map-selector-filtered-count">
                     <small>
-                    {loading
-                      ? tr('Loading', 'Загрузка')
-                      : tr('Filtered grenades', 'Гранат по фильтру')}
+                      {loading
+                        ? tr('Loading', 'Загрузка')
+                        : tr('Filtered grenades', 'Гранат по фильтру')}
                     </small>
                     {!loading ? (
                       <b>{formatNumber(overview?.grenade_count ?? 0)}</b>

@@ -354,9 +354,12 @@ export default function GrenadePage() {
             <div className="block-title">
               {tr('Lineup screenshots', 'Скриншоты раскидки')}
               <span className="lineup-screenshot-count">
-                {[grenade.screenshot_image_path, grenade.screenshot_wide_image_path].filter(
-                  Boolean,
-                ).length}
+                {
+                  [
+                    grenade.screenshot_image_path,
+                    grenade.screenshot_wide_image_path,
+                  ].filter(Boolean).length
+                }
               </span>
             </div>
             <div className="lineup-screenshot-grid">
@@ -497,7 +500,8 @@ export default function GrenadePage() {
         <div
           className="lineup-screenshot-lightbox"
           onMouseDown={(event) => {
-            if (event.target === event.currentTarget) setSelectedScreenshot(null);
+            if (event.target === event.currentTarget)
+              setSelectedScreenshot(null);
           }}
         >
           <div
