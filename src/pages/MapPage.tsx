@@ -161,7 +161,7 @@ export default function MapPage({ activeImportId }: MapPageProps) {
     const nextViewState = readStoredMapViewState(stateStorageKey);
     skipNextStatePersistenceRef.current = true;
     restoredClusterIdRef.current = isImportSwitch
-      ? selectedCluster?.id ?? null
+      ? (selectedCluster?.id ?? null)
       : (nextViewState?.selectedClusterId ?? null);
     restoredGrenadePageRef.current = isImportSwitch
       ? grenadePage
@@ -171,8 +171,12 @@ export default function MapPage({ activeImportId }: MapPageProps) {
     setSelectedCluster(null);
     setGrenades([]);
     setMapGrenades([]);
-    setClusterPage(isImportSwitch ? clusterPage : (nextViewState?.clusterPage ?? 0));
-    setGrenadePage(isImportSwitch ? grenadePage : (nextViewState?.grenadePage ?? 0));
+    setClusterPage(
+      isImportSwitch ? clusterPage : (nextViewState?.clusterPage ?? 0),
+    );
+    setGrenadePage(
+      isImportSwitch ? grenadePage : (nextViewState?.grenadePage ?? 0),
+    );
     if (!isImportSwitch) {
       setShowSpawns(nextViewState?.showSpawns ?? true);
       setRadarMode(nextViewState?.radarMode ?? 'default');
@@ -181,7 +185,13 @@ export default function MapPage({ activeImportId }: MapPageProps) {
     }
     clusterRequestRef.current += 1;
     mapTrajectoriesRequestRef.current += 1;
-  }, [activeImportId, clusterPage, grenadePage, selectedCluster, stateStorageKey]);
+  }, [
+    activeImportId,
+    clusterPage,
+    grenadePage,
+    selectedCluster,
+    stateStorageKey,
+  ]);
 
   useEffect(() => {
     if (skipNextStatePersistenceRef.current) {
@@ -630,8 +640,14 @@ export default function MapPage({ activeImportId }: MapPageProps) {
             onClick={() =>
               setFilters((state) => ({ ...state, is_core: !state.is_core }))
             }
-            data-tip={tr('Toggle core grenades', 'Переключить избранные гранаты')}
-            aria-label={tr('Toggle core grenades', 'Переключить избранные гранаты')}
+            data-tip={tr(
+              'Toggle core grenades',
+              'Переключить избранные гранаты',
+            )}
+            aria-label={tr(
+              'Toggle core grenades',
+              'Переключить избранные гранаты',
+            )}
           >
             <BadgeCheck size={15} />
             {tr('Core', 'Избранные')}

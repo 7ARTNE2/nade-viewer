@@ -7,7 +7,15 @@ import {
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
 } from 'react';
-import { Check, CircleHelp, Crosshair, Minus, Plus, RotateCcw, X } from 'lucide-react';
+import {
+  Check,
+  CircleHelp,
+  Crosshair,
+  Minus,
+  Plus,
+  RotateCcw,
+  X,
+} from 'lucide-react';
 import { assetUrl } from '../lib/tauri';
 import { formatNumber, grenadeLabel } from '../lib/format';
 import { buildSpawnMapPoints, INSTA_LABEL, isInstaGrenade } from '../lib/insta';
@@ -494,7 +502,9 @@ export default function MapCanvas({
           aria-label={tr('Close map legend', 'Закрыть легенду карты')}
           data-tip={tr('Close', 'Закрыть')}
           data-tip-pos="right"
-          onClick={(event) => event.currentTarget.parentElement?.removeAttribute('open')}
+          onClick={(event) =>
+            event.currentTarget.parentElement?.removeAttribute('open')
+          }
         >
           <X size={14} aria-hidden="true" />
         </button>
@@ -589,7 +599,8 @@ export default function MapCanvas({
               {tr('Pan when zoomed', 'Перемещение при увеличении')}
             </span>
             <span>
-              <kbd>{tr('Arrow keys', 'Стрелки')}</kbd> {tr('Pan', 'Перемещение')}
+              <kbd>{tr('Arrow keys', 'Стрелки')}</kbd>{' '}
+              {tr('Pan', 'Перемещение')}
             </span>
             <span>
               <kbd>+ / -</kbd> {tr('Zoom', 'Масштаб')}
