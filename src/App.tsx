@@ -354,14 +354,17 @@ function Shell() {
                   </span>
                   <strong>{snapshotDisplayName(activeImport)}</strong>
                   <span className="active-library-count">
-                    {count(
-                      activeImport.grenade_count,
-                      'grenade',
-                      'grenades',
-                      'граната',
-                      'гранаты',
-                      'гранат',
-                    )}
+                    <b>{formatNumber(activeImport.grenade_count)}</b>
+                    <small>
+                      {count(
+                        activeImport.grenade_count,
+                        'grenade',
+                        'grenades',
+                        'граната',
+                        'гранаты',
+                        'гранат',
+                      ).replace(/^\d+[\s\u00a0]*/, '')}
+                    </small>
                   </span>
                   <ChevronDown size={14} />
                 </button>
