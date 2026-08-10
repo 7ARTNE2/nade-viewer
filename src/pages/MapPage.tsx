@@ -11,6 +11,7 @@ import {
   PanelRightClose,
   PanelRightOpen,
   LocateFixed,
+  Map,
   RotateCcw,
   Search,
   Send,
@@ -19,6 +20,7 @@ import {
 import MapCanvas, { type IconTheme } from '../components/MapCanvas';
 import GrenadeList from '../components/GrenadeList';
 import {
+  getMaps,
   getClusterGrenades,
   getMapOverview,
   getSiteSettings,
@@ -34,6 +36,7 @@ import type {
   LandingCluster,
   MapFilters,
   MapOverview,
+  MapSummary,
   SpawnPoint,
 } from '../types/domain';
 import { useI18n } from '../i18n';
@@ -99,6 +102,8 @@ export default function MapPage({ activeImportId }: MapPageProps) {
     ...(hasNavigationSearch ? { search: navigationSearch } : {}),
   }));
   const [overview, setOverview] = useState<MapOverview | null>(null);
+  const [maps, setMaps] = useState<MapSummary[]>([]);
+  const [mapSelectorOpen, setMapSelectorOpen] = useState(false);
   const [spawns, setSpawns] = useState<SpawnPoint[]>([]);
   const [selectedCluster, setSelectedCluster] = useState<LandingCluster | null>(
     null,
@@ -146,12 +151,44 @@ export default function MapPage({ activeImportId }: MapPageProps) {
   const previousStorageKeyRef = useRef(stateStorageKey);
   const previousImportIdRef = useRef(activeImportId);
   const skipNextStatePersistenceRef = useRef(false);
+  const mapSelectorRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     getSiteSettings()
       .then((settings) => setSiteMinUsage(settings.public_min_usage_count))
       .catch(() => setSiteMinUsage(1));
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    getMaps()
+      .then((nextMaps) => {
+        if (!cancelled) setMaps(Array.isArray(nextMaps) ? nextMaps : []);
+      })
+      .catch(() => {
+        if (!cancelled) setMaps([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeImportId]);
+
+  useEffect(() => {
+    if (!mapSelectorOpen) return;
+    const closeOnOutsidePress = (event: PointerEvent) => {
+      if (!mapSelectorRef.current?.contains(event.target as Node))
+        setMapSelectorOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMapSelectorOpen(false);
+    };
+    document.addEventListener('pointerdown', closeOnOutsidePress);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutsidePress);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [mapSelectorOpen]);
 
   useEffect(() => {
     if (previousStorageKeyRef.current === stateStorageKey) return;
@@ -461,6 +498,8 @@ export default function MapPage({ activeImportId }: MapPageProps) {
         'активных фильтров',
       )
     : tr('All grenades', 'Все гранаты');
+  const currentMap = maps.find((map) => map.name === decodedMap);
+  const displayedMap = currentMap ?? overview?.map;
 
   const switchGrenadeMode = (mode: GrenadeMode) => {
     if (grenadeMode === mode) return;
@@ -580,19 +619,77 @@ export default function MapPage({ activeImportId }: MapPageProps) {
             <ArrowLeft size={16} />
           </button>
           <div className="map-heading">
-            <strong>{overview?.map.label ?? decodedMap}</strong>
-            <span>
-              {loading
-                ? tr('Loading overview', 'Загрузка обзора')
-                : count(
-                    overview?.grenade_count ?? 0,
-                    'filtered grenade',
-                    'filtered grenades',
-                    'граната по фильтру',
-                    'гранаты по фильтру',
-                    'гранат по фильтру',
-                  )}
-            </span>
+            <div className="map-selector" ref={mapSelectorRef}>
+              <button
+                className="map-selector-trigger"
+                type="button"
+                onClick={() => setMapSelectorOpen((open) => !open)}
+                aria-expanded={mapSelectorOpen}
+                aria-haspopup="listbox"
+                aria-label={tr('Select map', 'Выбрать карту')}
+              >
+                <Map size={15} aria-hidden="true" />
+                <span className="map-selector-current">
+                  <strong>{displayedMap?.label ?? decodedMap}</strong>
+                  <small>
+                    {loading
+                      ? tr('Loading', 'Загрузка')
+                      : count(
+                          overview?.grenade_count ?? 0,
+                          'lineup',
+                          'lineups',
+                          'раскидка',
+                          'раскидки',
+                          'раскидок',
+                        )}
+                  </small>
+                </span>
+                <ChevronDown
+                  className={mapSelectorOpen ? 'open' : ''}
+                  size={15}
+                  aria-hidden="true"
+                />
+              </button>
+              {mapSelectorOpen ? (
+                <div
+                  className="map-selector-menu"
+                  role="listbox"
+                  aria-label={tr('Available maps', 'Доступные карты')}
+                >
+                  <div className="map-selector-menu-label">
+                    {tr('Switch map', 'Сменить карту')}
+                  </div>
+                  {maps.map((map) => {
+                    const active = map.name === decodedMap;
+                    return (
+                      <button
+                        key={map.name}
+                        className={active ? 'active' : ''}
+                        type="button"
+                        role="option"
+                        aria-selected={active}
+                        onClick={() => {
+                          setMapSelectorOpen(false);
+                          if (!active)
+                            navigate(`/map/${encodeURIComponent(map.name)}`);
+                        }}
+                      >
+                        <span className="map-selector-option-mark">
+                          <Map size={14} aria-hidden="true" />
+                        </span>
+                        <span className="map-selector-option-copy">
+                          <strong>{map.label}</strong>
+                          <small>{map.name}</small>
+                        </span>
+                        <span className="map-selector-option-count">
+                          {formatNumber(map.grenade_count)}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : null}
+            </div>
           </div>
           <div className="toolbar-spacer" />
           <button
