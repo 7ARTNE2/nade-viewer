@@ -5,7 +5,7 @@ lineups from local JSON files. It imports lineups into a local SQLite database
 and presents them on bundled radar images; no server or network data source is
 configured in this repository.
 
-Current application version: **0.3.3**.
+Current application version: **0.3.4**.
 
 ## Features
 
@@ -31,7 +31,7 @@ limitations are documented in [Data formats](docs/data-formats.md).
 ## Technology stack
 
 Versions below are the resolved versions from `package-lock.json` and
-`src-tauri/Cargo.lock` for Nade Viewer 0.3.3.
+`src-tauri/Cargo.lock` for Nade Viewer 0.3.4.
 
 ### Application architecture
 
@@ -181,8 +181,8 @@ git push origin v0.2.0
 For the current release:
 
 ```powershell
-git tag v0.3.3
-git push origin v0.3.3
+  git tag v0.3.4
+  git push origin v0.3.4
 ```
 
 Check existing local tags with `git tag` and tags on GitHub with:

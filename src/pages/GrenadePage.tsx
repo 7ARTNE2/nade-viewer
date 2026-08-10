@@ -525,6 +525,7 @@ export default function GrenadePage() {
                     type="button"
                     className={selectedScreenshot === 'normal' ? 'active' : ''}
                     onClick={() => setSelectedScreenshot('normal')}
+                    aria-pressed={selectedScreenshot === 'normal'}
                   >
                     {tr('Normal', 'Обычный')}
                   </button>
@@ -534,6 +535,7 @@ export default function GrenadePage() {
                     type="button"
                     className={selectedScreenshot === 'wide' ? 'active' : ''}
                     onClick={() => setSelectedScreenshot('wide')}
+                    aria-pressed={selectedScreenshot === 'wide'}
                   >
                     {tr('Wide FOV', 'Широкий FOV')}
                   </button>
