@@ -1,6 +1,6 @@
 [package]
 name = "nade-viewer"
-version = "0.3.5"
+version = "0.3.6"
 description = "Compact desktop grenade lineup explorer"
 authors = ["Nade Viewer"]
 edition = "2021"

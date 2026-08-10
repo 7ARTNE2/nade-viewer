@@ -97,7 +97,13 @@ jobs:
           if (-not $installer -or -not (Test-Path -LiteralPath $signaturePath)) {
             throw "Signed NSIS updater artifact was not produced"
           }
-          $installerUrlName = [uri]::EscapeDataString($installer.Name)
+          $publishedInstallerName = $installer.Name -replace ' ', '.'
+          $publishedInstallerPath = Join-Path release-assets $publishedInstallerName
+          $publishedSignaturePath = "$publishedInstallerPath.sig"
+          New-Item -ItemType Directory -Path release-assets -Force | Out-Null
+          Copy-Item -LiteralPath $installer.FullName -Destination $publishedInstallerPath
+          Copy-Item -LiteralPath $signaturePath -Destination $publishedSignaturePath
+          $installerUrlName = [uri]::EscapeDataString($publishedInstallerName)
 
           @{
             version = $env:RELEASE_TAG.TrimStart('v')
@@ -106,7 +112,7 @@ jobs:
             platforms = @{
               'windows-x86_64' = @{
                 url = "https://github.com/$env:REPOSITORY/releases/download/$env:RELEASE_TAG/$installerUrlName"
-                signature = (Get-Content -LiteralPath $signaturePath -Raw).Trim()
+                signature = (Get-Content -LiteralPath $publishedSignaturePath -Raw).Trim()
               }
             }
           } | ConvertTo-Json -Depth 5 | Set-Content latest.json
@@ -117,8 +123,8 @@ jobs:
           name: nade-viewer-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
           path: |
             src-tauri/target/release/bundle/msi/*.msi
-            src-tauri/target/release/bundle/nsis/*.exe
-            src-tauri/target/release/bundle/nsis/*.sig
+            release-assets/*.exe
+            release-assets/*.sig
             latest.json
           if-no-files-found: error
 
@@ -130,6 +136,6 @@ jobs:
           body_path: release-notes.md
           files: |
             src-tauri/target/release/bundle/msi/*.msi
-            src-tauri/target/release/bundle/nsis/*.exe
-            src-tauri/target/release/bundle/nsis/*.sig
+            release-assets/*.exe
+            release-assets/*.sig
             latest.json
