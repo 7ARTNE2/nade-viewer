@@ -500,6 +500,9 @@ export default function MapPage({ activeImportId }: MapPageProps) {
     : tr('All grenades', 'Все гранаты');
   const currentMap = maps.find((map) => map.name === decodedMap);
   const displayedMap = currentMap ?? overview?.map;
+  const selectableMaps = maps.filter(
+    (map) => map.grenade_count > 0 || map.name === decodedMap,
+  );
 
   const switchGrenadeMode = (mode: GrenadeMode) => {
     if (grenadeMode === mode) return;
@@ -657,7 +660,7 @@ export default function MapPage({ activeImportId }: MapPageProps) {
                   <div className="map-selector-menu-label">
                     {tr('Switch map', 'Сменить карту')}
                   </div>
-                  {maps.map((map) => {
+                  {selectableMaps.map((map) => {
                     const active = map.name === decodedMap;
                     return (
                       <button
