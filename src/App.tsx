@@ -88,7 +88,7 @@ function Shell() {
 
   const restartTutorial = async () => {
     await resetOnboarding();
-    window.location.reload();
+    setOnboardingOpen(true);
   };
 
   const refreshImports = useCallback(async () => {
