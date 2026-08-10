@@ -511,49 +511,6 @@ export default function GrenadePage() {
             aria-modal="true"
             aria-label={tr('Lineup screenshot', 'Скриншот раскидки')}
           >
-            <div className="lineup-screenshot-dialog-bar">
-              <div className="lineup-screenshot-dialog-copy">
-                <span>{tr('Lineup inspection', 'Проверка раскидки')}</span>
-                <strong>
-                  {selectedScreenshot === 'normal'
-                    ? tr('Standard view', 'Стандартный вид')
-                    : tr('Wide angle', 'Широкий угол')}
-                </strong>
-              </div>
-              <div
-                className="lineup-screenshot-switch"
-                aria-label={tr('Screenshot view', 'Вид скриншота')}
-              >
-                {grenade.screenshot_image_path ? (
-                  <button
-                    type="button"
-                    className={selectedScreenshot === 'normal' ? 'active' : ''}
-                    onClick={() => setSelectedScreenshot('normal')}
-                    aria-pressed={selectedScreenshot === 'normal'}
-                  >
-                    {tr('Normal', 'Обычный')}
-                  </button>
-                ) : null}
-                {grenade.screenshot_wide_image_path ? (
-                  <button
-                    type="button"
-                    className={selectedScreenshot === 'wide' ? 'active' : ''}
-                    onClick={() => setSelectedScreenshot('wide')}
-                    aria-pressed={selectedScreenshot === 'wide'}
-                  >
-                    {tr('Wide FOV', 'Широкий FOV')}
-                  </button>
-                ) : null}
-              </div>
-              <button
-                type="button"
-                className="icon-btn"
-                onClick={() => setSelectedScreenshot(null)}
-                aria-label={tr('Close screenshot', 'Закрыть скриншот')}
-              >
-                <X size={17} />
-              </button>
-            </div>
             <img
               src={assetUrl(selectedScreenshotPath)}
               alt={tr(
@@ -561,6 +518,41 @@ export default function GrenadePage() {
                 `${selectedScreenshot === 'normal' ? 'Обычный' : 'Широкий FOV'} для гранаты #${grenade.id}`,
               )}
             />
+            <div className="lineup-screenshot-dialog-bar">
+              <button
+                type="button"
+                className="lineup-screenshot-close"
+                onClick={() => setSelectedScreenshot(null)}
+                aria-label={tr('Close screenshot', 'Закрыть скриншот')}
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div
+              className="lineup-screenshot-switch"
+              aria-label={tr('Screenshot view', 'Вид скриншота')}
+            >
+              {grenade.screenshot_image_path ? (
+                <button
+                  type="button"
+                  className={selectedScreenshot === 'normal' ? 'active' : ''}
+                  onClick={() => setSelectedScreenshot('normal')}
+                  aria-pressed={selectedScreenshot === 'normal'}
+                >
+                  {tr('Normal', 'Обычный')}
+                </button>
+              ) : null}
+              {grenade.screenshot_wide_image_path ? (
+                <button
+                  type="button"
+                  className={selectedScreenshot === 'wide' ? 'active' : ''}
+                  onClick={() => setSelectedScreenshot('wide')}
+                  aria-pressed={selectedScreenshot === 'wide'}
+                >
+                  {tr('Wide FOV', 'Широкий FOV')}
+                </button>
+              ) : null}
+            </div>
           </div>
         </div>
       ) : null}
