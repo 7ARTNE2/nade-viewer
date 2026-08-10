@@ -2,11 +2,9 @@
 
 ## Nadegrid Screenshot Capture archive
 
-NadeViewer imports the ZIP produced by Nadegrid's **Tools > Screenshot Capture
+NadeViewer imports the ZIP produced by Nadegrid's `Tools > Screenshot Capture
 
-> Export ZIP** action. The archive must contain a version 1 `grenades.json`
-> manifest and the referenced normal and wide-FOV JPEG files under
-> `screenshots/`. Importing it creates a separate local library and stores its
+> Export ZIP`action. The archive must contain a version 1`grenades.json`manifest and the referenced normal and wide-FOV JPEG files under`screenshots/`. Importing it creates a separate local library and stores its
 > images alongside the NadeViewer database. Both lineup views appear on the
 > grenade detail page.
 
