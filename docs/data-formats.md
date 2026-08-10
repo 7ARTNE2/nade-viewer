@@ -1,10 +1,19 @@
-# Input JSON formats
+# Input library formats
 
-This document describes only formats implemented by the Serde structures and
-import code in `src-tauri/src/lib.rs`. No external schema or data source is
-assumed.
+## Nadegrid Screenshot Capture archive
 
-Nade Viewer expects a UTF-8 JSON object and detects the format as follows:
+NadeViewer imports the ZIP produced by Nadegrid's **Tools > Screenshot Capture
+> Export ZIP** action. The archive must contain a version 1 `grenades.json`
+manifest and the referenced normal and wide-FOV JPEG files under
+`screenshots/`. Importing it creates a separate local library and stores its
+images alongside the NadeViewer database. Both lineup views appear on the
+grenade detail page.
+
+This document describes only formats implemented by the import code in
+`src-tauri/src/lib.rs`. No external schema or data source is assumed.
+
+For JSON imports, Nade Viewer expects a UTF-8 object and detects the format as
+follows:
 
 - A top-level `canonical_grenades` key selects the canonical parser.
 - A top-level `grenades` key selects the Core Nades parser.

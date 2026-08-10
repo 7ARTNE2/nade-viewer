@@ -10,7 +10,7 @@ export type ImportStatus = {
 export type ImportSummary = {
   id: number;
   source_path: string;
-  kind: 'grenade_index' | 'core_nades' | string;
+  kind: 'grenade_index' | 'core_nades' | 'screenshot_archive' | string;
   label?: string | null;
   imported_at: string;
   parser_version?: number | null;
@@ -46,6 +46,14 @@ export type JsonImportReport =
       import_id: number;
       grenade_count: number;
       map_count: number;
+      source_path: string;
+    }
+  | {
+      kind: 'screenshot_archive';
+      import_id: number;
+      grenade_count: number;
+      map_count: number;
+      screenshot_count: number;
       source_path: string;
     };
 
@@ -130,6 +138,8 @@ export type GrenadeDetail = GrenadePreview & {
   explode_pos_y?: number | null;
   map_image_path?: string | null;
   preview_image_path?: string | null;
+  screenshot_image_path?: string | null;
+  screenshot_wide_image_path?: string | null;
 };
 
 export type SpawnPoint = {

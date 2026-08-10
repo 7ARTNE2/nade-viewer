@@ -111,6 +111,13 @@ enum JsonImportReport {
         map_count: u64,
         source_path: String,
     },
+    ScreenshotArchive {
+        import_id: i64,
+        grenade_count: u64,
+        map_count: u64,
+        screenshot_count: u64,
+        source_path: String,
+    },
 }
 
 impl From<ImportReport> for JsonImportReport {
@@ -130,6 +137,16 @@ impl JsonImportReport {
             import_id: report.import_id,
             grenade_count: report.grenade_count,
             map_count: report.map_count,
+            source_path: report.source_path,
+        }
+    }
+
+    fn screenshot_archive(report: ImportReport, screenshot_count: u64) -> Self {
+        Self::ScreenshotArchive {
+            import_id: report.import_id,
+            grenade_count: report.grenade_count,
+            map_count: report.map_count,
+            screenshot_count,
             source_path: report.source_path,
         }
     }
@@ -180,6 +197,27 @@ struct CoreNadesFile {
 enum TypedImportFile {
     GrenadeIndex(ParserIndex),
     CoreNades(CoreNadesFile),
+}
+
+#[derive(Deserialize)]
+struct ScreenshotArchiveFile {
+    version: i64,
+    exported_at: String,
+    grenades: Vec<ScreenshotArchiveGrenade>,
+}
+
+#[derive(Deserialize)]
+struct ScreenshotArchiveGrenade {
+    #[serde(flatten)]
+    grenade: RawGrenade,
+    screenshots: ScreenshotArchivePaths,
+}
+
+#[derive(Deserialize)]
+struct ScreenshotArchivePaths {
+    normal: String,
+    wide: String,
+    wide_fov: i64,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -241,7 +279,7 @@ struct ParserIndex {
     canonical_grenades: Vec<RawGrenade>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 struct RawGrenade {
     map: String,
     side: Option<String>,
@@ -337,6 +375,8 @@ struct GrenadeDetail {
     explode_pos_z: Option<f64>,
     map_image_path: Option<String>,
     preview_image_path: Option<String>,
+    screenshot_image_path: Option<String>,
+    screenshot_wide_image_path: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -401,8 +441,9 @@ pub fn run() {
 fn init_state(app: &AppHandle) -> Result<AppState, Box<dyn std::error::Error>> {
     let app_dir = app.path().app_data_dir()?;
     fs::create_dir_all(&app_dir)?;
+    fs::create_dir_all(app_dir.join("screenshots"))?;
     let resource_dir = resolve_resource_dir(app)?;
-    allow_asset_directories(app, &resource_dir)?;
+    allow_asset_directories(app, &resource_dir, &app_dir)?;
     let db_path = app_dir.join("nadeviewer.sqlite");
     let state = AppState {
         db_path,
@@ -426,13 +467,14 @@ fn asset_directories(resource_dir: &Path) -> [PathBuf; 2] {
 fn allow_asset_directories(
     app: &AppHandle,
     resource_dir: &Path,
+    app_dir: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    // The resolved directory can differ between dev and bundled layouts, so add only
-    // the two directories that contain images to the asset protocol at runtime.
+    // Allow bundled maps and imported archive images without exposing the entire data directory.
     let scope = app.asset_protocol_scope();
     for directory in asset_directories(resource_dir) {
         scope.allow_directory(directory, true)?;
     }
+    scope.allow_directory(app_dir.join("screenshots"), true)?;
     Ok(())
 }
 
@@ -542,6 +584,22 @@ fn init_schema(conn: &Connection) -> AppResult<()> {
             view_count INTEGER NOT NULL DEFAULT 1,
             FOREIGN KEY(grenade_id) REFERENCES grenades(id) ON DELETE CASCADE
         );
+        CREATE TABLE IF NOT EXISTS grenade_screenshots (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            import_id INTEGER NOT NULL,
+            grenade_id INTEGER NOT NULL,
+            image_path TEXT NOT NULL,
+            wide_image_path TEXT NOT NULL,
+            wide_fov INTEGER NOT NULL,
+            width INTEGER NOT NULL,
+            height INTEGER NOT NULL,
+            file_size INTEGER NOT NULL,
+            wide_file_size INTEGER NOT NULL,
+            captured_at TEXT NOT NULL,
+            FOREIGN KEY(import_id) REFERENCES imports(id) ON DELETE CASCADE,
+            FOREIGN KEY(grenade_id) REFERENCES grenades(id) ON DELETE CASCADE,
+            UNIQUE(import_id, grenade_id)
+        );
         CREATE INDEX IF NOT EXISTS idx_grenades_filter ON grenades(import_id, map, grenade_type, side);
         CREATE INDEX IF NOT EXISTS idx_grenades_explode ON grenades(import_id, map, explode_map_x, explode_map_y);
         CREATE INDEX IF NOT EXISTS idx_grenades_map_usage ON grenades(import_id, map, usage_count DESC, id);
@@ -555,6 +613,7 @@ fn init_schema(conn: &Connection) -> AppResult<()> {
         CREATE INDEX IF NOT EXISTS idx_grenades_similar ON grenades(import_id, map, grenade_type, usage_count DESC, explode_map_x, explode_map_y, id);
         CREATE INDEX IF NOT EXISTS idx_spawn_side ON spawn_points(map, side);
         CREATE INDEX IF NOT EXISTS idx_grenade_view_history_recent ON grenade_view_history(viewed_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_grenade_screenshots_grenade ON grenade_screenshots(grenade_id);
         "#,
     )?;
     let has_is_core = {
@@ -1280,7 +1339,7 @@ fn trajectory_storage_json(
 #[tauri::command]
 fn select_import_file() -> Option<String> {
     rfd::FileDialog::new()
-        .add_filter("Grenade JSON", &["json"])
+        .add_filter("Nade libraries", &["json", "zip"])
         .pick_file()
         .map(|p| p.to_string_lossy().to_string())
 }
@@ -1297,6 +1356,17 @@ async fn import_json(
     let import_state = state.clone();
     let result = tauri::async_runtime::spawn_blocking(move || {
         let source_path = PathBuf::from(&import_path);
+        if source_path
+            .extension()
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("zip"))
+        {
+            let (report, screenshot_count) =
+                import_screenshot_archive_blocking(&import_state, &import_path)?;
+            return Ok(JsonImportReport::screenshot_archive(
+                report,
+                screenshot_count,
+            ));
+        }
         let file = fs::File::open(&source_path).map_err(|error| AppError::Import {
             code: "file_unavailable",
             message: format!("Cannot open JSON file '{}': {error}", import_path),
@@ -1326,6 +1396,174 @@ async fn import_json(
             Err(AppError::Message(err.to_string()))
         }
     }
+}
+
+fn import_screenshot_archive_blocking(
+    state: &AppState,
+    path: &str,
+) -> AppResult<(ImportReport, u64)> {
+    const MAX_IMAGE_BYTES: u64 = 32 * 1024 * 1024;
+
+    set_status(state, "reading", 0, 0, "Reading screenshot archive");
+    let source = fs::File::open(path)?;
+    let mut archive = zip::ZipArchive::new(BufReader::new(source))
+        .map_err(|error| AppError::Message(format!("Invalid screenshot archive: {error}")))?;
+    let manifest: ScreenshotArchiveFile = {
+        let entry = archive.by_name("grenades.json").map_err(|_| {
+            AppError::Message("Screenshot archive is missing grenades.json".to_string())
+        })?;
+        serde_json::from_reader(BufReader::new(entry)).map_err(|error| {
+            AppError::Message(format!("Invalid screenshot archive manifest: {error}"))
+        })?
+    };
+    if manifest.version != SUPPORTED_IMPORT_VERSION {
+        return Err(AppError::Message(format!(
+            "Unsupported screenshot archive version: {}",
+            manifest.version
+        )));
+    }
+    if manifest.grenades.is_empty() {
+        return Err(AppError::Message(
+            "Screenshot archive contains no grenades".to_string(),
+        ));
+    }
+
+    let total = manifest.grenades.len() as u64;
+    let index = ParserIndex {
+        version: Some(manifest.version),
+        updated_at: Some(manifest.exported_at.clone()),
+        core_nades: Some(false),
+        canonical_grenades: manifest
+            .grenades
+            .iter()
+            .map(|record| record.grenade.clone())
+            .collect(),
+    };
+    let mut report = import_index_blocking(state, path, index)?;
+    let screenshot_root = state
+        .db_path
+        .parent()
+        .ok_or_else(|| AppError::Message("Application data directory is unavailable".to_string()))?
+        .join("screenshots")
+        .join(format!("archive_{}", report.import_id));
+
+    let import_result = (|| -> AppResult<u64> {
+        fs::create_dir_all(&screenshot_root)?;
+        let mut conn = open_conn(state)?;
+        let tx = conn.transaction()?;
+        tx.execute(
+            "UPDATE imports SET kind='screenshot_archive' WHERE id=?1",
+            params![report.import_id],
+        )?;
+        let mut grenade_id_stmt =
+            tx.prepare("SELECT id FROM grenades WHERE import_id=?1 AND source_index=?2")?;
+        let mut screenshot_stmt = tx.prepare(
+            "INSERT INTO grenade_screenshots(
+                import_id, grenade_id, image_path, wide_image_path, wide_fov, width, height,
+                file_size, wide_file_size, captured_at
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+        )?;
+        for (index, record) in manifest.grenades.iter().enumerate() {
+            if index % 100 == 0 {
+                set_status(
+                    state,
+                    "extracting_screenshots",
+                    index as u64,
+                    total,
+                    "Extracting screenshots",
+                );
+            }
+            let grenade_id: i64 = grenade_id_stmt
+                .query_row(params![report.import_id, index as i64], |row| row.get(0))?;
+            let folder = screenshot_root.join(format!("{:02x}", (grenade_id as u64) & 0xff));
+            fs::create_dir_all(&folder)?;
+            let normal_path = folder.join(format!("{grenade_id}.jpg"));
+            let wide_path = folder.join(format!(
+                "{grenade_id}_fov{}.jpg",
+                record.screenshots.wide_fov
+            ));
+            let (width, height, normal_size) = extract_archive_jpeg(
+                &mut archive,
+                &record.screenshots.normal,
+                &normal_path,
+                MAX_IMAGE_BYTES,
+            )?;
+            let (_, _, wide_size) = extract_archive_jpeg(
+                &mut archive,
+                &record.screenshots.wide,
+                &wide_path,
+                MAX_IMAGE_BYTES,
+            )?;
+            screenshot_stmt.execute(params![
+                report.import_id,
+                grenade_id,
+                resource_string(&normal_path),
+                resource_string(&wide_path),
+                record.screenshots.wide_fov,
+                width,
+                height,
+                normal_size,
+                wide_size,
+                manifest.exported_at,
+            ])?;
+        }
+        drop(screenshot_stmt);
+        drop(grenade_id_stmt);
+        tx.commit()?;
+        Ok(total * 2)
+    })();
+
+    match import_result {
+        Ok(screenshot_count) => {
+            report.source_path = path.to_string();
+            set_status(
+                state,
+                "done",
+                total,
+                total,
+                "Screenshot archive import complete",
+            );
+            Ok((report, screenshot_count))
+        }
+        Err(error) => {
+            let _ = fs::remove_dir_all(&screenshot_root);
+            let mut conn = open_conn(state)?;
+            let _ = delete_import_from_conn(&mut conn, report.import_id);
+            Err(error)
+        }
+    }
+}
+
+fn extract_archive_jpeg<R: Read + std::io::Seek>(
+    archive: &mut zip::ZipArchive<R>,
+    archive_path: &str,
+    destination: &Path,
+    max_bytes: u64,
+) -> AppResult<(u32, u32, u64)> {
+    let normalized = archive_path.replace('\\', "/");
+    if normalized.starts_with('/')
+        || normalized.split('/').any(|part| part == "..")
+        || !normalized.starts_with("screenshots/")
+    {
+        return Err(AppError::Message(format!(
+            "Unsafe screenshot path in archive: {archive_path}"
+        )));
+    }
+    let mut entry = archive
+        .by_name(&normalized)
+        .map_err(|_| AppError::Message(format!("Screenshot entry is missing: {archive_path}")))?;
+    if entry.is_dir() || entry.size() == 0 || entry.size() > max_bytes {
+        return Err(AppError::Message(format!(
+            "Invalid screenshot entry: {archive_path}"
+        )));
+    }
+    let size = entry.size();
+    let mut bytes = Vec::with_capacity(size as usize);
+    entry.read_to_end(&mut bytes)?;
+    let image = image::load_from_memory_with_format(&bytes, image::ImageFormat::Jpeg)
+        .map_err(|error| AppError::Message(format!("Invalid JPEG {archive_path}: {error}")))?;
+    fs::write(destination, &bytes)?;
+    Ok((image.width(), image.height(), size))
 }
 
 #[tauri::command]
@@ -1564,6 +1802,14 @@ fn delete_import(
 ) -> AppResult<Option<ImportSummary>> {
     let mut conn = open_conn(&state)?;
     let active = delete_import_from_conn(&mut conn, import_id)?;
+    let screenshot_root = state.db_path.parent().map(|directory| {
+        directory
+            .join("screenshots")
+            .join(format!("archive_{import_id}"))
+    });
+    if let Some(screenshot_root) = screenshot_root {
+        let _ = fs::remove_dir_all(screenshot_root);
+    }
     conn.execute_batch("PRAGMA wal_checkpoint(PASSIVE); PRAGMA optimize;")?;
     Ok(active)
 }
@@ -1998,9 +2244,12 @@ fn get_grenade(id: i64, state: tauri::State<'_, AppState>) -> AppResult<GrenadeD
                 g.throw_tick, g.lineup_tick, g.tickrate, g.round_time_seconds,
                 g.start_pos_x, g.start_pos_y, g.start_pos_z,
                 g.explode_pos_x, g.explode_pos_y,
-                a.map_image_path, a.lower_map_image_path, a.preview_image_path
-         FROM grenades g
-         LEFT JOIN map_assets a ON a.name=g.map
+                a.map_image_path, a.lower_map_image_path, a.preview_image_path,
+                s.image_path AS screenshot_image_path,
+                s.wide_image_path AS screenshot_wide_image_path
+          FROM grenades g
+          LEFT JOIN map_assets a ON a.name=g.map
+          LEFT JOIN grenade_screenshots s ON s.grenade_id=g.id
          WHERE g.id=?1 AND g.import_id=(
              SELECT CAST(value AS INTEGER) FROM app_meta WHERE key='active_import_id'
          )"
@@ -2037,6 +2286,8 @@ fn get_grenade(id: i64, state: tauri::State<'_, AppState>) -> AppResult<GrenadeD
             explode_pos_z: row.get("explode_pos_z")?,
             map_image_path,
             preview_image_path: row.get("preview_image_path")?,
+            screenshot_image_path: row.get("screenshot_image_path")?,
+            screenshot_wide_image_path: row.get("screenshot_wide_image_path")?,
         })
     })?)
 }

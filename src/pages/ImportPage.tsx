@@ -104,6 +104,14 @@ export default function ImportPage({ onImported, lastImport }: Props) {
           ),
           { tone: 'success', duration: 5200 },
         );
+      } else if (report.kind === 'screenshot_archive') {
+        showToast(
+          tr(
+            `Imported ${formatNumber(report.grenade_count)} lineups and ${formatNumber(report.screenshot_count)} screenshots`,
+            `Импортировано ${formatNumber(report.grenade_count)} раскидок и ${formatNumber(report.screenshot_count)} скриншотов`,
+          ),
+          { tone: 'success', duration: 5200 },
+        );
       }
       navigate('/maps', { replace: true });
     } catch (error) {
@@ -121,12 +129,12 @@ export default function ImportPage({ onImported, lastImport }: Props) {
           'Состояние импорта недоступно',
         ),
         file_unavailable: tr(
-          'The JSON file cannot be opened',
-          'Не удалось открыть JSON-файл',
+          'The library file cannot be opened',
+          'Не удалось открыть файл библиотеки',
         ),
         invalid_json: tr(
-          'The file is not valid JSON',
-          'Файл содержит некорректный JSON',
+          'The JSON file is invalid',
+          'JSON-файл содержит некорректные данные',
         ),
         invalid_top_level: tr(
           'The top-level JSON value must be an object',
@@ -137,8 +145,8 @@ export default function ImportPage({ onImported, lastImport }: Props) {
           'В файле смешаны два формата импорта',
         ),
         unsupported_format: tr(
-          'Expected grenade_index or Core Nades JSON',
-          'Ожидается JSON grenade_index или Core Nades',
+          'Expected grenade_index, Core Nades JSON, or a Nadegrid screenshot ZIP',
+          'Ожидается JSON grenade_index, Core Nades или ZIP-архив скриншотов Nadegrid',
         ),
         missing_version: tr(
           'Core Nades JSON requires version 1',
@@ -190,7 +198,7 @@ export default function ImportPage({ onImported, lastImport }: Props) {
         } else {
           setDragging(false);
           const droppedPath = payload.paths.find((candidate) =>
-            candidate.toLowerCase().endsWith('.json'),
+            /\.(json|zip)$/i.test(candidate),
           );
           if (droppedPath) {
             setPath(droppedPath);
@@ -201,7 +209,10 @@ export default function ImportPage({ onImported, lastImport }: Props) {
               showToast(summary, { tone: 'error' });
             });
           } else {
-            const summary = tr('Drop a JSON file', 'Перетащите JSON-файл');
+            const summary = tr(
+              'Drop a JSON or Nadegrid ZIP file',
+              'Перетащите JSON-файл или ZIP Nadegrid',
+            );
             setMessage(summary);
             showToast(summary, { tone: 'info' });
           }
@@ -264,16 +275,22 @@ export default function ImportPage({ onImported, lastImport }: Props) {
               {busy
                 ? status.message
                 : dragging
-                  ? tr('Release to import JSON', 'Отпустите для импорта JSON')
+                  ? tr(
+                      'Release to import the library',
+                      'Отпустите для импорта библиотеки',
+                    )
                   : (message ??
-                    tr('Drop JSON file here', 'Перетащите JSON-файл сюда'))}
+                    tr(
+                      'Drop a library file here',
+                      'Перетащите файл библиотеки сюда',
+                    ))}
             </strong>
             <span>
               {busy
                 ? tr(`${progress}% complete`, `Выполнено ${progress}%`)
                 : tr(
-                    'grenade_index.json or Core Nades JSON',
-                    'grenade_index.json или JSON Core Nades',
+                    'grenade_index.json, Core Nades JSON, or Nadegrid Screenshot ZIP',
+                    'grenade_index.json, JSON Core Nades или ZIP Screenshot Capture Nadegrid',
                   )}
             </span>
           </div>

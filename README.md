@@ -9,7 +9,8 @@ Current application version: **0.3.3**.
 
 ## Features
 
-- Imports canonical `grenade_index` and Core Nades JSON snapshots.
+- Imports canonical `grenade_index`, Core Nades JSON snapshots, and Nadegrid
+  Screenshot Capture ZIP archives with their lineup images.
 - Keeps multiple imports, lets the user switch between them, rename them, and
   delete them.
 - Groups grenade starts and landings on map radars.
