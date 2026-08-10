@@ -765,6 +765,11 @@ export default function MapPage({ activeImportId }: MapPageProps) {
               <button
                 key={type}
                 className={`filter-btn filter-${String(type).toLowerCase()} ${filters.grenade_type === type ? 'active' : ''}`}
+                aria-label={
+                  type === 'molotov'
+                    ? tr('Molotov and Incendiary', 'Молотов и Зажигательная')
+                    : undefined
+                }
                 onClick={() =>
                   setFilters((state) => ({ ...state, grenade_type: type }))
                 }
@@ -773,9 +778,22 @@ export default function MapPage({ activeImportId }: MapPageProps) {
                   tr('All', 'Все')
                 ) : type === 'molotov' ? (
                   <>
-                    <span className="filter-label-molotov">Molotov</span>/
-                    <span className="filter-label-incendiary">Incendiary</span>
+                    <span className="filter-label-molotov">
+                      {tr('Molotov', 'Молотов')}
+                    </span>
+                    /
+                    <span className="filter-label-incendiary">
+                      {tr('Incendiary', 'Зажигательная')}
+                    </span>
                   </>
+                ) : type === 'smoke' ? (
+                  tr('Smoke', 'Дым')
+                ) : type === 'flash' ? (
+                  tr('Flash', 'Флеш')
+                ) : type === 'HE' ? (
+                  <span className="filter-label-he">
+                    {tr('HE', 'Осколочная')}
+                  </span>
                 ) : (
                   grenadeLabel(type)
                 )}
@@ -789,7 +807,7 @@ export default function MapPage({ activeImportId }: MapPageProps) {
                 className={`filter-btn side-${side.toLowerCase()} ${filters.side === side ? 'active' : ''}`}
                 onClick={() => setFilters((state) => ({ ...state, side }))}
               >
-                {side}
+                {side === 'Any' ? tr('Any', 'Все') : side}
               </button>
             ))}
           </div>
