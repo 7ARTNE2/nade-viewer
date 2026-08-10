@@ -685,6 +685,7 @@ export default function MapPage({ activeImportId }: MapPageProps) {
                 <button
                   key={level.key}
                   className={radarMode === level.key ? 'active' : ''}
+                  aria-pressed={radarMode === level.key}
                   onClick={() => {
                     setRadarMode(level.key);
                     restoredClusterIdRef.current = null;
@@ -696,6 +697,7 @@ export default function MapPage({ activeImportId }: MapPageProps) {
                     mapTrajectoriesRequestRef.current += 1;
                   }}
                 >
+                  <span className="radar-switch-indicator" aria-hidden="true" />
                   {level.key === 'default'
                     ? tr('Main', 'Основной')
                     : tr('Lower', 'Нижний')}

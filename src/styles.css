@@ -52,6 +52,8 @@
 .map-heading strong{font-size:14px;line-height:1.2}
 .map-heading span{font-size:11px;line-height:1.3}
 .map-workspace .toggle,.map-workspace .radar-switch button{font-size:12px}
+/* Radar levels are a compact tactical control: the selected plane remains legible at a glance. */
+.map-toolbar .radar-switch{position:relative;gap:2px;padding:3px;border-color:var(--line-soft);border-radius:9px;background:var(--bg)}.map-toolbar .radar-switch button{position:relative;display:inline-flex;min-width:66px;height:30px;align-items:center;justify-content:center;gap:6px;padding:0 11px;border-radius:7px;color:var(--dim);font-size:11px;font-weight:800;letter-spacing:.035em;transition:color 150ms ease,background 150ms ease}.map-toolbar .radar-switch button:hover{background:var(--surface);color:var(--muted)}.map-toolbar .radar-switch button.active{background:var(--surface-3);color:var(--text)}.radar-switch-indicator{width:4px;height:4px;border-radius:50%;background:currentColor;opacity:.35}.radar-switch button.active .radar-switch-indicator{background:var(--acid);opacity:1}.map-toolbar .radar-switch button:focus-visible{z-index:1;outline-offset:1px}
 .section-title,.block-title{font-size:11px;line-height:1.35}
 .section-count,.block-count{min-width:28px;height:22px;font-size:10px}
 .segmented button{font-size:11px}
