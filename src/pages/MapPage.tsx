@@ -631,18 +631,16 @@ export default function MapPage({ activeImportId }: MapPageProps) {
                 <Map size={15} aria-hidden="true" />
                 <span className="map-selector-current">
                   <strong>{displayedMap?.label ?? decodedMap}</strong>
-                  <small>
+                  <span className="map-selector-filtered-count">
+                    <small>
                     {loading
                       ? tr('Loading', 'Загрузка')
-                      : count(
-                          overview?.grenade_count ?? 0,
-                          'lineup',
-                          'lineups',
-                          'раскидка',
-                          'раскидки',
-                          'раскидок',
-                        )}
-                  </small>
+                      : tr('Filtered grenades', 'Гранат по фильтру')}
+                    </small>
+                    {!loading ? (
+                      <b>{formatNumber(overview?.grenade_count ?? 0)}</b>
+                    ) : null}
+                  </span>
                 </span>
                 <ChevronDown
                   className={mapSelectorOpen ? 'open' : ''}
@@ -674,15 +672,12 @@ export default function MapPage({ activeImportId }: MapPageProps) {
                             navigate(`/map/${encodeURIComponent(map.name)}`);
                         }}
                       >
-                        <span className="map-selector-option-mark">
-                          <Map size={14} aria-hidden="true" />
-                        </span>
                         <span className="map-selector-option-copy">
                           <strong>{map.label}</strong>
-                          <small>{map.name}</small>
                         </span>
                         <span className="map-selector-option-count">
-                          {formatNumber(map.grenade_count)}
+                          <strong>{formatNumber(map.grenade_count)}</strong>
+                          <small>{tr('lineups', 'раскидок')}</small>
                         </span>
                       </button>
                     );
