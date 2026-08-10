@@ -361,6 +361,7 @@ struct RadarParams {
 
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let state = init_state(app.handle())?;
             app.manage(state);

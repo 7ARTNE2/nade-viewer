@@ -33,10 +33,22 @@
   },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "targets": ["msi", "nsis"],
     "resources": {
       "resources": "resources"
     },
     "icon": ["icons/icon.ico"]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEIxRkNBRjVBM0I5Qzk4Q0IKUldUTG1KdzdXcS84c1RoUml4RDhPN0MyNHFybzZPbCsxNFhHQzI1YXVjcW9aZ24zT25xSitkb0wK",
+      "endpoints": [
+        "https://github.com/7ARTNE2/nade-viewer/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

@@ -23,6 +23,7 @@ import {
   Upload,
   X,
 } from 'lucide-react';
+import { check, type Update } from '@tauri-apps/plugin-updater';
 import {
   deleteImport,
   exportCoreNades,
@@ -77,6 +78,8 @@ function Shell() {
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const importsRequestRef = useRef(0);
   const [operationError, setOperationError] = useState<string | null>(null);
+  const [availableUpdate, setAvailableUpdate] = useState<Update | null>(null);
+  const [updateBusy, setUpdateBusy] = useState(false);
   const closeDeleteModal = useCallback(() => setDeleteSnapshotOpen(false), []);
   const deleteDialogRef = useModalAccessibility<HTMLDivElement>(
     deleteSnapshotOpen,
@@ -132,6 +135,68 @@ function Shell() {
   }, [refreshImports]);
 
   useEffect(() => startWindowActiveTracking(), []);
+
+  const checkForUpdate = useCallback(
+    async (manual = false) => {
+      if (!('__TAURI_INTERNALS__' in window)) {
+        if (manual)
+          showToast(
+            tr(
+              'Updates are available in the installed application',
+              'Обновления доступны в установленном приложении',
+            ),
+          );
+        return;
+      }
+
+      setUpdateBusy(true);
+      try {
+        const update = await check();
+        setAvailableUpdate(update);
+        if (manual && !update)
+          showToast(
+            tr('You already have the latest version', 'У вас последняя версия'),
+          );
+      } catch (error) {
+        console.error(error);
+        if (manual)
+          showToast(
+            tr(
+              'Could not check for updates',
+              'Не удалось проверить обновления',
+            ),
+            { tone: 'error' },
+          );
+      } finally {
+        setUpdateBusy(false);
+      }
+    },
+    [showToast, tr],
+  );
+
+  const installUpdate = async () => {
+    if (!availableUpdate) return;
+    setUpdateBusy(true);
+    try {
+      await availableUpdate.downloadAndInstall();
+    } catch (error) {
+      console.error(error);
+      setUpdateBusy(false);
+      showToast(
+        tr('Could not install update', 'Не удалось установить обновление'),
+        {
+          tone: 'error',
+        },
+      );
+    }
+  };
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void checkForUpdate();
+    }, 1500);
+    return () => window.clearTimeout(timer);
+  }, [checkForUpdate]);
 
   useEffect(() => {
     if (!coreTransferStatus && !operationError) return;
@@ -538,6 +603,16 @@ function Shell() {
                       'Обновить страницу приложения',
                     )}
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => void checkForUpdate(true)}
+                    disabled={updateBusy}
+                  >
+                    <Download size={15} />
+                    {updateBusy
+                      ? tr('Checking for updates', 'Проверка обновлений')
+                      : tr('Check for updates', 'Проверить обновления')}
+                  </button>
                   {activeImport ? (
                     <button
                       className="danger"
@@ -617,6 +692,44 @@ function Shell() {
           </Routes>
         </div>
       </main>
+
+      {availableUpdate ? (
+        <div className="app-update-notice" role="status">
+          <div>
+            <strong>
+              {tr(
+                `Version ${availableUpdate.version} is ready`,
+                `Доступна версия ${availableUpdate.version}`,
+              )}
+            </strong>
+            <span>
+              {tr(
+                'The app will close while Windows installs the update.',
+                'Приложение закроется, пока Windows устанавливает обновление.',
+              )}
+            </span>
+          </div>
+          <button
+            className="btn primary"
+            type="button"
+            onClick={() => void installUpdate()}
+            disabled={updateBusy}
+          >
+            <Download size={15} />
+            {updateBusy
+              ? tr('Installing', 'Установка')
+              : tr('Install update', 'Установить')}
+          </button>
+          <button
+            className="icon-btn"
+            type="button"
+            onClick={() => setAvailableUpdate(null)}
+            aria-label={tr('Later', 'Позже')}
+          >
+            <X size={15} />
+          </button>
+        </div>
+      ) : null}
 
       {deleteSnapshotOpen && activeImport ? (
         <div

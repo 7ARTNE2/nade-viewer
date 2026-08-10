@@ -204,6 +204,23 @@ The manual workflow also requires a tag in the `vMAJOR.MINOR.PATCH` format,
 such as `v1.2.3`. Pull requests and normal branch pushes do not publish
 installers.
 
+### In-app updates
+
+Installed Windows builds check GitHub Releases shortly after startup and from
+the `Check for updates` action in the library menu. Updates are never downloaded
+without an explicit install action.
+
+The updater verifies the signed NSIS installer before Windows installs it. The
+release workflow publishes the installer signature and `latest.json` manifest
+alongside each release. The first release after enabling this feature provides
+the update path for later releases.
+
+The signing private key is intentionally stored outside the repository at
+`%USERPROFILE%\.tauri\nade-viewer-update.key`. Keep a secure backup: losing it
+prevents future updates from being trusted by already-installed copies. GitHub
+Actions reads the same key from the repository secret
+`TAURI_SIGNING_PRIVATE_KEY` when it builds a release.
+
 ## Tests and checks
 
 Run the complete local quality check (formatting, lint, TypeScript, frontend

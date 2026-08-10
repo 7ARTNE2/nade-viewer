@@ -83,6 +83,33 @@ jobs:
 
       - name: Build Windows installers
         run: npm run tauri:build
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+
+      - name: Generate updater manifest
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          $installer = Get-ChildItem src-tauri/target/release/bundle/nsis/*.exe | Select-Object -First 1
+          $signaturePath = "$($installer.FullName).sig"
+          if (-not $installer -or -not (Test-Path -LiteralPath $signaturePath)) {
+            throw "Signed NSIS updater artifact was not produced"
+          }
+          $installerUrlName = [uri]::EscapeDataString($installer.Name)
+
+          @{
+            version = $env:RELEASE_TAG.TrimStart('v')
+            notes = Get-Content release-notes.md -Raw
+            pub_date = (Get-Date).ToUniversalTime().ToString('o')
+            platforms = @{
+              'windows-x86_64' = @{
+                url = "https://github.com/$env:REPOSITORY/releases/download/$env:RELEASE_TAG/$installerUrlName"
+                signature = (Get-Content -LiteralPath $signaturePath -Raw).Trim()
+              }
+            }
+          } | ConvertTo-Json -Depth 5 | Set-Content latest.json
 
       - name: Upload installer artifacts
         uses: actions/upload-artifact@v4
@@ -91,6 +118,8 @@ jobs:
           path: |
             src-tauri/target/release/bundle/msi/*.msi
             src-tauri/target/release/bundle/nsis/*.exe
+            src-tauri/target/release/bundle/nsis/*.sig
+            latest.json
           if-no-files-found: error
 
       - name: Create GitHub Release
@@ -102,3 +131,5 @@ jobs:
           files: |
             src-tauri/target/release/bundle/msi/*.msi
             src-tauri/target/release/bundle/nsis/*.exe
+            src-tauri/target/release/bundle/nsis/*.sig
+            latest.json

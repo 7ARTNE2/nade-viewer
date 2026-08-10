@@ -3,5 +3,9 @@
   "identifier": "main",
   "description": "Permissions required by the main application window",
   "windows": ["main"],
-  "permissions": ["core:event:allow-listen", "core:event:allow-unlisten"]
+  "permissions": [
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "updater:default"
+  ]
 }
