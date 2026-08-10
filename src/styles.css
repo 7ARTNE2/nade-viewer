@@ -390,12 +390,11 @@ html[lang="ru"] .detail-load-error strong{font-weight:800;letter-spacing:-.035em
   .import-panel{min-height:0}
 }
 .segmented button.filter-molotov.active{background:var(--surface-3)}
-.inspector-filter>.segmented:not(.three){grid-template-columns:minmax(36px,.6fr) minmax(56px,.9fr) minmax(48px,.8fr) minmax(78px,1.25fr) minmax(135px,2.1fr)}
-.inspector-filter>.segmented:not(.three) button{height:38px;line-height:1.2;overflow-wrap:anywhere}
-.inspector-filter>.segmented:not(.three) .filter-he{grid-column:4;grid-row:1}
-.inspector-filter>.segmented:not(.three) .filter-molotov{grid-column:5;grid-row:1;white-space:normal}
+.inspector-filter>.segmented:not(.three){grid-template-columns:repeat(3,minmax(0,1fr))}
+.inspector-filter>.segmented:not(.three) button{min-width:0;height:38px;line-height:1.2;overflow-wrap:normal}
+.inspector-filter>.segmented:not(.three) .filter-molotov{grid-column:span 2;white-space:normal}
 .filter-label-he{white-space:nowrap}
-.filter-label-molotov,.filter-label-incendiary{color:inherit}.detail-copy-button{border-color:rgba(var(--acid-rgb),.48);background:var(--surface-2);color:var(--acid)}.detail-copy-button:hover{border-color:var(--acid);background:rgba(var(--acid-rgb),.13)}.spawn-dot.coordinates-copied,.throw-dot.coordinates-copied,.throw-strip-dot.coordinates-copied{color:var(--acid)!important;animation:coordinates-copied .7s ease-out 2}.spawn-dot.coordinates-copied:after,.throw-dot.coordinates-copied:after,.throw-strip-dot.coordinates-copied:after{position:absolute;inset:-7px;border:1px solid var(--acid);border-radius:50%;content:"";animation:coordinates-copy-ring 1.4s ease-out both;pointer-events:none}@keyframes coordinates-copied{50%{transform:translate3d(var(--map-x,0),var(--map-y,0),0) translate(-50%,-50%) scale(1.22)}}@keyframes coordinates-copy-ring{0%{opacity:1;transform:scale(.45)}100%{opacity:0;transform:scale(1.7)}}
+.filter-label-molotov,.filter-label-incendiary{color:inherit;white-space:nowrap}.detail-copy-button{border-color:rgba(var(--acid-rgb),.48);background:var(--surface-2);color:var(--acid)}.detail-copy-button:hover{border-color:var(--acid);background:rgba(var(--acid-rgb),.13)}.spawn-dot.coordinates-copied,.throw-dot.coordinates-copied,.throw-strip-dot.coordinates-copied{color:var(--acid)!important;animation:coordinates-copied .7s ease-out 2}.spawn-dot.coordinates-copied:after,.throw-dot.coordinates-copied:after,.throw-strip-dot.coordinates-copied:after{position:absolute;inset:-7px;border:1px solid var(--acid);border-radius:50%;content:"";animation:coordinates-copy-ring 1.4s ease-out both;pointer-events:none}@keyframes coordinates-copied{50%{transform:translate3d(var(--map-x,0),var(--map-y,0),0) translate(-50%,-50%) scale(1.22)}}@keyframes coordinates-copy-ring{0%{opacity:1;transform:scale(.45)}100%{opacity:0;transform:scale(1.7)}}
 .segmented button.filter-molotov.active .filter-label-molotov{color:#ff8296}
 .segmented button.filter-molotov.active .filter-label-incendiary{color:#fb923c}
 .type-pill.incendiary{background:rgba(249,115,22,.1);color:#fb923c}
