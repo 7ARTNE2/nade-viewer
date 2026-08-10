@@ -173,10 +173,12 @@ export default function MapPage({ activeImportId }: MapPageProps) {
     setMapGrenades([]);
     setClusterPage(isImportSwitch ? clusterPage : (nextViewState?.clusterPage ?? 0));
     setGrenadePage(isImportSwitch ? grenadePage : (nextViewState?.grenadePage ?? 0));
-    setShowSpawns(nextViewState?.showSpawns ?? true);
-    setRadarMode(nextViewState?.radarMode ?? 'default');
-    setGrenadeMode(nextViewState?.grenadeMode ?? 'landing');
-    setIconTheme(nextViewState?.iconTheme ?? 'base');
+    if (!isImportSwitch) {
+      setShowSpawns(nextViewState?.showSpawns ?? true);
+      setRadarMode(nextViewState?.radarMode ?? 'default');
+      setGrenadeMode(nextViewState?.grenadeMode ?? 'landing');
+      setIconTheme(nextViewState?.iconTheme ?? 'base');
+    }
     clusterRequestRef.current += 1;
     mapTrajectoriesRequestRef.current += 1;
   }, [activeImportId, clusterPage, grenadePage, selectedCluster, stateStorageKey]);
