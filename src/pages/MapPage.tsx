@@ -807,7 +807,11 @@ export default function MapPage({ activeImportId }: MapPageProps) {
                 className={`filter-btn side-${side.toLowerCase()} ${filters.side === side ? 'active' : ''}`}
                 onClick={() => setFilters((state) => ({ ...state, side }))}
               >
-                {side === 'Any' ? tr('Any', 'Все') : side}
+                {side === 'Any'
+                  ? tr('Any', 'Все')
+                  : side === 'T'
+                    ? tr('T', 'Т')
+                    : tr('CT', 'КТ')}
               </button>
             ))}
           </div>
