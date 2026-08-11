@@ -516,6 +516,7 @@ export default function GrenadePage() {
                     `${selectedScreenshot === 'normal' ? 'Normal' : 'Wide FOV'} lineup for grenade #${grenade.id}`,
                     `${selectedScreenshot === 'normal' ? 'Обычный' : 'Широкий FOV'} для гранаты #${grenade.id}`,
                   )}
+                  onClick={() => setSelectedScreenshot(null)}
                 />
                 <div className="lineup-screenshot-dialog-bar">
                   <div className="lineup-screenshot-dialog-title">
