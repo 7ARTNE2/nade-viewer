@@ -626,11 +626,11 @@ export default function MapCanvas({
                   className="map-image"
                   draggable={false}
                 />
-              ) : (
+              ) : mapImagePath === null ? (
                 <div className="map-empty">
                   {tr('No map image', 'Нет изображения карты')}
                 </div>
-              )}
+              ) : null}
               <svg
                 className="trajectory-screen-layer"
                 viewBox="0 0 1024 1024"
