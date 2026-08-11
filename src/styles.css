@@ -438,6 +438,9 @@ html[lang="ru"] .boot-title{font-family:Orbitron,sans-serif}
 @keyframes toast-copy-in{0%{opacity:0;transform:translateX(-5px)}100%{opacity:1;transform:translateX(0)}}
 @keyframes toast-close-in{0%{opacity:0;transform:scale(.7)}100%{opacity:1;transform:scale(1)}}
 .map-tile-skeleton{pointer-events:none}.map-tile-skeleton .map-orb,.map-tile-skeleton i,.map-tile-skeleton small{background:linear-gradient(100deg,#1a2027 25%,#252d36 42%,#1a2027 58%);background-size:200% 100%;animation:skeleton-pulse 1.25s infinite}.map-tile-skeleton i,.map-tile-skeleton small{display:block;height:9px;border-radius:4px}.map-tile-skeleton i{width:78px;margin-bottom:7px}.map-tile-skeleton small{width:50px}@keyframes skeleton-pulse{to{background-position:-200% 0}}.map-grid-empty{display:grid;max-width:480px;justify-items:start;gap:9px;padding:30px;border:1px dashed var(--line);border-radius:12px;background:rgba(255,255,255,.012)}.map-grid-empty strong{font:600 13px Orbitron}.map-grid-empty p{margin:0;color:var(--muted);font-size:11px;line-height:1.6}
+
+/* Keep the first eight maps in view; additional rows scroll inside the pool. */
+@media(min-width:761px){.map-grid-section{display:grid;grid-template-rows:auto minmax(0,1fr);overflow:hidden}.map-grid{min-height:0;overflow-y:auto;padding-top:3px;grid-template-columns:repeat(4,minmax(0,1fr));grid-auto-rows:calc((100% - 15px)/2);align-content:start}.map-tile{min-height:0;aspect-ratio:auto}}
 .onboarding-next-hint{max-width:210px;color:var(--muted);font-size:10px;line-height:1.45;text-align:right}
 
 /* Map focus and compact search keep the current task visually dominant. */

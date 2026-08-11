@@ -177,7 +177,7 @@ export default function HomePage({
         </div>
         <div className="map-grid">
           {mapsLoading
-            ? Array.from({ length: 6 }, (_, index) => (
+            ? Array.from({ length: 8 }, (_, index) => (
                 <div className="map-tile map-tile-skeleton" key={index}>
                   <div className="map-orb" />
                   <div className="map-tile-footer">
