@@ -629,11 +629,6 @@ export default function MapCanvas({
         <div
           ref={stageRef}
           className="map-stage"
-          style={
-            stageSize.width && stageSize.height
-              ? { width: stageSize.width, height: stageSize.height }
-              : undefined
-          }
         >
           <div
             className="map-world"

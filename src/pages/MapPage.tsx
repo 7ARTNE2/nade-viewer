@@ -693,87 +693,89 @@ export default function MapPage({ activeImportId }: MapPageProps) {
             </div>
           </div>
           <div className="toolbar-spacer" />
-          <button
-            className="toggle inspector-toggle"
-            type="button"
-            onClick={() => setInspectorVisible((visible) => !visible)}
-            data-tip={
-              inspectorVisible
-                ? tr('Focus on map', 'Сфокусироваться на карте')
-                : tr('Show workspace panel', 'Показать рабочую панель')
-            }
-            aria-label={
-              inspectorVisible
-                ? tr('Focus on map', 'Сфокусироваться на карте')
-                : tr('Show workspace panel', 'Показать рабочую панель')
-            }
-          >
-            {inspectorVisible ? (
-              <PanelRightClose size={15} />
-            ) : (
-              <PanelRightOpen size={15} />
-            )}
-            {inspectorVisible ? tr('Focus', 'Фокус') : tr('Panel', 'Панель')}
-          </button>
-          <button
-            className={`toggle map-appearance-toggle ${iconTheme === 'asset' ? 'active' : ''}`}
-            onClick={() =>
-              setIconTheme((theme) => (theme === 'base' ? 'asset' : 'base'))
-            }
-            data-tip={tr(
-              'Toggle grenade point icons',
-              'Переключить значки точек',
-            )}
-            aria-label={tr(
-              'Toggle grenade point icons',
-              'Переключить значки точек',
-            )}
-          >
-            <Shapes size={15} />
-            {tr('Icons', 'Значки')}
-          </button>
-          <button
-            aria-pressed={filters.is_core}
-            className={`toggle core-toolbar-toggle ${filters.is_core ? 'active' : ''}`}
-            onClick={() =>
-              setFilters((state) => ({ ...state, is_core: !state.is_core }))
-            }
-            data-tip={tr(
-              'Toggle core grenades',
-              'Переключить избранные гранаты',
-            )}
-            aria-label={tr(
-              'Toggle core grenades',
-              'Переключить избранные гранаты',
-            )}
-          >
-            <BadgeCheck size={15} />
-            {tr('Core', 'Избранные')}
-          </button>
-          <button
-            aria-pressed={showSpawns}
-            className={`toggle spawns-toolbar-toggle ${showSpawns ? 'active' : ''}`}
-            onClick={() => setShowSpawns((value) => !value)}
-            data-tip={tr('Toggle spawn points', 'Переключить точки спавнов')}
-            aria-label={tr('Toggle spawn points', 'Переключить точки спавнов')}
-          >
-            <LocateFixed size={15} />
-            {tr('Spawns', 'Спавны')}
-          </button>
-          <button
-            aria-pressed={grenadeMode === 'throw'}
-            className={`toggle throw-toolbar-toggle ${grenadeMode === 'throw' ? 'active' : ''}`}
-            onClick={() =>
-              switchGrenadeMode(grenadeMode === 'throw' ? 'landing' : 'throw')
-            }
-            data-tip={tr(
-              'Group by throw position',
-              'Группировать по позиции броска',
-            )}
-          >
-            <Send size={15} />
-            {tr('Throw', 'Бросок')}
-          </button>
+          <div className="map-toolbar-actions">
+            <button
+              className="toggle inspector-toggle"
+              type="button"
+              onClick={() => setInspectorVisible((visible) => !visible)}
+              data-tip={
+                inspectorVisible
+                  ? tr('Focus on map', 'Сфокусироваться на карте')
+                  : tr('Show workspace panel', 'Показать рабочую панель')
+              }
+              aria-label={
+                inspectorVisible
+                  ? tr('Focus on map', 'Сфокусироваться на карте')
+                  : tr('Show workspace panel', 'Показать рабочую панель')
+              }
+            >
+              {inspectorVisible ? (
+                <PanelRightClose size={15} />
+              ) : (
+                <PanelRightOpen size={15} />
+              )}
+              {inspectorVisible ? tr('Focus', 'Фокус') : tr('Panel', 'Панель')}
+            </button>
+            <button
+              className={`toggle map-appearance-toggle ${iconTheme === 'asset' ? 'active' : ''}`}
+              onClick={() =>
+                setIconTheme((theme) => (theme === 'base' ? 'asset' : 'base'))
+              }
+              data-tip={tr(
+                'Toggle grenade point icons',
+                'Переключить значки точек',
+              )}
+              aria-label={tr(
+                'Toggle grenade point icons',
+                'Переключить значки точек',
+              )}
+            >
+              <Shapes size={15} />
+              {tr('Icons', 'Значки')}
+            </button>
+            <button
+              aria-pressed={filters.is_core}
+              className={`toggle core-toolbar-toggle ${filters.is_core ? 'active' : ''}`}
+              onClick={() =>
+                setFilters((state) => ({ ...state, is_core: !state.is_core }))
+              }
+              data-tip={tr(
+                'Toggle core grenades',
+                'Переключить избранные гранаты',
+              )}
+              aria-label={tr(
+                'Toggle core grenades',
+                'Переключить избранные гранаты',
+              )}
+            >
+              <BadgeCheck size={15} />
+              {tr('Core', 'Избранные')}
+            </button>
+            <button
+              aria-pressed={showSpawns}
+              className={`toggle spawns-toolbar-toggle ${showSpawns ? 'active' : ''}`}
+              onClick={() => setShowSpawns((value) => !value)}
+              data-tip={tr('Toggle spawn points', 'Переключить точки спавнов')}
+              aria-label={tr('Toggle spawn points', 'Переключить точки спавнов')}
+            >
+              <LocateFixed size={15} />
+              {tr('Spawns', 'Спавны')}
+            </button>
+            <button
+              aria-pressed={grenadeMode === 'throw'}
+              className={`toggle throw-toolbar-toggle ${grenadeMode === 'throw' ? 'active' : ''}`}
+              onClick={() =>
+                switchGrenadeMode(grenadeMode === 'throw' ? 'landing' : 'throw')
+              }
+              data-tip={tr(
+                'Group by throw position',
+                'Группировать по позиции броска',
+              )}
+            >
+              <Send size={15} />
+              {tr('Throw', 'Бросок')}
+            </button>
+          </div>
           {hasLowerRadar ? (
             <div
               className="radar-switch"
