@@ -613,7 +613,10 @@ export default function MapPage({ activeImportId }: MapPageProps) {
       className={`map-workspace ${inspectorVisible ? '' : 'inspector-hidden'}`}
     >
       <section className="map-main-panel">
-        <div className="map-toolbar" data-tour="map-workspace-toolbar">
+        <div
+          className={`map-toolbar ${hasLowerRadar ? 'has-radar-switch' : ''}`}
+          data-tour="map-workspace-toolbar"
+        >
           <button
             className="icon-btn"
             onClick={() => navigate('/maps')}
