@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -7,10 +8,8 @@ import {
   Clock,
   Crosshair,
   FileText,
-  Maximize2,
   MapPinned,
   Timer,
-  X,
 } from 'lucide-react';
 import MapCanvas from '../components/MapCanvas';
 import GrenadeList from '../components/GrenadeList';
@@ -33,7 +32,6 @@ import type {
 } from '../types/domain';
 import { useI18n } from '../i18n';
 import { useToast } from '../components/Toast';
-import { useModalAccessibility } from '../lib/useModalAccessibility';
 
 const detailTypeColor: Record<string, string> = {
   smoke: '#67e8f9',
@@ -61,14 +59,10 @@ export default function GrenadePage() {
   const [similar, setSimilar] = useState<GrenadePreview[]>([]);
   const [spawnPoints, setSpawnPoints] = useState<SpawnPoint[]>([]);
   const [copied, setCopied] = useState(false);
-  const [selectedScreenshot, setSelectedScreenshot] = useState<
-    'normal' | 'wide' | null
-  >(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const screenshotDialogRef = useModalAccessibility<HTMLDivElement>(
-    selectedScreenshot !== null,
-    () => setSelectedScreenshot(null),
+  const [hoveredScreenshot, setHoveredScreenshot] = useState<string | null>(
+    null,
   );
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!Number.isInteger(grenadeId) || grenadeId <= 0) {
@@ -131,11 +125,6 @@ export default function GrenadePage() {
   const detailAccentRgb = grenade
     ? (detailTypeRgb[grenade.grenade_type] ?? '229, 231, 235')
     : '229, 231, 235';
-  const selectedScreenshotPath =
-    selectedScreenshot === 'normal'
-      ? grenade?.screenshot_image_path
-      : grenade?.screenshot_wide_image_path;
-
   const copy = async (text?: string | null) => {
     if (!text) return;
     try {
@@ -353,71 +342,41 @@ export default function GrenadePage() {
           <div className="info-block lineup-screenshot-block">
             <div className="block-title">
               {tr('Lineup screenshots', 'Скриншоты раскидки')}
-              <span className="lineup-screenshot-count">
-                {
-                  [
-                    grenade.screenshot_image_path,
-                    grenade.screenshot_wide_image_path,
-                  ].filter(Boolean).length
-                }
-              </span>
             </div>
             <div className="lineup-screenshot-grid">
               {grenade.screenshot_image_path ? (
-                <figure className="lineup-screenshot-card">
-                  <button
-                    type="button"
-                    className="lineup-screenshot-trigger"
-                    onClick={() => setSelectedScreenshot('normal')}
-                    aria-label={tr(
-                      `Open normal FOV screenshot for grenade #${grenade.id}`,
-                      `Открыть скриншот обычного FOV для гранаты #${grenade.id}`,
+                <div>
+                  <span>{tr('Normal', 'Обычный')}</span>
+                  <img
+                    src={assetUrl(grenade.screenshot_image_path)}
+                    alt={tr(
+                      `Normal FOV lineup for grenade #${grenade.id}`,
+                      `Обычный FOV для гранаты #${grenade.id}`,
                     )}
-                  >
-                    <img
-                      src={assetUrl(grenade.screenshot_image_path)}
-                      alt={tr(
-                        `Normal FOV lineup for grenade #${grenade.id}`,
-                        `Обычный FOV для гранаты #${grenade.id}`,
-                      )}
-                    />
-                    <span className="lineup-screenshot-open" aria-hidden="true">
-                      <Maximize2 size={14} />
-                    </span>
-                  </button>
-                  <figcaption>
-                    <strong>{tr('Standard view', 'Стандартный вид')}</strong>
-                    <span>FOV 90</span>
-                  </figcaption>
-                </figure>
+                    onMouseEnter={() =>
+                      setHoveredScreenshot(grenade.screenshot_image_path || null)
+                    }
+                    onMouseLeave={() => setHoveredScreenshot(null)}
+                  />
+                </div>
               ) : null}
               {grenade.screenshot_wide_image_path ? (
-                <figure className="lineup-screenshot-card">
-                  <button
-                    type="button"
-                    className="lineup-screenshot-trigger"
-                    onClick={() => setSelectedScreenshot('wide')}
-                    aria-label={tr(
-                      `Open wide FOV screenshot for grenade #${grenade.id}`,
-                      `Открыть скриншот широкого FOV для гранаты #${grenade.id}`,
+                <div>
+                  <span>{tr('Wide FOV', 'Широкий FOV')}</span>
+                  <img
+                    src={assetUrl(grenade.screenshot_wide_image_path)}
+                    alt={tr(
+                      `Wide FOV lineup for grenade #${grenade.id}`,
+                      `Широкий FOV для гранаты #${grenade.id}`,
                     )}
-                  >
-                    <img
-                      src={assetUrl(grenade.screenshot_wide_image_path)}
-                      alt={tr(
-                        `Wide FOV lineup for grenade #${grenade.id}`,
-                        `Широкий FOV для гранаты #${grenade.id}`,
-                      )}
-                    />
-                    <span className="lineup-screenshot-open" aria-hidden="true">
-                      <Maximize2 size={14} />
-                    </span>
-                  </button>
-                  <figcaption>
-                    <strong>{tr('Wide angle', 'Широкий угол')}</strong>
-                    <span>{tr('Wide FOV', 'Широкий FOV')}</span>
-                  </figcaption>
-                </figure>
+                    onMouseEnter={() =>
+                      setHoveredScreenshot(
+                        grenade.screenshot_wide_image_path || null,
+                      )
+                    }
+                    onMouseLeave={() => setHoveredScreenshot(null)}
+                  />
+                </div>
               ) : null}
             </div>
           </div>
@@ -496,66 +455,14 @@ export default function GrenadePage() {
           />
         </div>
       </aside>
-      {selectedScreenshot && selectedScreenshotPath ? (
-        <div
-          className="lineup-screenshot-lightbox"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget)
-              setSelectedScreenshot(null);
-          }}
-        >
-          <div
-            className="lineup-screenshot-dialog"
-            ref={screenshotDialogRef}
-            role="dialog"
-            aria-modal="true"
-            aria-label={tr('Lineup screenshot', 'Скриншот раскидки')}
-          >
-            <img
-              src={assetUrl(selectedScreenshotPath)}
-              alt={tr(
-                `${selectedScreenshot === 'normal' ? 'Normal' : 'Wide FOV'} lineup for grenade #${grenade.id}`,
-                `${selectedScreenshot === 'normal' ? 'Обычный' : 'Широкий FOV'} для гранаты #${grenade.id}`,
-              )}
-            />
-            <div className="lineup-screenshot-dialog-bar">
-              <button
-                type="button"
-                className="lineup-screenshot-close"
-                onClick={() => setSelectedScreenshot(null)}
-                aria-label={tr('Close screenshot', 'Закрыть скриншот')}
-              >
-                <X size={18} />
-              </button>
-            </div>
-            <div
-              className="lineup-screenshot-switch"
-              aria-label={tr('Screenshot view', 'Вид скриншота')}
-            >
-              {grenade.screenshot_image_path ? (
-                <button
-                  type="button"
-                  className={selectedScreenshot === 'normal' ? 'active' : ''}
-                  onClick={() => setSelectedScreenshot('normal')}
-                  aria-pressed={selectedScreenshot === 'normal'}
-                >
-                  {tr('Normal', 'Обычный')}
-                </button>
-              ) : null}
-              {grenade.screenshot_wide_image_path ? (
-                <button
-                  type="button"
-                  className={selectedScreenshot === 'wide' ? 'active' : ''}
-                  onClick={() => setSelectedScreenshot('wide')}
-                  aria-pressed={selectedScreenshot === 'wide'}
-                >
-                  {tr('Wide FOV', 'Широкий FOV')}
-                </button>
-              ) : null}
-            </div>
-          </div>
-        </div>
-      ) : null}
+      {hoveredScreenshot
+        ? createPortal(
+            <div className="lineup-screenshot-hover" aria-hidden="true">
+              <img src={assetUrl(hoveredScreenshot)} alt="" />
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   );
 }
