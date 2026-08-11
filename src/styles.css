@@ -54,6 +54,16 @@
 .map-stage{width:100%;height:100%}
 .map-image{position:absolute;object-fit:contain}
 
+/* Keep the radar and every overlay in one browser-scaled coordinate space. */
+.map-stage{container-type:size}
+.map-camera{position:absolute;inset:0;display:grid;place-items:center;transform-origin:0 0}
+.map-world{position:relative;inset:auto;width:min(100cqw,100cqh);height:min(100cqw,100cqh)}
+.map-image{inset:0}
+.trajectory-screen-layer,.absolute-layer{width:100%;height:100%}
+.trajectory-connector{vector-effect:non-scaling-stroke}
+.marker-layer>button,.marker-layer>.throw-cluster-wrap{transform:translate(-50%,-50%) scale(var(--marker-scale,1));transform-origin:center}
+.marker-layer>button:hover{transform:translate(-50%,-50%) scale(calc(var(--marker-scale,1) * 1.16))}
+
 /* Readable workspace typography */
 .map-workspace,.grenade-detail{grid-template-columns:minmax(0,1fr) 410px}
 .map-heading{gap:4px}

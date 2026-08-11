@@ -157,7 +157,6 @@ export default function MapCanvas({
   } | null>(null);
   const draggedRef = useRef(false);
   const stageSizeRef = useRef({ width: 0, height: 0 });
-  const [stageSize, setStageSize] = useState({ width: 0, height: 0 });
   const [view, setView] = useState({ s: 1, tx: 0, ty: 0 });
   const [copied, setCopied] = useState<number | null>(null);
   const [copiedGrenadeId, setCopiedGrenadeId] = useState<number | null>(null);
@@ -172,24 +171,10 @@ export default function MapCanvas({
     const viewport = viewportRef.current;
     if (!viewport) return;
     const resize = () => {
-      const nextSize = {
+      stageSizeRef.current = {
         width: viewport.clientWidth,
         height: viewport.clientHeight,
       };
-      stageSizeRef.current = nextSize;
-      setStageSize(nextSize);
-      setView((current) => {
-        if (current.s <= 1) return { s: 1, tx: 0, ty: 0 };
-        return {
-          s: current.s,
-          tx: clamp(current.tx, nextSize.width - nextSize.width * current.s, 0),
-          ty: clamp(
-            current.ty,
-            nextSize.height - nextSize.height * current.s,
-            0,
-          ),
-        };
-      });
     };
     resize();
     const observer = new ResizeObserver(resize);
@@ -258,32 +243,28 @@ export default function MapCanvas({
     [grenades, grenadePointMode],
   );
   const activeGroup = groups.find((group) => group.id === activeGroupId);
-  const radarSize = Math.min(stageSize.width, stageSize.height);
-  const radarOffsetX = (stageSize.width - radarSize) / 2;
-  const radarOffsetY = (stageSize.height - radarSize) / 2;
   const project = (x: number, y: number) =>
     ({
-      '--map-x': `${(radarOffsetX + (x / 1024) * radarSize) * view.s + view.tx}px`,
-      '--map-y': `${(radarOffsetY + (y / 1024) * radarSize) * view.s + view.ty}px`,
+      left: `${(x / 1024) * 100}%`,
+      top: `${(y / 1024) * 100}%`,
+      '--map-x': '0px',
+      '--map-y': '0px',
     }) as CSSProperties;
-  const projectSvg = (x: number, y: number) => ({
-    x: (radarOffsetX + (x / 1024) * radarSize) * view.s + view.tx,
-    y: (radarOffsetY + (y / 1024) * radarSize) * view.s + view.ty,
-  });
   const clampView = (s: number, tx: number, ty: number) => {
-    if (s <= 1 || stageSize.width <= 0 || stageSize.height <= 0)
+    const size = stageSizeRef.current;
+    if (s <= 1 || size.width <= 0 || size.height <= 0)
       return { s: 1, tx: 0, ty: 0 };
     return {
       s,
-      tx: clamp(tx, stageSize.width - stageSize.width * s, 0),
-      ty: clamp(ty, stageSize.height - stageSize.height * s, 0),
+      tx: clamp(tx, size.width - size.width * s, 0),
+      ty: clamp(ty, size.height - size.height * s, 0),
     };
   };
   const resetView = () => setView({ s: 1, tx: 0, ty: 0 });
   const zoomAt = (
     factor: number,
-    x = stageSize.width / 2,
-    y = stageSize.height / 2,
+    x = stageSizeRef.current.width / 2,
+    y = stageSizeRef.current.height / 2,
   ) =>
     setView((current) => {
       const s = clamp(current.s * factor, 1, 6);
@@ -387,10 +368,8 @@ export default function MapCanvas({
   };
   const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     if (event.target !== event.currentTarget) return;
-    const panDistance = Math.max(
-      32,
-      Math.min(stageSize.width, stageSize.height) * 0.1,
-    );
+    const size = stageSizeRef.current;
+    const panDistance = Math.max(32, Math.min(size.width, size.height) * 0.1);
     switch (event.key) {
       case '+':
       case '=':
@@ -626,37 +605,237 @@ export default function MapCanvas({
         onWheel={onWheel}
         onKeyDown={onKeyDown}
       >
-        <div
-          ref={stageRef}
-          className="map-stage"
-        >
+        <div ref={stageRef} className="map-stage">
           <div
-            className="map-world"
-            style={{
-              transform: `translate(${view.tx}px, ${view.ty}px) scale(${view.s})`,
-            }}
+            className="map-camera"
+            style={
+              {
+                transform: `translate(${view.tx}px, ${view.ty}px) scale(${view.s})`,
+                '--marker-scale': 1 / view.s,
+              } as CSSProperties
+            }
           >
-            {image ? (
-              <img
-                src={image}
-                alt={tr(
-                  `Tactical map of ${mapLabel ?? 'the selected map'}`,
-                  `Тактическая карта ${mapLabel ?? 'выбранной карты'}`,
-                )}
-                className="map-image"
-                draggable={false}
-                style={{
-                  width: radarSize,
-                  height: radarSize,
-                  left: radarOffsetX,
-                  top: radarOffsetY,
-                }}
-              />
-            ) : (
-              <div className="map-empty">
-                {tr('No map image', 'Нет изображения карты')}
+            <div className="map-world">
+              {image ? (
+                <img
+                  src={image}
+                  alt={tr(
+                    `Tactical map of ${mapLabel ?? 'the selected map'}`,
+                    `Тактическая карта ${mapLabel ?? 'выбранной карты'}`,
+                  )}
+                  className="map-image"
+                  draggable={false}
+                />
+              ) : (
+                <div className="map-empty">
+                  {tr('No map image', 'Нет изображения карты')}
+                </div>
+              )}
+              <svg
+                className="trajectory-screen-layer"
+                viewBox="0 0 1024 1024"
+                preserveAspectRatio="none"
+              >
+                {grenades.map((grenade) => {
+                  const trajectory = Array.isArray(grenade.trajectory_preview)
+                    ? grenade.trajectory_preview.filter(
+                        (point): point is [number, number] =>
+                          Array.isArray(point) &&
+                          Number.isFinite(point[0]) &&
+                          Number.isFinite(point[1]),
+                      )
+                    : [];
+                  if (!trajectory.length) return null;
+                  const start =
+                    typeof grenade.start_map_x === 'number' &&
+                    typeof grenade.start_map_y === 'number'
+                      ? {
+                          x: grenade.start_map_x,
+                          y: grenade.start_map_y,
+                        }
+                      : null;
+                  const [firstX, firstY] = trajectory[0];
+                  return (
+                    <g key={`trajectory-${grenade.id}`}>
+                      {start ? (
+                        <line
+                          className="trajectory-connector"
+                          x1={start.x}
+                          y1={start.y}
+                          x2={firstX}
+                          y2={firstY}
+                          style={{
+                            strokeWidth: 1 / view.s,
+                            strokeDasharray: `${3 / view.s} ${3 / view.s}`,
+                          }}
+                        />
+                      ) : null}
+                      <polyline
+                        points={trajectory
+                          .map(([x, y]) => `${x},${y}`)
+                          .join(' ')}
+                        fill="none"
+                        stroke={
+                          typeColor[grenade.grenade_type] ??
+                          'rgba(255,255,255,.72)'
+                        }
+                        strokeOpacity=".72"
+                        strokeWidth={2.5 / view.s}
+                        vectorEffect="non-scaling-stroke"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </g>
+                  );
+                })}
+              </svg>
+              <div className="absolute-layer marker-layer">
+                {showSpawns &&
+                  spawnPoints.map((spawn, index) =>
+                    typeof spawn.map_x === 'number' &&
+                    typeof spawn.map_y === 'number' ? (
+                      <button
+                        key={`${spawn.side}-${index}-${spawn.pos_x}-${spawn.pos_y}`}
+                        className={`spawn-dot ${spawn.side === 'CT' ? 'ct' : 't'} ${copied === index ? 'coordinates-copied' : ''}`}
+                        style={project(spawn.map_x, spawn.map_y)}
+                        data-map-control="1"
+                        onClick={() => copySpawn(spawn, index)}
+                        onContextMenu={(event) => {
+                          event.preventDefault();
+                          copySpawn(spawn, index);
+                        }}
+                        data-tip={`${spawn.command} / ${spawn.side}`}
+                        aria-label={tr(
+                          `${spawn.side} spawn. Copy coordinates.`,
+                          `Спавн ${spawn.side}. Копировать координаты.`,
+                        )}
+                      >
+                        <span className="spawn-pulse" />
+                        <span
+                          className={`spawn-core ${copied === index ? 'copied' : ''}`}
+                        />
+                      </button>
+                    ) : null,
+                  )}
+                {clusters
+                  .filter(
+                    (cluster) =>
+                      !selectedClusterId || cluster.id === selectedClusterId,
+                  )
+                  .map((cluster) => {
+                    const singleType =
+                      cluster.unique_types.length === 1
+                        ? cluster.unique_types[0]
+                        : null;
+                    return (
+                      <button
+                        key={cluster.id}
+                        className={`cluster-dot ${singleType ? 'single-type ' : ''}${grenadePointMode === 'landing' ? 'cluster-dot--throw ' : ''}${cluster.id === selectedClusterId ? 'selected' : ''}`}
+                        style={
+                          {
+                            ...project(cluster.x, cluster.y),
+                            '--dot':
+                              sideColor[cluster.side_key] ?? sideColor.NEUTRAL,
+                          } as CSSProperties
+                        }
+                        data-map-control="1"
+                        onClick={() => onClusterSelect?.(cluster)}
+                        data-tip={count(
+                          cluster.count,
+                          'grenade',
+                          'grenades',
+                          'граната',
+                          'гранаты',
+                          'гранат',
+                        )}
+                        aria-label={tr(
+                          `${cluster.side_key} cluster, ${cluster.count} grenades. Open cluster.`,
+                          `Кластер ${cluster.side_key}, ${cluster.count} гранат. Открыть кластер.`,
+                        )}
+                      >
+                        {iconTheme === 'asset' && singleType ? (
+                          <GrenadeMapIcon grenadeType={singleType} />
+                        ) : null}
+                        <span>{cluster.count}</span>
+                      </button>
+                    );
+                  })}
+                {groups.map((group) => {
+                  const grenade = group.grenades[0];
+                  const matched =
+                    grenadePointMode === 'throw' &&
+                    group.grenades.some((item) =>
+                      isInstaGrenade(item, spawnMapPoints),
+                    );
+                  const style = {
+                    ...project(group.x, group.y),
+                    '--dot': typeColor[grenade.grenade_type] ?? '#fff',
+                  } as CSSProperties;
+                  return group.grenades.length > 1 ? (
+                    <div
+                      key={group.id}
+                      className="throw-cluster-wrap"
+                      style={style}
+                      data-map-control="1"
+                    >
+                      <button
+                        className={`throw-dot throw-stack-dot ${group.grenades.some((item) => item.is_core) ? 'core' : ''} ${matched ? 'spawn-match' : ''} ${group.grenades.some((item) => item.id === copiedGrenadeId) ? 'coordinates-copied' : ''}`}
+                        onClick={() =>
+                          setActiveGroupId(
+                            activeGroupId === group.id ? null : group.id,
+                          )
+                        }
+                        onContextMenu={(event) => {
+                          event.preventDefault();
+                          setActiveGroupId(
+                            activeGroupId === group.id ? null : group.id,
+                          );
+                        }}
+                        data-tip={`${matched ? `${INSTA_LABEL} / ` : ''}${group.grenades.length} points`}
+                        aria-label={tr(
+                          `${group.grenades.length} grenade points. Choose a lineup.`,
+                          `${group.grenades.length} точек гранат. Выбрать раскидку.`,
+                        )}
+                      >
+                        {iconTheme === 'asset'
+                          ? markerIcon(grenade.grenade_type)
+                          : null}
+                        {group.grenades.some(
+                          (item) => item.id === copiedGrenadeId,
+                        ) ? (
+                          <Check size={13} />
+                        ) : (
+                          <span>{group.grenades.length}</span>
+                        )}
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      key={group.id}
+                      className={`throw-dot ${grenade.is_core ? 'core' : ''} ${matched ? 'spawn-match' : ''} ${grenade.id === copiedGrenadeId ? 'coordinates-copied' : ''}`}
+                      style={style}
+                      data-map-control="1"
+                      onPointerEnter={(event) => showPreview(event, grenade)}
+                      onPointerLeave={() => setPreview(null)}
+                      onClick={() => onGrenadeOpen?.(grenade.id)}
+                      onContextMenu={(event) =>
+                        copyPointCoordinates(event, [grenade])
+                      }
+                      aria-label={tr(
+                        `${grenadeLabel(grenade.grenade_type)} grenade #${grenade.id}. Open details. Right-click to copy coordinates.`,
+                        `${grenadeLabel(grenade.grenade_type)} граната #${grenade.id}. Открыть детали. ПКМ для копирования координат.`,
+                      )}
+                    >
+                      {grenade.id === copiedGrenadeId ? (
+                        <Check size={13} />
+                      ) : (
+                        markerIcon(grenade.grenade_type)
+                      )}
+                    </button>
+                  );
+                })}
               </div>
-            )}
+            </div>
           </div>
           {selectedCluster ? (
             <div className="map-caption">
@@ -675,205 +854,6 @@ export default function MapCanvas({
               </span>
             </div>
           ) : null}
-          <svg
-            className="trajectory-screen-layer"
-            width={stageSize.width}
-            height={stageSize.height}
-            viewBox={`0 0 ${stageSize.width || 1} ${stageSize.height || 1}`}
-          >
-            {grenades.map((grenade) => {
-              const trajectory = Array.isArray(grenade.trajectory_preview)
-                ? grenade.trajectory_preview.filter(
-                    (point): point is [number, number] =>
-                      Array.isArray(point) &&
-                      Number.isFinite(point[0]) &&
-                      Number.isFinite(point[1]),
-                  )
-                : [];
-              if (!trajectory.length) return null;
-              const start =
-                typeof grenade.start_map_x === 'number' &&
-                typeof grenade.start_map_y === 'number'
-                  ? projectSvg(grenade.start_map_x, grenade.start_map_y)
-                  : null;
-              const first = projectSvg(...trajectory[0]);
-              return (
-                <g key={`trajectory-${grenade.id}`}>
-                  {start ? (
-                    <line
-                      className="trajectory-connector"
-                      x1={start.x}
-                      y1={start.y}
-                      x2={first.x}
-                      y2={first.y}
-                    />
-                  ) : null}
-                  <polyline
-                    points={trajectory
-                      .map(([x, y]) => {
-                        const point = projectSvg(x, y);
-                        return `${point.x},${point.y}`;
-                      })
-                      .join(' ')}
-                    fill="none"
-                    stroke={
-                      typeColor[grenade.grenade_type] ?? 'rgba(255,255,255,.72)'
-                    }
-                    strokeOpacity=".72"
-                    strokeWidth="2.5"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </g>
-              );
-            })}
-          </svg>
-          <div className="absolute-layer marker-layer">
-            {showSpawns &&
-              spawnPoints.map((spawn, index) =>
-                typeof spawn.map_x === 'number' &&
-                typeof spawn.map_y === 'number' ? (
-                  <button
-                    key={`${spawn.side}-${index}-${spawn.pos_x}-${spawn.pos_y}`}
-                    className={`spawn-dot ${spawn.side === 'CT' ? 'ct' : 't'} ${copied === index ? 'coordinates-copied' : ''}`}
-                    style={project(spawn.map_x, spawn.map_y)}
-                    data-map-control="1"
-                    onClick={() => copySpawn(spawn, index)}
-                    onContextMenu={(event) => {
-                      event.preventDefault();
-                      copySpawn(spawn, index);
-                    }}
-                    data-tip={`${spawn.command} / ${spawn.side}`}
-                    aria-label={tr(
-                      `${spawn.side} spawn. Copy coordinates.`,
-                      `Спавн ${spawn.side}. Копировать координаты.`,
-                    )}
-                  >
-                    <span className="spawn-pulse" />
-                    <span
-                      className={`spawn-core ${copied === index ? 'copied' : ''}`}
-                    />
-                  </button>
-                ) : null,
-              )}
-            {clusters
-              .filter(
-                (cluster) =>
-                  !selectedClusterId || cluster.id === selectedClusterId,
-              )
-              .map((cluster) => {
-                const singleType =
-                  cluster.unique_types.length === 1
-                    ? cluster.unique_types[0]
-                    : null;
-                return (
-                  <button
-                    key={cluster.id}
-                    className={`cluster-dot ${singleType ? 'single-type ' : ''}${grenadePointMode === 'landing' ? 'cluster-dot--throw ' : ''}${cluster.id === selectedClusterId ? 'selected' : ''}`}
-                    style={
-                      {
-                        ...project(cluster.x, cluster.y),
-                        '--dot':
-                          sideColor[cluster.side_key] ?? sideColor.NEUTRAL,
-                      } as CSSProperties
-                    }
-                    data-map-control="1"
-                    onClick={() => onClusterSelect?.(cluster)}
-                    data-tip={count(
-                      cluster.count,
-                      'grenade',
-                      'grenades',
-                      'граната',
-                      'гранаты',
-                      'гранат',
-                    )}
-                    aria-label={tr(
-                      `${cluster.side_key} cluster, ${cluster.count} grenades. Open cluster.`,
-                      `Кластер ${cluster.side_key}, ${cluster.count} гранат. Открыть кластер.`,
-                    )}
-                  >
-                    {iconTheme === 'asset' && singleType ? (
-                      <GrenadeMapIcon grenadeType={singleType} />
-                    ) : null}
-                    <span>{cluster.count}</span>
-                  </button>
-                );
-              })}
-            {groups.map((group) => {
-              const grenade = group.grenades[0];
-              const matched =
-                grenadePointMode === 'throw' &&
-                group.grenades.some((item) =>
-                  isInstaGrenade(item, spawnMapPoints),
-                );
-              const style = {
-                ...project(group.x, group.y),
-                '--dot': typeColor[grenade.grenade_type] ?? '#fff',
-              } as CSSProperties;
-              return group.grenades.length > 1 ? (
-                <div
-                  key={group.id}
-                  className="throw-cluster-wrap"
-                  style={style}
-                  data-map-control="1"
-                >
-                  <button
-                    className={`throw-dot throw-stack-dot ${group.grenades.some((item) => item.is_core) ? 'core' : ''} ${matched ? 'spawn-match' : ''} ${group.grenades.some((item) => item.id === copiedGrenadeId) ? 'coordinates-copied' : ''}`}
-                    onClick={() =>
-                      setActiveGroupId(
-                        activeGroupId === group.id ? null : group.id,
-                      )
-                    }
-                    onContextMenu={(event) => {
-                      event.preventDefault();
-                      setActiveGroupId(
-                        activeGroupId === group.id ? null : group.id,
-                      );
-                    }}
-                    data-tip={`${matched ? `${INSTA_LABEL} / ` : ''}${group.grenades.length} points`}
-                    aria-label={tr(
-                      `${group.grenades.length} grenade points. Choose a lineup.`,
-                      `${group.grenades.length} точек гранат. Выбрать раскидку.`,
-                    )}
-                  >
-                    {iconTheme === 'asset'
-                      ? markerIcon(grenade.grenade_type)
-                      : null}
-                    {group.grenades.some(
-                      (item) => item.id === copiedGrenadeId,
-                    ) ? (
-                      <Check size={13} />
-                    ) : (
-                      <span>{group.grenades.length}</span>
-                    )}
-                  </button>
-                </div>
-              ) : (
-                <button
-                  key={group.id}
-                  className={`throw-dot ${grenade.is_core ? 'core' : ''} ${matched ? 'spawn-match' : ''} ${grenade.id === copiedGrenadeId ? 'coordinates-copied' : ''}`}
-                  style={style}
-                  data-map-control="1"
-                  onPointerEnter={(event) => showPreview(event, grenade)}
-                  onPointerLeave={() => setPreview(null)}
-                  onClick={() => onGrenadeOpen?.(grenade.id)}
-                  onContextMenu={(event) =>
-                    copyPointCoordinates(event, [grenade])
-                  }
-                  aria-label={tr(
-                    `${grenadeLabel(grenade.grenade_type)} grenade #${grenade.id}. Open details. Right-click to copy coordinates.`,
-                    `${grenadeLabel(grenade.grenade_type)} граната #${grenade.id}. Открыть детали. ПКМ для копирования координат.`,
-                  )}
-                >
-                  {grenade.id === copiedGrenadeId ? (
-                    <Check size={13} />
-                  ) : (
-                    markerIcon(grenade.grenade_type)
-                  )}
-                </button>
-              );
-            })}
-          </div>
         </div>
         {activeGroup ? (
           <div
