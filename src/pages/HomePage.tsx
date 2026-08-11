@@ -1,26 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowUpRight, History, Plus, Search, X } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { ArrowUpRight, History, Plus, Search } from 'lucide-react';
 import { assetUrl, getMaps, getRecentlyViewedGrenades } from '../lib/tauri';
 import { formatNumber, grenadeLabel } from '../lib/format';
-import type { ImportSummary, MapSummary, ViewedGrenade } from '../types/domain';
-import ImportPage from './ImportPage';
+import type { MapSummary, ViewedGrenade } from '../types/domain';
 import { useI18n } from '../i18n';
 
 type HomePageProps = {
   activeImportId?: number | null;
-  onImported: () => Promise<void>;
-  lastImport: ImportSummary | null;
 };
 
-export default function HomePage({
-  activeImportId,
-  onImported,
-  lastImport,
-}: HomePageProps) {
+export default function HomePage({ activeImportId }: HomePageProps) {
   const { tr, count } = useI18n();
   const navigate = useNavigate();
-  const [searchParams, setSearchParams] = useSearchParams();
   const [maps, setMaps] = useState<MapSummary[]>([]);
   const [recentlyViewed, setRecentlyViewed] = useState<ViewedGrenade[]>([]);
   const [search, setSearch] = useState('');
@@ -69,12 +61,6 @@ export default function HomePage({
   }, [maps, search]);
 
   const total = maps.reduce((sum, map) => sum + map.grenade_count, 0);
-  const importOpen = !activeImportId || searchParams.get('import') === '1';
-  const closeImport = () => {
-    if (!activeImportId) return;
-    setSearchParams({}, { replace: true });
-  };
-
   return (
     <div className="home-view">
       <section className="home-sidebar">
@@ -99,7 +85,7 @@ export default function HomePage({
         <button
           className="library-import-btn"
           type="button"
-          onClick={() => setSearchParams({ import: '1' })}
+          onClick={() => navigate('/import')}
         >
           <Plus size={15} /> {tr('Import library', 'Импорт библиотеки')}
         </button>
@@ -258,7 +244,7 @@ export default function HomePage({
               className="btn"
               type="button"
               onClick={() =>
-                search.trim() ? setSearch('') : setSearchParams({ import: '1' })
+                search.trim() ? setSearch('') : navigate('/import')
               }
             >
               {search.trim()
@@ -269,23 +255,6 @@ export default function HomePage({
         ) : null}
       </section>
 
-      {importOpen ? (
-        <div
-          className={`library-import-layer ${activeImportId ? 'overlay' : 'required'}`}
-        >
-          {activeImportId ? (
-            <button
-              className="library-import-close"
-              type="button"
-              onClick={closeImport}
-              aria-label={tr('Close import', 'Закрыть импорт')}
-            >
-              <X size={18} />
-            </button>
-          ) : null}
-          <ImportPage onImported={onImported} lastImport={lastImport} />
-        </div>
-      ) : null}
     </div>
   );
 }

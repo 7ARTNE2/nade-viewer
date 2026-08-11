@@ -40,6 +40,7 @@ import { startWindowActiveTracking } from './lib/windowActive';
 import type { ImportSummary } from './types/domain';
 import { version } from '../package.json';
 import HomePage from './pages/HomePage';
+import ImportPage from './pages/ImportPage';
 import MapPage from './pages/MapPage';
 import GrenadePage from './pages/GrenadePage';
 import Tooltip from './components/Tooltip';
@@ -102,8 +103,8 @@ function Shell() {
       if (importsRequestRef.current !== requestId) return;
       if (active.status === 'fulfilled') {
         setActive(active.value);
-        if (!active.value && !['/', '/maps'].includes(location.pathname))
-          navigate('/maps?import=1', { replace: true });
+        if (!active.value && location.pathname !== '/import')
+          navigate('/import', { replace: true });
       }
       if (all.status === 'fulfilled')
         setImports(Array.isArray(all.value) ? all.value : []);
@@ -261,7 +262,7 @@ function Shell() {
       setDeleteSnapshotOpen(false);
       setLibraryActionsOpen(false);
       await refreshImports();
-      navigate(next ? '/maps' : '/maps?import=1', { replace: true });
+      navigate(next ? '/maps' : '/import', { replace: true });
       showToast(
         tr(
           `Library “${deletedName}” deleted`,
@@ -306,9 +307,7 @@ function Shell() {
     location.pathname === '/maps' ||
     location.pathname.startsWith('/map/') ||
     location.pathname.startsWith('/grenade/');
-  const importPanelActive =
-    location.pathname === '/maps' &&
-    new URLSearchParams(location.search).get('import') === '1';
+  const importRouteActive = location.pathname === '/import';
 
   if (loading) {
     return (
@@ -341,15 +340,15 @@ function Shell() {
             </button>
             <span className="topbar-divider" />
             <button
-              className={`topbar-nav-link ${mapsRouteActive && !importPanelActive ? 'active' : ''}`}
+              className={`topbar-nav-link ${mapsRouteActive ? 'active' : ''}`}
               onClick={() => navigate('/maps')}
             >
               <Map size={16} />
               <span>{tr('Maps', 'Карты')}</span>
             </button>
             <button
-              className={`topbar-nav-link ${importPanelActive ? 'active' : ''}`}
-              onClick={() => navigate('/maps?import=1')}
+              className={`topbar-nav-link ${importRouteActive ? 'active' : ''}`}
+              onClick={() => navigate('/import')}
             >
               <Download size={16} />
               <span>{tr('Import library', 'Импорт')}</span>
@@ -549,7 +548,7 @@ function Shell() {
             ) : (
               <button
                 className="btn primary"
-                onClick={() => navigate('/maps?import=1')}
+                onClick={() => navigate('/import')}
               >
                 <FolderOpen size={16} />
                 {tr('Import data', 'Импортировать')}
@@ -641,7 +640,7 @@ function Shell() {
               path="/"
               element={
                 <Navigate
-                  to={activeImport ? '/maps' : '/maps?import=1'}
+                  to={activeImport ? '/maps' : '/import'}
                   replace
                 />
               }
@@ -649,16 +648,21 @@ function Shell() {
             <Route
               path="/maps"
               element={
-                <HomePage
-                  activeImportId={activeImport?.id ?? null}
-                  onImported={refreshImports}
-                  lastImport={imports[0] ?? null}
-                />
+                activeImport ? (
+                  <HomePage activeImportId={activeImport.id} />
+                ) : (
+                  <Navigate to="/import" replace />
+                )
               }
             />
             <Route
               path="/import"
-              element={<Navigate to="/maps?import=1" replace />}
+              element={
+                <ImportPage
+                  onImported={refreshImports}
+                  lastImport={imports[0] ?? null}
+                />
+              }
             />
             <Route
               path="/map/:mapName"
@@ -666,7 +670,7 @@ function Shell() {
                 activeImport ? (
                   <MapPage activeImportId={activeImport.id} />
                 ) : (
-                  <Navigate to="/maps?import=1" replace />
+                  <Navigate to="/import" replace />
                 )
               }
             />
@@ -676,7 +680,7 @@ function Shell() {
                 activeImport ? (
                   <GrenadePage />
                 ) : (
-                  <Navigate to="/maps?import=1" replace />
+                  <Navigate to="/import" replace />
                 )
               }
             />
@@ -684,7 +688,7 @@ function Shell() {
               path="*"
               element={
                 <Navigate
-                  to={activeImport ? '/maps' : '/maps?import=1'}
+                  to={activeImport ? '/maps' : '/import'}
                   replace
                 />
               }
@@ -792,7 +796,7 @@ function Shell() {
             await completeOnboarding();
             setOnboardingOpen(false);
           }}
-          onShowImport={() => navigate('/maps?import=1')}
+          onShowImport={() => navigate('/import')}
           onShowMaps={() => navigate('/maps')}
           activeImport={Boolean(activeImport)}
           pathname={location.pathname}
