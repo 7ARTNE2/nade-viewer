@@ -3,12 +3,11 @@ import {
   useCallback,
   useContext,
   useEffect,
-  useLayoutEffect,
   useRef,
   useState,
   type ReactNode,
 } from 'react';
-import { AlertTriangle, Check, Info, X } from 'lucide-react';
+import { AlertTriangle, Info, X } from 'lucide-react';
 
 type ToastTone = 'success' | 'error' | 'info';
 
@@ -27,12 +26,14 @@ type ToastItem = {
 
 type ToastContextValue = {
   showToast: (message: string, options?: ToastOptions) => void;
+  toast: ToastItem | null;
+  dismiss: (id: number) => void;
 };
 
 const ToastContext = createContext<ToastContextValue | null>(null);
 
 function ToastIcon({ tone }: { tone: ToastTone }) {
-  if (tone === 'success') return <Check size={16} />;
+  if (tone === 'success') return <span className="toast-status-dot" />;
   if (tone === 'error') return <AlertTriangle size={16} />;
   return <Info size={16} />;
 }
@@ -69,20 +70,26 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             (tone === 'success' ? 2500 : tone === 'error' ? 5000 : 3500),
           leaving: false,
         },
-        ...active.slice(0, 2),
       ];
     });
   }, []);
 
   return (
-    <ToastContext.Provider value={{ showToast }}>
+    <ToastContext.Provider
+      value={{ showToast, toast: toasts[0] ?? null, dismiss }}
+    >
       {children}
-      <div className="toast-viewport" aria-live="polite">
-        {toasts.map((toast) => (
-          <Toast key={toast.id} toast={toast} dismiss={dismiss} />
-        ))}
-      </div>
     </ToastContext.Provider>
+  );
+}
+
+export function ToastViewport() {
+  const { toast, dismiss } = useToast();
+
+  return (
+    <div className="toast-viewport" aria-live="polite" aria-atomic="true">
+      {toast ? <Toast key={toast.id} toast={toast} dismiss={dismiss} /> : null}
+    </div>
   );
 }
 
@@ -93,42 +100,13 @@ function Toast({
   toast: ToastItem;
   dismiss: (id: number) => void;
 }) {
-  const slotRef = useRef<HTMLDivElement>(null);
-  const previousTopRef = useRef<number | null>(null);
-
-  useLayoutEffect(() => {
-    const slot = slotRef.current;
-    if (!slot) return;
-    const top = slot.getBoundingClientRect().top;
-    const previousTop = previousTopRef.current;
-    previousTopRef.current = top;
-
-    if (
-      previousTop === null ||
-      previousTop === top ||
-      window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    )
-      return;
-
-    slot.animate(
-      [
-        { transform: `translateY(${previousTop - top}px)` },
-        { transform: 'translateY(0)' },
-      ],
-      {
-        duration: 420,
-        easing: 'cubic-bezier(.16, 1, .3, 1)',
-      },
-    );
-  });
-
   useEffect(() => {
     const timeout = window.setTimeout(() => dismiss(toast.id), toast.duration);
     return () => window.clearTimeout(timeout);
   }, [dismiss, toast.duration, toast.id]);
 
   return (
-    <div className="toast-slot" ref={slotRef}>
+    <div className="toast-slot">
       <div
         className={`app-toast ${toast.tone} ${toast.leaving ? 'leaving' : ''}`}
         role={toast.tone === 'error' ? 'alert' : 'status'}

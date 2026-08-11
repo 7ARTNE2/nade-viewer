@@ -47,7 +47,7 @@ import Tooltip from './components/Tooltip';
 import OnboardingModal from './components/OnboardingModal';
 import { useI18n } from './i18n';
 import { useModalAccessibility } from './lib/useModalAccessibility';
-import { useToast } from './components/Toast';
+import { ToastViewport, useToast } from './components/Toast';
 
 function importFileName(path: string) {
   return path.split(/[\\/]/).filter(Boolean).pop() || path;
@@ -390,6 +390,7 @@ function Shell() {
               </button>
             </div>
           </div>
+          <ToastViewport />
           <div className="topbar-actions">
             {activeImport ? (
               <div
