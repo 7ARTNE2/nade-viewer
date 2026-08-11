@@ -756,7 +756,10 @@ export default function MapPage({ activeImportId }: MapPageProps) {
               className={`toggle spawns-toolbar-toggle ${showSpawns ? 'active' : ''}`}
               onClick={() => setShowSpawns((value) => !value)}
               data-tip={tr('Toggle spawn points', 'Переключить точки спавнов')}
-              aria-label={tr('Toggle spawn points', 'Переключить точки спавнов')}
+              aria-label={tr(
+                'Toggle spawn points',
+                'Переключить точки спавнов',
+              )}
             >
               <LocateFixed size={15} />
               {tr('Spawns', 'Спавны')}

@@ -640,10 +640,7 @@ function Shell() {
             <Route
               path="/"
               element={
-                <Navigate
-                  to={activeImport ? '/maps' : '/import'}
-                  replace
-                />
+                <Navigate to={activeImport ? '/maps' : '/import'} replace />
               }
             />
             <Route
@@ -688,10 +685,7 @@ function Shell() {
             <Route
               path="*"
               element={
-                <Navigate
-                  to={activeImport ? '/maps' : '/import'}
-                  replace
-                />
+                <Navigate to={activeImport ? '/maps' : '/import'} replace />
               }
             />
           </Routes>

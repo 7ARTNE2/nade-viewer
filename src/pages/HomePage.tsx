@@ -254,7 +254,6 @@ export default function HomePage({ activeImportId }: HomePageProps) {
           </div>
         ) : null}
       </section>
-
     </div>
   );
 }
