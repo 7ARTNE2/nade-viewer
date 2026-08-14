@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { BadgeCheck, Check, Clipboard, Timer } from 'lucide-react';
-import { grenadeLabel } from '../lib/format';
+import { BadgeCheck, Check, Clipboard } from 'lucide-react';
+import { formatClock, grenadeLabel } from '../lib/format';
 import { buildSpawnMapPoints, INSTA_LABEL, isInstaGrenade } from '../lib/insta';
 import type { GrenadePreview, SpawnPoint } from '../types/domain';
 import { useI18n } from '../i18n';
@@ -168,25 +168,6 @@ export default function GrenadeList({
                   <span className="core-badge">{tr('Core', 'Избранное')}</span>
                 ) : null}
               </span>
-              {throwKeys.length ? (
-                <span className="nade-throw-keys" aria-label={tr('Throw keys', 'Клавиши броска')}>
-                  <span className="nade-throw-key-list">
-                    {throwKeys.map((key) => {
-                      const visual = throwKeyVisual(key);
-                      return (
-                        <span
-                          key={key}
-                          className={`nade-throw-key ${visual.kind}`}
-                          data-tip={visual.title}
-                        >
-                          <ThrowKeyIcon glyph={visual.glyph} />
-                          <b>{visual.label}</b>
-                        </span>
-                      );
-                    })}
-                  </span>
-                </span>
-              ) : null}
             </button>
             <div className="nade-action-stack">
               <button
@@ -215,17 +196,58 @@ export default function GrenadeList({
                     : tr('Add to Core', 'Добавить в избранное')}
                 </span>
               </button>
-              <span className="row-meta">
-                {typeof g.airtime === 'number' ? (
-                  <>
-                    <Timer size={12} />
-                    {g.airtime.toFixed(2)}s
-                  </>
-                ) : (
-                  `${g.usage_count}x`
-                )}
-              </span>
             </div>
+            <span
+              className="nade-stats"
+              aria-label={tr('Grenade statistics', 'Статистика гранаты')}
+            >
+              <span className="nade-stat usage">
+                <small>{tr('Usage', 'Использований')}</small>
+                <b>{g.usage_count}x</b>
+              </span>
+              {typeof g.airtime === 'number' ? (
+                <span className="nade-stat air">
+                  <small>{tr('Air', 'Полёт')}</small>
+                  <b>{g.airtime.toFixed(2)}s</b>
+                </span>
+              ) : null}
+              {typeof g.round_time_seconds === 'number' ? (
+                <span className="nade-stat round">
+                  <small>{tr('Round', 'Раунд')}</small>
+                  <b>{formatClock(g.round_time_seconds)}</b>
+                </span>
+              ) : null}
+            </span>
+            {throwKeys.length ? (
+              <span className="nade-throw-keys" aria-label={tr('Throw keys', 'Клавиши броска')}>
+                <span className="nade-throw-keys-label">{tr('Keys', 'Клавиши')}</span>
+                <span className="nade-throw-key-list">
+                  {throwKeys.map((key) => {
+                    const visual = throwKeyVisual(key);
+                    return (
+                      <span
+                        key={key}
+                        className={`nade-throw-key ${visual.kind} ${visual.iconOnly ? 'icon-only' : ''}`}
+                        data-tip={visual.title}
+                      >
+                        {visual.iconOnly ? (
+                          visual.kind === 'mouse' ? (
+                            <>
+                              <b>{visual.label}</b>
+                              <ThrowKeyIcon glyph={visual.glyph} />
+                            </>
+                          ) : (
+                            <ThrowKeyIcon glyph={visual.glyph} />
+                          )
+                        ) : (
+                          <b>{visual.label}</b>
+                        )}
+                      </span>
+                    );
+                  })}
+                </span>
+              </span>
+            ) : null}
           </div>
         );
       })}

@@ -110,6 +110,7 @@ export type GrenadePreview = {
   thrower_team?: string | null;
   airtime?: number | null;
   usage_count: number;
+  round_time_seconds?: number | null;
   start_map_x?: number | null;
   start_map_y?: number | null;
   explode_map_x?: number | null;

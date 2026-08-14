@@ -940,11 +940,21 @@ export default function MapCanvas({
                       key={`${key}-${index}`}
                     >
                       <span
-                        className={`throw-preview-key-icon ${visual.kind}`}
+                        className={`throw-preview-key-icon ${visual.kind} ${visual.iconOnly ? 'icon-only' : ''}`}
                         data-tip={visual.title}
                       >
-                        <ThrowKeyIcon glyph={visual.glyph} />
-                        <span>{visual.label}</span>
+                        {visual.iconOnly ? (
+                          visual.kind === 'mouse' ? (
+                            <>
+                              <span>{visual.label}</span>
+                              <ThrowKeyIcon glyph={visual.glyph} />
+                            </>
+                          ) : (
+                            <ThrowKeyIcon glyph={visual.glyph} />
+                          )
+                        ) : (
+                          <span>{visual.label}</span>
+                        )}
                       </span>
                       {index < previewKeys.length - 1 ? (
                         <span className="throw-preview-plus">+</span>

@@ -17,7 +17,7 @@ use thiserror::Error;
 const WORLD: f64 = 1024.0;
 const SUPPORTED_IMPORT_VERSION: i64 = 1;
 const GRENADE_PREVIEW_COLUMNS: &str = "g.id, g.map, g.side, g.grenade_type, g.is_core,
-    g.throw_description, g.coordinates, g.thrower, g.thrower_team, g.airtime, g.usage_count,
+    g.throw_description, g.coordinates, g.thrower, g.thrower_team, g.airtime, g.usage_count, g.round_time_seconds,
     g.start_map_x, g.start_map_y, g.explode_map_x, g.explode_map_y, g.explode_pos_z,
     g.trajectory_preview_json";
 
@@ -340,6 +340,7 @@ struct GrenadePreview {
     thrower_team: Option<String>,
     airtime: Option<f64>,
     usage_count: i64,
+    round_time_seconds: Option<f64>,
     start_map_x: Option<f64>,
     start_map_y: Option<f64>,
     explode_map_x: Option<f64>,
@@ -1257,6 +1258,7 @@ fn grenade_preview_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Grenade
         thrower_team: row.get("thrower_team")?,
         airtime: row.get("airtime")?,
         usage_count: row.get("usage_count")?,
+        round_time_seconds: row.get("round_time_seconds")?,
         start_map_x: row.get("start_map_x")?,
         start_map_y: row.get("start_map_y")?,
         explode_map_x: row.get("explode_map_x")?,
