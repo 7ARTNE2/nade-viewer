@@ -956,9 +956,6 @@ export default function MapCanvas({
                           <span>{visual.label}</span>
                         )}
                       </span>
-                      {index < previewKeys.length - 1 ? (
-                        <span className="throw-preview-plus">+</span>
-                      ) : null}
                     </span>
                   );
                 })}

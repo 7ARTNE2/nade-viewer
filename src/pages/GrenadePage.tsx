@@ -351,9 +351,6 @@ export default function GrenadePage() {
                         <span>{visual.label}</span>
                       )}
                     </span>
-                    {index < throwKeys.length - 1 ? (
-                      <span className="throw-preview-plus">+</span>
-                    ) : null}
                   </span>
                 );
               })}
