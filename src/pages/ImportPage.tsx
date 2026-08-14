@@ -102,7 +102,7 @@ export default function ImportPage({ onImported, lastImport }: Props) {
             `Imported ${formatNumber(report.grenade_count)} Core Nades snapshot`,
             `Импортирован снимок Core Nades: ${formatNumber(report.grenade_count)} гранат`,
           ),
-          { tone: 'success', duration: 5200 },
+          { tone: 'success', duration: 1960 },
         );
       } else if (report.kind === 'screenshot_archive') {
         showToast(
@@ -110,7 +110,7 @@ export default function ImportPage({ onImported, lastImport }: Props) {
             `Imported ${formatNumber(report.grenade_count)} lineups and ${formatNumber(report.screenshot_count)} screenshots`,
             `Импортировано ${formatNumber(report.grenade_count)} раскидок и ${formatNumber(report.screenshot_count)} скриншотов`,
           ),
-          { tone: 'success', duration: 5200 },
+          { tone: 'success', duration: 1960 },
         );
       }
       navigate('/maps', { replace: true });
@@ -173,7 +173,7 @@ export default function ImportPage({ onImported, lastImport }: Props) {
         const summary =
           translated[importError.code] ?? tr('Import failed', 'Ошибка импорта');
         setMessage(summary);
-        showToast(summary, { tone: 'error', duration: 5600 });
+        showToast(summary, { tone: 'error', duration: 3260 });
       } else {
         const summary = tr('Import failed', 'Ошибка импорта');
         setMessage(summary);

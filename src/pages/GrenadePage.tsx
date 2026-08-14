@@ -148,7 +148,7 @@ export default function GrenadePage() {
           'Coordinates copied. In CS2, enable sv_cheats 1, then paste setpos / setang into the console.',
           'Координаты скопированы. В CS2 включите sv_cheats 1, затем вставьте setpos / setang в консоль.',
         ),
-        { tone: 'success', duration: 6200 },
+        { tone: 'success', duration: 1960 },
       );
       window.setTimeout(() => setCopied(false), 900);
     } catch (error) {

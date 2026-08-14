@@ -203,7 +203,7 @@ function Shell() {
     if (!coreTransferStatus && !operationError) return;
     showToast(operationError ?? coreTransferStatus!, {
       tone: operationError ? 'error' : 'success',
-      duration: 5000,
+      duration: operationError ? 3260 : 1960,
     });
     setCoreTransferStatus(null);
     setOperationError(null);
