@@ -102,6 +102,10 @@ export default function GrenadeList({
           <div
             key={g.id}
             className={`nade-row type-${String(g.grenade_type).toLowerCase()} ${g.is_core ? 'core' : ''} ${isInsta ? 'insta' : ''}`}
+            onClick={(event) => {
+              if ((event.target as HTMLElement).closest('button')) return;
+              navigate(`/grenade/${g.id}`);
+            }}
           >
             <div className="nade-type-stack">
               <span
