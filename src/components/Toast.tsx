@@ -67,7 +67,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
           tone,
           duration:
             options?.duration ??
-            (tone === 'success' ? 2500 : tone === 'error' ? 5000 : 3500),
+            (tone === 'success' ? 1200 : tone === 'error' ? 2200 : 1600),
           leaving: false,
         },
       ];
