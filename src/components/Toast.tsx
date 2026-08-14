@@ -40,43 +40,52 @@ function ToastIcon({ tone }: { tone: ToastTone }) {
 
 export function ToastProvider({ children }: { children: ReactNode }) {
   const nextId = useRef(0);
-  const [toasts, setToasts] = useState<ToastItem[]>([]);
+  const pendingToast = useRef<ToastItem | null>(null);
+  const [toast, setToast] = useState<ToastItem | null>(null);
 
   const dismiss = useCallback((id: number) => {
-    setToasts((current) =>
-      current.map((toast) =>
-        toast.id === id ? { ...toast, leaving: true } : toast,
-      ),
+    setToast((current) =>
+      current?.id === id && !current.leaving
+        ? { ...current, leaving: true }
+        : current,
     );
-    window.setTimeout(() => {
-      setToasts((current) => current.filter((toast) => toast.id !== id));
-    }, 240);
   }, []);
 
   const showToast = useCallback((message: string, options?: ToastOptions) => {
     const tone = options?.tone ?? 'info';
-    setToasts((current) => {
-      const active = current.filter((toast) => !toast.leaving);
-      if (active[0]?.message === message && active[0]?.tone === tone)
-        return current;
+    const nextToast: ToastItem = {
+      id: ++nextId.current,
+      message,
+      tone,
+      duration: options?.duration ?? (tone === 'error' ? 3260 : 1960),
+      leaving: false,
+    };
 
-      return [
-        {
-          id: ++nextId.current,
-          message,
-          tone,
-          duration:
-            options?.duration ??
-            tone === 'error' ? 3260 : 1960,
-          leaving: false,
-        },
-      ];
+    setToast((current) => {
+      if (!current) return nextToast;
+
+      pendingToast.current = nextToast;
+      return current.leaving ? current : { ...current, leaving: true };
     });
   }, []);
 
+  useEffect(() => {
+    if (!toast?.leaving) return;
+
+    const timeout = window.setTimeout(() => {
+      setToast((current) => {
+        if (current?.id !== toast.id) return current;
+        const nextToast = pendingToast.current;
+        pendingToast.current = null;
+        return nextToast;
+      });
+    }, 240);
+    return () => window.clearTimeout(timeout);
+  }, [toast]);
+
   return (
     <ToastContext.Provider
-      value={{ showToast, toast: toasts[0] ?? null, dismiss }}
+      value={{ showToast, toast, dismiss }}
     >
       {children}
     </ToastContext.Provider>
