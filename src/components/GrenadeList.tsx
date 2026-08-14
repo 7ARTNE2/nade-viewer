@@ -223,8 +223,13 @@ export default function GrenadeList({
               ) : null}
             </span>
             {throwKeys.length ? (
-              <span className="nade-throw-keys" aria-label={tr('Throw keys', 'Клавиши броска')}>
-                <span className="nade-throw-keys-label">{tr('Keys', 'Клавиши')}</span>
+              <span
+                className="nade-throw-keys"
+                aria-label={tr('Throw keys', 'Клавиши броска')}
+              >
+                <span className="nade-throw-keys-label">
+                  {tr('Keys', 'Клавиши')}
+                </span>
                 <span className="nade-throw-key-list">
                   {throwKeys.map((key) => {
                     const visual = throwKeyVisual(key);

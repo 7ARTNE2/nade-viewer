@@ -23,37 +23,103 @@ export const throwKeyVisual = (key: string): ThrowKeyVisual => {
       normalized,
     )
   ) {
-    return { glyph: 'mouse-left', label, kind: 'mouse', title: clean, iconOnly: true };
+    return {
+      glyph: 'mouse-left',
+      label,
+      kind: 'mouse',
+      title: clean,
+      iconOnly: true,
+    };
   }
   if (
     ['m2', 'mouse2', 'mouseright', 'rightclick', 'rmb', 'attack2'].includes(
       normalized,
     )
   ) {
-    return { glyph: 'mouse-right', label, kind: 'mouse', title: clean, iconOnly: true };
+    return {
+      glyph: 'mouse-right',
+      label,
+      kind: 'mouse',
+      title: clean,
+      iconOnly: true,
+    };
   }
   if (normalized.includes('jump'))
-    return { glyph: 'jump', label, kind: 'jump', title: clean, iconOnly: false };
+    return {
+      glyph: 'jump',
+      label,
+      kind: 'jump',
+      title: clean,
+      iconOnly: false,
+    };
   if (normalized === 'space')
-    return { glyph: 'space', label, kind: 'key', title: clean, iconOnly: false };
+    return {
+      glyph: 'space',
+      label,
+      kind: 'key',
+      title: clean,
+      iconOnly: false,
+    };
   if (normalized === 'w' || normalized === 'forward')
-    return { glyph: 'move-up', label, kind: 'move', title: clean, iconOnly: false };
+    return {
+      glyph: 'move-up',
+      label,
+      kind: 'move',
+      title: clean,
+      iconOnly: false,
+    };
   if (normalized === 'a' || normalized === 'left')
-    return { glyph: 'move-left', label, kind: 'move', title: clean, iconOnly: false };
+    return {
+      glyph: 'move-left',
+      label,
+      kind: 'move',
+      title: clean,
+      iconOnly: false,
+    };
   if (normalized === 's' || normalized === 'back')
-    return { glyph: 'move-down', label, kind: 'move', title: clean, iconOnly: false };
+    return {
+      glyph: 'move-down',
+      label,
+      kind: 'move',
+      title: clean,
+      iconOnly: false,
+    };
   if (normalized === 'd' || normalized === 'right')
-    return { glyph: 'move-right', label, kind: 'move', title: clean, iconOnly: false };
+    return {
+      glyph: 'move-right',
+      label,
+      kind: 'move',
+      title: clean,
+      iconOnly: false,
+    };
   if (
     normalized === 'ctrl' ||
     normalized === 'control' ||
     normalized.includes('duck') ||
     normalized.includes('crouch')
   ) {
-    return { glyph: 'duck', label, kind: 'duck', title: clean, iconOnly: false };
+    return {
+      glyph: 'duck',
+      label,
+      kind: 'duck',
+      title: clean,
+      iconOnly: false,
+    };
   }
   if (normalized === 'shift' || normalized.includes('walk'))
-    return { glyph: 'walk', label, kind: 'walk', title: clean, iconOnly: false };
+    return {
+      glyph: 'walk',
+      label,
+      kind: 'walk',
+      title: clean,
+      iconOnly: false,
+    };
 
-  return { glyph: 'generic', label, kind: 'key', title: clean, iconOnly: false };
+  return {
+    glyph: 'generic',
+    label,
+    kind: 'key',
+    title: clean,
+    iconOnly: false,
+  };
 };
