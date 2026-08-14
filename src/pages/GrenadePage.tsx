@@ -285,6 +285,7 @@ export default function GrenadePage() {
           <button
             className={`core-action detail-core ${grenade.is_core ? 'active' : ''}`}
             onClick={() => handleCoreToggle(grenade.id, !grenade.is_core)}
+            aria-pressed={grenade.is_core}
           >
             <BadgeCheck size={14} />
             {grenade.is_core

@@ -6,6 +6,8 @@ import { buildSpawnMapPoints, INSTA_LABEL, isInstaGrenade } from '../lib/insta';
 import type { GrenadePreview, SpawnPoint } from '../types/domain';
 import { useI18n } from '../i18n';
 import { useToast } from './Toast';
+import ThrowKeyIcon from './ThrowKeyIcon';
+import { splitThrowKeys, throwKeyVisual } from '../lib/throwKeys';
 
 type Props = {
   grenades: GrenadePreview[];
@@ -95,6 +97,7 @@ export default function GrenadeList({
     <div className={compact ? 'nade-list compact' : 'nade-list'}>
       {grenades.map((g) => {
         const isInsta = isInstaGrenade(g, spawnMapPoints);
+        const throwKeys = splitThrowKeys(g.throw_description);
         return (
           <div
             key={g.id}
@@ -165,11 +168,25 @@ export default function GrenadeList({
                   <span className="core-badge">{tr('Core', 'Избранное')}</span>
                 ) : null}
               </span>
-              <small>
-                {g.throw_description ||
-                  g.coordinates ||
-                  tr('No command metadata', 'Нет данных команды')}
-              </small>
+              {throwKeys.length ? (
+                <span className="nade-throw-keys" aria-label={tr('Throw keys', 'Клавиши броска')}>
+                  <span className="nade-throw-key-list">
+                    {throwKeys.map((key) => {
+                      const visual = throwKeyVisual(key);
+                      return (
+                        <span
+                          key={key}
+                          className={`nade-throw-key ${visual.kind}`}
+                          data-tip={visual.title}
+                        >
+                          <ThrowKeyIcon glyph={visual.glyph} />
+                          <b>{visual.label}</b>
+                        </span>
+                      );
+                    })}
+                  </span>
+                </span>
+              ) : null}
             </button>
             <div className="nade-action-stack">
               <button
@@ -184,6 +201,7 @@ export default function GrenadeList({
                     ? tr('Remove from Core', 'Удалить из избранного')
                     : tr('Add to Core', 'Добавить в избранное')
                 }
+                aria-pressed={g.is_core}
                 data-tip={
                   g.is_core
                     ? tr('In Core', 'В избранном')

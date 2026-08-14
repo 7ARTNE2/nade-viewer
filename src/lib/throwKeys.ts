@@ -52,7 +52,7 @@ export const throwKeyVisual = (key: string): ThrowKeyVisual => {
     return { glyph: 'duck', label, kind: 'duck', title: clean };
   }
   if (normalized === 'shift' || normalized.includes('walk'))
-    return { glyph: 'walk', label, kind: 'key', title: clean };
+    return { glyph: 'walk', label, kind: 'walk', title: clean };
 
   return { glyph: 'generic', label, kind: 'key', title: clean };
 };
