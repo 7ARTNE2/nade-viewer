@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
@@ -69,12 +69,17 @@ export default function GrenadePage() {
     'normal' | 'wide' | null
   >(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const detailRef = useRef<HTMLDivElement>(null);
+  const inspectorRef = useRef<HTMLElement>(null);
   const screenshotDialogRef = useModalAccessibility<HTMLDivElement>(
     selectedScreenshot !== null,
     () => setSelectedScreenshot(null),
   );
 
   useEffect(() => {
+    detailRef.current?.scrollTo({ top: 0 });
+    inspectorRef.current?.scrollTo({ top: 0 });
+
     if (!Number.isInteger(grenadeId) || grenadeId <= 0) {
       navigate('/maps', { replace: true });
       return;
@@ -226,7 +231,7 @@ export default function GrenadePage() {
   }
 
   return (
-    <div className="grenade-detail">
+    <div className="grenade-detail" ref={detailRef}>
       <section className="detail-map-panel">
         <div className="map-toolbar">
           <button
@@ -254,6 +259,7 @@ export default function GrenadePage() {
       </section>
 
       <aside
+        ref={inspectorRef}
         className="detail-inspector"
         style={
           {
