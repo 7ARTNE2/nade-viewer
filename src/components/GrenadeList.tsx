@@ -109,7 +109,7 @@ export default function GrenadeList({
               {showCopy ? (
                 <button
                   type="button"
-                  className="copy-action"
+                  className={`copy-action ${copiedId === g.id ? 'copied' : ''}`}
                   onClick={(event) => {
                     event.stopPropagation();
                     copyGrenadeText(g);
@@ -126,9 +126,9 @@ export default function GrenadeList({
                   }
                 >
                   {copiedId === g.id ? (
-                    <Check size={13} />
+                    <Check className="copy-action-icon" size={13} />
                   ) : (
-                    <Clipboard size={13} />
+                    <Clipboard className="copy-action-icon" size={13} />
                   )}
                   <span>
                     {copiedId === g.id

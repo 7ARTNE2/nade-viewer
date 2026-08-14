@@ -4,6 +4,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowLeft,
   BadgeCheck,
+  Check,
   Clipboard,
   Clock,
   Crosshair,
@@ -425,11 +426,15 @@ export default function GrenadePage() {
           <div className="block-title">
             {tr('Coordinates', 'Координаты')}
             <button
-              className="micro-btn detail-copy-button"
+              className={`micro-btn detail-copy-button ${copied ? 'copied' : ''}`}
               type="button"
               onClick={() => copy(grenade.coordinates)}
             >
-              <Clipboard size={13} />
+              {copied ? (
+                <Check className="copy-action-icon" size={13} />
+              ) : (
+                <Clipboard className="copy-action-icon" size={13} />
+              )}
               {copied ? tr('Copied', 'Скопировано') : tr('Copy', 'Копировать')}
             </button>
           </div>
