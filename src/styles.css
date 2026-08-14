@@ -278,7 +278,7 @@ button:focus-visible,[role="button"]:focus-visible,[role="link"]:focus-visible{o
 .legend-line{display:inline-block;width:12px;height:2px;background:var(--orange)}
 .legend-spawn{border:2px solid var(--acid);background:transparent;box-shadow:0 0 6px rgba(var(--acid-rgb),.7)}
 
-@media (prefers-reduced-motion: reduce){*:not(.app-toast),*:not(.app-toast)::before,*:not(.app-toast)::after{animation-duration:.01ms!important;animation-iteration-count:1!important;scroll-behavior:auto!important;transition-duration:.01ms!important}}
+@media (prefers-reduced-motion: reduce){*:not(.app-toast):not(.coordinates-copied),*:not(.app-toast):not(.coordinates-copied)::before,*:not(.app-toast):not(.coordinates-copied)::after{animation-duration:.01ms!important;animation-iteration-count:1!important;scroll-behavior:auto!important;transition-duration:.01ms!important}}
 @media(max-width:760px){
   .topnav-shell .viewer-topbar{padding:0 10px}
   .topbar-actions{margin-left:auto}
