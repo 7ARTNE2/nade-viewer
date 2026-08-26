@@ -34,9 +34,22 @@
 }
 
 .tactical-filter-select {
+  --filter-accent-rgb: 200, 244, 61;
   display: grid;
   min-width: 0;
   gap: 3px;
+}
+
+.tactical-filter-select.accent-tournament {
+  --filter-accent-rgb: 154, 126, 255;
+}
+
+.tactical-filter-select.accent-team {
+  --filter-accent-rgb: 62, 207, 160;
+}
+
+.tactical-filter-select.accent-player {
+  --filter-accent-rgb: 200, 244, 61;
 }
 
 .tactical-filter-label {
@@ -58,7 +71,7 @@
 
 .tactical-filter-select.has-value .tactical-filter-label,
 .tactical-filter-select.has-value .tactical-filter-label svg {
-  color: var(--acid);
+  color: rgb(var(--filter-accent-rgb));
 }
 
 .tactical-filter-trigger {
@@ -83,13 +96,13 @@
 
 .tactical-filter-trigger:hover,
 .tactical-filter-trigger[aria-expanded='true'] {
-  border-color: rgba(var(--acid-rgb), 0.42);
+  border-color: rgba(var(--filter-accent-rgb), 0.46);
   background: var(--surface-2);
 }
 
 .tactical-filter-trigger:focus-visible {
-  border-color: rgba(var(--acid-rgb), 0.65);
-  box-shadow: 0 0 0 3px rgba(var(--acid-rgb), 0.12);
+  border-color: rgba(var(--filter-accent-rgb), 0.7);
+  box-shadow: 0 0 0 3px rgba(var(--filter-accent-rgb), 0.12);
 }
 
 .tactical-filter-select.is-loading .tactical-filter-trigger {
@@ -208,6 +221,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .tactical-filter-menu,
   .tactical-filter-select.is-loading .tactical-filter-trigger::after,
   .tactical-filter-loading-mark svg,
   .tactical-filter-loading-copy i {
@@ -224,7 +238,7 @@
 }
 
 .tactical-filter-trigger > svg.open {
-  color: var(--acid);
+  color: rgb(var(--filter-accent-rgb));
   transform: rotate(180deg);
 }
 
@@ -263,12 +277,28 @@
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   overflow: hidden;
-  border: 1px solid var(--line);
+  border: 1px solid transparent;
   border-radius: 12px;
-  background: #111419;
+  background:
+    linear-gradient(#111419, #111419) padding-box,
+    linear-gradient(
+        115deg,
+        rgba(255, 91, 91, 0.56),
+        rgba(255, 181, 71, 0.56),
+        rgba(200, 244, 61, 0.56),
+        rgba(67, 213, 166, 0.56),
+        rgba(101, 167, 255, 0.56),
+        rgba(190, 112, 255, 0.56),
+        rgba(255, 91, 91, 0.56)
+      )
+      border-box;
+  background-size:
+    100% 100%,
+    220% 220%;
   box-shadow:
     0 20px 48px rgba(0, 0, 0, 0.58),
-    0 0 0 1px rgba(255, 255, 255, 0.025);
+    0 0 24px rgba(101, 167, 255, 0.08);
+  animation: tactical-filter-rainbow-frame 8s linear infinite;
 }
 
 .tactical-filter-search {
@@ -311,6 +341,7 @@
 }
 
 .tactical-filter-options button {
+  --row-accent-rgb: 200, 244, 61;
   position: relative;
   display: flex;
   width: 100%;
@@ -328,6 +359,30 @@
   cursor: pointer;
 }
 
+.tactical-filter-options button:nth-child(6n + 1) {
+  --row-accent-rgb: 255, 104, 99;
+}
+
+.tactical-filter-options button:nth-child(6n + 2) {
+  --row-accent-rgb: 255, 176, 64;
+}
+
+.tactical-filter-options button:nth-child(6n + 3) {
+  --row-accent-rgb: 200, 244, 61;
+}
+
+.tactical-filter-options button:nth-child(6n + 4) {
+  --row-accent-rgb: 62, 207, 160;
+}
+
+.tactical-filter-options button:nth-child(6n + 5) {
+  --row-accent-rgb: 101, 167, 255;
+}
+
+.tactical-filter-options button:nth-child(6n) {
+  --row-accent-rgb: 190, 112, 255;
+}
+
 .tactical-filter-options button::before {
   position: absolute;
   top: 9px;
@@ -335,22 +390,35 @@
   left: 3px;
   width: 2px;
   border-radius: 7px;
-  background: transparent;
+  background: rgba(var(--row-accent-rgb), 0.34);
   content: '';
+  transition:
+    background 140ms ease,
+    box-shadow 140ms ease;
 }
 
 .tactical-filter-options button:hover,
 .tactical-filter-options button.highlighted {
-  background: var(--surface-2);
+  background: linear-gradient(
+    90deg,
+    rgba(var(--row-accent-rgb), 0.105),
+    rgba(var(--row-accent-rgb), 0.025) 64%,
+    transparent
+  );
 }
 
 .tactical-filter-options button.selected {
-  background: rgba(var(--acid-rgb), 0.08);
+  background: linear-gradient(
+    90deg,
+    rgba(var(--filter-accent-rgb), 0.14),
+    rgba(var(--filter-accent-rgb), 0.035) 66%,
+    transparent
+  );
 }
 
 .tactical-filter-options button.selected::before {
-  background: var(--acid);
-  box-shadow: 0 0 8px rgba(var(--acid-rgb), 0.44);
+  background: rgb(var(--filter-accent-rgb));
+  box-shadow: 0 0 8px rgba(var(--filter-accent-rgb), 0.46);
 }
 
 .tactical-filter-options button > span {
@@ -378,7 +446,20 @@
 
 .tactical-filter-options button.selected strong,
 .tactical-filter-options button > svg {
-  color: var(--acid);
+  color: rgb(var(--filter-accent-rgb));
+}
+
+@keyframes tactical-filter-rainbow-frame {
+  50% {
+    background-position:
+      0 0,
+      100% 100%;
+  }
+  100% {
+    background-position:
+      0 0,
+      0 0;
+  }
 }
 
 .tactical-filter-empty {

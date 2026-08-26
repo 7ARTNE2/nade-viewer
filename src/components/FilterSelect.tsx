@@ -20,6 +20,7 @@ export type FilterSelectOption = {
 
 type Props = {
   label: string;
+  accent?: 'tournament' | 'team' | 'player';
   value: string;
   options: FilterSelectOption[];
   onChange: (value: string) => void;
@@ -40,6 +41,7 @@ type MenuPosition = {
 
 export default function FilterSelect({
   label,
+  accent,
   value,
   options,
   onChange,
@@ -213,7 +215,7 @@ export default function FilterSelect({
 
   return (
     <div
-      className={`tactical-filter-select ${value ? 'has-value' : ''} ${loading ? 'is-loading' : ''}`}
+      className={`tactical-filter-select ${accent ? `accent-${accent}` : ''} ${value ? 'has-value' : ''} ${loading ? 'is-loading' : ''}`}
     >
       <span className="tactical-filter-label">
         {icon}

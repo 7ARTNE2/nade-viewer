@@ -1210,6 +1210,7 @@ export default function MapPage({ activeImportId }: MapPageProps) {
             <div className="match-filter-flow">
               <FilterSelect
                 label={tr('Tournament', 'Турнир')}
+                accent="tournament"
                 value={filters.tournament ?? ''}
                 options={tournamentFilterOptions}
                 icon={null}
@@ -1229,6 +1230,7 @@ export default function MapPage({ activeImportId }: MapPageProps) {
               <div className="filter-select-grid">
                 <FilterSelect
                   label={tr('Team', 'Команда')}
+                  accent="team"
                   value={filters.thrower_team ?? ''}
                   options={teamFilterOptions}
                   icon={null}
@@ -1245,6 +1247,7 @@ export default function MapPage({ activeImportId }: MapPageProps) {
                 />
                 <FilterSelect
                   label={tr('Player', 'Игрок')}
+                  accent="player"
                   value={filters.thrower_steamid64 ?? ''}
                   options={playerFilterOptions}
                   icon={null}
