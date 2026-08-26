@@ -948,6 +948,7 @@ fn init_schema(conn: &Connection) -> AppResult<()> {
         CREATE INDEX IF NOT EXISTS idx_grenade_screenshots_grenade ON grenade_screenshots(grenade_id);
         "#,
     )?;
+    migrate_grenade_columns(conn)?;
     let has_is_core = {
         let mut stmt = conn.prepare("PRAGMA table_info(grenades)")?;
         let columns = stmt.query_map([], |row| row.get::<_, String>(1))?;
@@ -1036,25 +1037,30 @@ fn init_schema(conn: &Connection) -> AppResult<()> {
          ON grenades(import_id, map, thrower_team)",
         [],
     )?;
-    let has_thrower_steamid64 = {
-        let mut stmt = conn.prepare("PRAGMA table_info(grenades)")?;
-        let columns = stmt.query_map([], |row| row.get::<_, String>(1))?;
-        columns
-            .collect::<Result<Vec<_>, _>>()?
-            .iter()
-            .any(|name| name == "thrower_steamid64")
-    };
-    if has_thrower_steamid64 {
+    let grenade_columns = table_columns(conn, "grenades")?;
+    if grenade_columns.contains("thrower_steamid64") {
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_grenades_import_map_player
              ON grenades(import_id, map, thrower_steamid64)",
             [],
         )?;
+    }
+    if grenade_columns.contains("thrower_steamid64")
+        && grenade_columns.contains("thrower_team")
+        && grenade_columns.contains("thrower")
+    {
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_grenades_import_map_thrower
              ON grenades(import_id, map, thrower_team, thrower_steamid64, thrower)",
             [],
         )?;
+    }
+    if grenade_columns.contains("thrower_steamid64")
+        && grenade_columns.contains("thrower_team")
+        && grenade_columns.contains("thrower")
+        && grenade_columns.contains("demo_filename")
+        && grenade_columns.contains("side")
+    {
         let lookup_backfilled = conn
             .query_row(
                 "SELECT value FROM app_meta WHERE key='import_map_players_backfill'",
@@ -1077,6 +1083,38 @@ fn init_schema(conn: &Connection) -> AppResult<()> {
              ON grenade_usage_events(grenade_id, thrower_team, thrower_steamid64, thrower);",
     )?;
     conn.execute_batch("PRAGMA optimize")?;
+    Ok(())
+}
+
+fn table_columns(conn: &Connection, table: &str) -> AppResult<HashSet<String>> {
+    let mut statement = conn.prepare(&format!("PRAGMA table_info({table})"))?;
+    let columns = statement.query_map([], |row| row.get::<_, String>(1))?;
+    Ok(columns.collect::<Result<HashSet<_>, _>>()?)
+}
+
+fn migrate_grenade_columns(conn: &Connection) -> AppResult<()> {
+    let columns = table_columns(conn, "grenades")?;
+    let has_throw_keys = columns.contains("throw_keys");
+    let has_throw_description = columns.contains("throw_description");
+    let has_thrower_steamid64 = columns.contains("thrower_steamid64");
+    if has_throw_keys && !has_throw_description && has_thrower_steamid64 {
+        return Ok(());
+    }
+
+    let tx = conn.unchecked_transaction()?;
+    if !has_throw_keys {
+        tx.execute("ALTER TABLE grenades ADD COLUMN throw_keys TEXT", [])?;
+    }
+    if has_throw_description {
+        tx.execute(
+            "UPDATE grenades SET throw_keys=COALESCE(throw_keys, throw_description)",
+            [],
+        )?;
+    }
+    if !has_thrower_steamid64 {
+        tx.execute("ALTER TABLE grenades ADD COLUMN thrower_steamid64 TEXT", [])?;
+    }
+    tx.commit()?;
     Ok(())
 }
 
@@ -5270,6 +5308,109 @@ mod tests {
             )
             .unwrap();
         assert_eq!(migrated, ("grenade_index".into(), None, 0, None));
+    }
+
+    #[test]
+    fn migrates_v040_throw_columns_and_accepts_a_new_import() {
+        let (state, root) = temporary_test_state("v040-schema-migration");
+        let conn = open_conn(&state).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE imports (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                source_path TEXT NOT NULL,
+                imported_at TEXT NOT NULL,
+                parser_version INTEGER,
+                parser_updated_at TEXT,
+                grenade_count INTEGER NOT NULL,
+                map_count INTEGER NOT NULL
+             );
+             CREATE TABLE grenades (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                import_id INTEGER NOT NULL,
+                source_index INTEGER NOT NULL,
+                map TEXT NOT NULL,
+                side TEXT NOT NULL,
+                grenade_type TEXT NOT NULL,
+                is_core INTEGER NOT NULL DEFAULT 0,
+                throw_description TEXT,
+                coordinates TEXT,
+                thrower TEXT,
+                thrower_team TEXT,
+                airtime REAL,
+                usage_count INTEGER NOT NULL DEFAULT 1,
+                usage_throwers_json TEXT,
+                demo_filename TEXT,
+                throw_tick INTEGER,
+                lineup_tick INTEGER,
+                tickrate INTEGER,
+                round_time_seconds REAL,
+                start_pos_x REAL,
+                start_pos_y REAL,
+                start_pos_z REAL,
+                explode_pos_x REAL,
+                explode_pos_y REAL,
+                explode_pos_z REAL,
+                start_map_x REAL,
+                start_map_y REAL,
+                explode_map_x REAL,
+                explode_map_y REAL,
+                trajectory_preview_json TEXT,
+                trajectory_json TEXT,
+                FOREIGN KEY(import_id) REFERENCES imports(id)
+             );
+             INSERT INTO imports(
+                id, source_path, imported_at, parser_version, parser_updated_at,
+                grenade_count, map_count
+             ) VALUES (7, 'v0.4.0.json', 'then', 1, 'then', 1, 1);
+             INSERT INTO grenades(
+                id, import_id, source_index, map, side, grenade_type, throw_description
+             ) VALUES (9, 7, 0, 'de_test', 'T', 'smoke', 'M1+JUMP');",
+        )
+        .unwrap();
+
+        init_schema(&conn).unwrap();
+        init_schema(&conn).unwrap();
+        assert_eq!(
+            conn.query_row("SELECT throw_keys FROM grenades WHERE id=9", [], |row| {
+                row.get::<_, String>(0)
+            },)
+                .unwrap(),
+            "M1+JUMP"
+        );
+        let columns = table_columns(&conn, "grenades").unwrap();
+        assert!(columns.contains("throw_keys"));
+        assert!(columns.contains("thrower_steamid64"));
+        drop(conn);
+
+        let TypedImportFile::GrenadeIndex(index) = parse_import(
+            br#"{
+                "version": 1,
+                "canonical_grenades": [{
+                    "map": "de_test",
+                    "throw_keys": "M2",
+                    "thrower_steamid64": "76561198000000001"
+                }]
+            }"#
+            .as_slice(),
+        )
+        .unwrap() else {
+            panic!("expected canonical import");
+        };
+        let report = import_index_blocking(&state, "new.json", index, None).unwrap();
+        let conn = open_conn(&state).unwrap();
+        let imported: (String, String) = conn
+            .query_row(
+                "SELECT throw_keys, thrower_steamid64 FROM grenades WHERE import_id=?1",
+                params![report.import_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            imported,
+            ("M2".to_string(), "76561198000000001".to_string())
+        );
+        drop(conn);
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
