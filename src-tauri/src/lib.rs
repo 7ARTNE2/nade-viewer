@@ -891,6 +891,7 @@ fn init_schema(conn: &Connection) -> AppResult<()> {
         CREATE INDEX IF NOT EXISTS idx_import_players_import_player ON import_players(import_id, steamid64);
         CREATE INDEX IF NOT EXISTS idx_import_players_import_demo ON import_players(import_id, demo_filename);
         CREATE INDEX IF NOT EXISTS idx_demo_metadata_tournament ON demo_metadata(import_id, tournament, demo_date);
+        CREATE INDEX IF NOT EXISTS idx_demo_metadata_tournament_demo ON demo_metadata(import_id, tournament, demo_filename);
         CREATE INDEX IF NOT EXISTS idx_spawn_side ON spawn_points(map, side);
         CREATE INDEX IF NOT EXISTS idx_grenade_view_history_recent ON grenade_view_history(viewed_at DESC);
         CREATE INDEX IF NOT EXISTS idx_grenade_screenshots_grenade ON grenade_screenshots(grenade_id);
@@ -998,12 +999,19 @@ fn init_schema(conn: &Connection) -> AppResult<()> {
              ON grenades(import_id, map, thrower_steamid64)",
             [],
         )?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_grenades_import_map_thrower
+             ON grenades(import_id, map, thrower_team, thrower_steamid64, thrower)",
+            [],
+        )?;
     }
     conn.execute_batch(
         "CREATE INDEX IF NOT EXISTS idx_grenade_usage_events_grenade_team
              ON grenade_usage_events(grenade_id, thrower_team);
          CREATE INDEX IF NOT EXISTS idx_grenade_usage_events_grenade_player
-             ON grenade_usage_events(grenade_id, thrower_steamid64);",
+             ON grenade_usage_events(grenade_id, thrower_steamid64);
+         CREATE INDEX IF NOT EXISTS idx_grenade_usage_events_grenade_thrower
+             ON grenade_usage_events(grenade_id, thrower_team, thrower_steamid64, thrower);",
     )?;
     conn.execute_batch("PRAGMA optimize")?;
     Ok(())
@@ -2683,11 +2691,12 @@ fn import_players_from_conn(
             AND (g.thrower_steamid64 IS NOT NULL OR g.thrower IS NOT NULL)
           UNION
           SELECT DISTINCT COALESCE(ue.thrower_steamid64, ''), COALESCE(ue.thrower, ''), COALESCE(ue.thrower_team, ''), COALESCE(g.side, '')
-          FROM demo_metadata dm
-          JOIN grenade_usage_events ue INDEXED BY idx_grenade_usage_events_import_demo
-            ON ue.import_id=dm.import_id AND ue.demo_filename=dm.demo_filename
-          JOIN grenades g ON g.id=ue.grenade_id
-          WHERE dm.import_id=?1 AND dm.tournament=?4 AND g.map=?2
+          FROM grenades g INDEXED BY idx_grenades_filter
+          JOIN grenade_usage_events ue INDEXED BY idx_grenade_usage_events_grenade
+            ON ue.grenade_id=g.id
+          JOIN demo_metadata dm
+            ON dm.import_id=ue.import_id AND dm.demo_filename=ue.demo_filename
+          WHERE g.import_id=?1 AND g.map=?2 AND dm.tournament=?4
             AND (?3 IS NULL OR ue.thrower_team=?3)
             AND (ue.thrower_steamid64 IS NOT NULL OR ue.thrower IS NOT NULL)
             "

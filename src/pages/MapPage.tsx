@@ -119,6 +119,9 @@ export default function MapPage({ activeImportId }: MapPageProps) {
   const [tournaments, setTournaments] = useState<ImportTournamentOption[]>([]);
   const [playersLoading, setPlayersLoading] = useState(false);
   const [tournamentsLoading, setTournamentsLoading] = useState(false);
+  const allPlayersCacheRef = useRef(
+    new globalThis.Map<string, ImportPlayerOption[]>(),
+  );
   const [mapSelectorOpen, setMapSelectorOpen] = useState(false);
   const [spawns, setSpawns] = useState<SpawnPoint[]>([]);
   const [selectedCluster, setSelectedCluster] = useState<LandingCluster | null>(
@@ -208,12 +211,24 @@ export default function MapPage({ activeImportId }: MapPageProps) {
 
   useEffect(() => {
     let cancelled = false;
+    const cacheKey = `${activeImportId ?? 'active'}:${decodedMap}`;
+    const cachedPlayers = allPlayersCacheRef.current.get(cacheKey);
+    if (!filters.tournament && cachedPlayers) {
+      setPlayers(cachedPlayers);
+      setPlayersLoading(false);
+      return () => {
+        cancelled = true;
+      };
+    }
     setPlayersLoading(true);
-    setPlayers([]);
+    if (!cachedPlayers) setPlayers([]);
     getImportPlayers(undefined, decodedMap, filters.tournament)
       .then((nextPlayers) => {
-        if (!cancelled)
-          setPlayers(Array.isArray(nextPlayers) ? nextPlayers : []);
+        if (cancelled) return;
+        const normalizedPlayers = Array.isArray(nextPlayers) ? nextPlayers : [];
+        setPlayers(normalizedPlayers);
+        if (!filters.tournament)
+          allPlayersCacheRef.current.set(cacheKey, normalizedPlayers);
       })
       .catch((error) => {
         console.error('Unable to load player filter options', error);
