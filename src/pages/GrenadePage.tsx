@@ -60,66 +60,96 @@ const detailTypeRgb: Record<string, string> = {
 
 function UsageHistoryChart({
   history,
+  trackedThrows,
   peak,
 }: {
   history: Array<{ label: string; count: number }>;
+  trackedThrows: number;
   peak: number;
 }) {
   const { tr, count } = useI18n();
-  const visibleHistory = history;
-  const max = Math.max(
-    1,
-    peak,
-    ...visibleHistory.map((point) => Math.max(0, point.count)),
-  );
-
-  if (!visibleHistory.length) {
-    return (
-      <div className="usage-history-empty">
-        {tr(
-          'No usage history in this snapshot.',
-          'В этом снимке нет истории использования.',
-        )}
-      </div>
-    );
-  }
+  const max = Math.max(1, ...history.map((point) => Math.max(0, point.count)));
 
   return (
     <div
       className="usage-history-chart"
+      role="group"
       aria-label={tr('Usage history by demo', 'История использования по демо')}
       style={
         {
-          '--usage-columns': visibleHistory.length,
+          '--usage-columns': Math.max(1, history.length),
+          '--usage-chart-width': `max(100%, ${Math.max(history.length * 24, 220)}px)`,
         } as React.CSSProperties
       }
     >
-      <div className="usage-history-bars">
-        {visibleHistory.map((point) => {
-          const height = Math.max(8, (Math.max(0, point.count) / max) * 100);
-          const label =
-            point.label === 'Unknown demo'
-              ? tr('Unknown demo', 'Неизвестное демо')
-              : point.label;
-          return (
-            <span
-              key={`${point.label}-${point.count}`}
-              className="usage-history-bar"
-              role="img"
-              tabIndex={0}
-              style={{ '--usage-height': `${height}%` } as React.CSSProperties}
-              aria-label={`${label}: ${count(point.count, 'throw', 'throws', 'бросок', 'броска', 'бросков')}`}
-              data-tip={`${label} · ${count(point.count, 'throw', 'throws', 'бросок', 'броска', 'бросков')}`}
-            >
-              <span />
-            </span>
-          );
-        })}
-      </div>
-      <div className="usage-history-axis">
-        <span>{tr('Earlier', 'Раньше')}</span>
-        <span>{tr('Latest', 'Последние')}</span>
-      </div>
+      <dl className="usage-history-stats">
+        <div>
+          <dt>{tr('Demos', 'Демо')}</dt>
+          <dd>{formatNumber(history.length)}</dd>
+        </div>
+        <div>
+          <dt>{tr('Throws', 'Броски')}</dt>
+          <dd>{formatNumber(trackedThrows)}</dd>
+        </div>
+        <div>
+          <dt>{tr('Peak', 'Пик')}</dt>
+          <dd>{formatNumber(peak)}</dd>
+        </div>
+      </dl>
+      {history.length ? (
+        <div className="usage-history-scroll">
+          <ol className="usage-history-track">
+            {history.map((point, index) => {
+              const ratio = Math.max(0, point.count) / max;
+              const label =
+                point.label === 'Unknown demo'
+                  ? tr('Unknown demo', 'Неизвестное демо')
+                  : point.label;
+              const throwLabel = count(
+                point.count,
+                'throw',
+                'throws',
+                'бросок',
+                'броска',
+                'бросков',
+              );
+              return (
+                <li
+                  className="usage-history-point-slot"
+                  key={`${point.label}-${index}`}
+                >
+                  <button
+                    type="button"
+                    className="usage-history-point"
+                    style={
+                      {
+                        '--usage-y': `${78 - ratio * 58}%`,
+                        '--usage-size': `${8 + ratio * 7}px`,
+                        '--usage-opacity': `${0.55 + ratio * 0.45}`,
+                      } as React.CSSProperties
+                    }
+                    aria-label={`${label}: ${throwLabel}`}
+                    data-tip={`${label} · ${throwLabel}`}
+                  >
+                    <span aria-hidden="true" />
+                  </button>
+                </li>
+              );
+            })}
+          </ol>
+          <div className="usage-history-axis">
+            <span>{tr('Earlier', 'Раньше')}</span>
+            <span>{tr('Latest', 'Последние')}</span>
+          </div>
+        </div>
+      ) : (
+        <div className="usage-history-empty">
+          {tr(
+            'No usage history in this snapshot.',
+            'В этом снимке нет истории использования.',
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -421,16 +451,6 @@ export default function GrenadePage() {
                 <BarChart3 size={14} aria-hidden="true" />
                 {tr('Usage snapshot', 'Снимок использования')}
               </span>
-              <strong>
-                {count(
-                  grenade.usage_stats.tracked_throws,
-                  'tracked throw',
-                  'tracked throws',
-                  'зафиксированный бросок',
-                  'зафиксированных броска',
-                  'зафиксированных бросков',
-                )}
-              </strong>
             </div>
           </div>
           <div className="usage-leader-grid">
@@ -488,22 +508,9 @@ export default function GrenadePage() {
                 : tr('Tick unavailable', 'Тик недоступен')}
             </small>
           </div>
-          <div className="usage-history-heading">
-            <span>{tr('Usage history', 'История использования')}</span>
-            <small>
-              {tr('Peak', 'Пик')} {formatNumber(grenade.usage_stats.peak)} ·{' '}
-              {count(
-                grenade.usage_stats.history.length,
-                'demo',
-                'demos',
-                'демо',
-                'демо',
-                'демо',
-              )}
-            </small>
-          </div>
           <UsageHistoryChart
             history={grenade.usage_stats.history}
+            trackedThrows={grenade.usage_stats.tracked_throws}
             peak={grenade.usage_stats.peak}
           />
         </div>
