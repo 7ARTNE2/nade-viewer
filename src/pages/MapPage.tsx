@@ -1203,67 +1203,62 @@ export default function MapPage({ activeImportId }: MapPageProps) {
               aria-label={tr('Search grenades', 'Найти гранату')}
             />
           </label>
-          <div className="tournament-filter-section">
+          <div className="match-filter-section">
             <div className="filter-section-heading">
-              <Trophy size={13} aria-hidden="true" />
-              <span>{tr('Tournament filter', 'Фильтр турнира')}</span>
+              <span>{tr('Filters', 'Фильтры')}</span>
             </div>
-            <FilterSelect
-              label={tr('Event', 'Турнир')}
-              value={filters.tournament ?? ''}
-              options={tournamentFilterOptions}
-              icon={<Trophy size={13} aria-hidden="true" />}
-              searchPlaceholder={tr('Search tournaments', 'Найти турнир')}
-              emptyLabel={tr('No tournaments found', 'Турниры не найдены')}
-              loading={tournamentsLoading}
-              loadingLabel={tr('Loading events', 'Загрузка турниров')}
-              onChange={(value) =>
-                setFilters((state) => ({
-                  ...state,
-                  tournament: value,
-                  thrower_team: '',
-                  thrower_steamid64: '',
-                }))
-              }
-            />
-          </div>
-          <div className="thrower-filter-section">
-            <div className="filter-section-heading">
-              <Users size={13} aria-hidden="true" />
-              <span>{tr('Thrower filters', 'Фильтры бросающего')}</span>
-            </div>
-            <div className="filter-select-grid">
+            <div className="match-filter-flow">
               <FilterSelect
-                label={tr('Team', 'Команда')}
-                value={filters.thrower_team ?? ''}
-                options={teamFilterOptions}
-                icon={<Users size={13} aria-hidden="true" />}
-                searchPlaceholder={tr('Search teams', 'Найти команду')}
-                emptyLabel={tr('No teams found', 'Команды не найдены')}
-                disabled={playersLoading}
+                label={tr('Tournament', 'Турнир')}
+                value={filters.tournament ?? ''}
+                options={tournamentFilterOptions}
+                icon={null}
+                searchPlaceholder={tr('Search tournaments', 'Найти турнир')}
+                emptyLabel={tr('No tournaments found', 'Турниры не найдены')}
+                loading={tournamentsLoading}
+                loadingLabel={tr('Loading events', 'Загрузка турниров')}
                 onChange={(value) =>
                   setFilters((state) => ({
                     ...state,
-                    thrower_team: value,
+                    tournament: value,
+                    thrower_team: '',
                     thrower_steamid64: '',
                   }))
                 }
               />
-              <FilterSelect
-                label={tr('Player', 'Игрок')}
-                value={filters.thrower_steamid64 ?? ''}
-                options={playerFilterOptions}
-                icon={<UserRound size={13} aria-hidden="true" />}
-                searchPlaceholder={tr('Search players', 'Найти игрока')}
-                emptyLabel={tr('No players found', 'Игроки не найдены')}
-                disabled={playersLoading}
-                onChange={(value) =>
-                  setFilters((state) => ({
-                    ...state,
-                    thrower_steamid64: value,
-                  }))
-                }
-              />
+              <div className="filter-select-grid">
+                <FilterSelect
+                  label={tr('Team', 'Команда')}
+                  value={filters.thrower_team ?? ''}
+                  options={teamFilterOptions}
+                  icon={null}
+                  searchPlaceholder={tr('Search teams', 'Найти команду')}
+                  emptyLabel={tr('No teams found', 'Команды не найдены')}
+                  disabled={playersLoading}
+                  onChange={(value) =>
+                    setFilters((state) => ({
+                      ...state,
+                      thrower_team: value,
+                      thrower_steamid64: '',
+                    }))
+                  }
+                />
+                <FilterSelect
+                  label={tr('Player', 'Игрок')}
+                  value={filters.thrower_steamid64 ?? ''}
+                  options={playerFilterOptions}
+                  icon={null}
+                  searchPlaceholder={tr('Search players', 'Найти игрока')}
+                  emptyLabel={tr('No players found', 'Игроки не найдены')}
+                  disabled={playersLoading}
+                  onChange={(value) =>
+                    setFilters((state) => ({
+                      ...state,
+                      thrower_steamid64: value,
+                    }))
+                  }
+                />
+              </div>
             </div>
           </div>
         </div>
