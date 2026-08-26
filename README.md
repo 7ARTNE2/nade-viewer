@@ -196,7 +196,7 @@ The manifest format is shown in
 {
   "version": "2026.08.26.1",
   "url": "https://github.com/7ARTNE2/nade-viewer/releases/download/data-2026.08.26.1/library.msgpack",
-  "size": 629145600,
+  "size": 709942607,
   "sha256": "64 lowercase or uppercase hexadecimal characters"
 }
 ```
