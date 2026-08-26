@@ -675,7 +675,6 @@
 }
 
 .usage-history-track {
-  position: relative;
   display: grid;
   height: 96px;
   min-width: max(100%, var(--usage-chart-width));
@@ -741,6 +740,22 @@
   transform: scale(1.05);
 }
 
+.usage-history-point[data-latest='true'] span {
+  width: calc(var(--usage-size) + 3px);
+  height: calc(var(--usage-size) + 3px);
+  border-color: var(--acid);
+  box-shadow:
+    0 0 0 3px rgba(var(--acid-rgb), 0.14),
+    0 0 14px rgba(var(--acid-rgb), 0.28);
+}
+
+.usage-history-point[data-latest='true']:hover span,
+.usage-history-point[data-latest='true']:focus-visible span {
+  box-shadow:
+    0 0 0 4px rgba(var(--acid-rgb), 0.2),
+    0 0 16px rgba(var(--acid-rgb), 0.34);
+}
+
 .usage-history-axis {
   display: flex;
   min-width: max(100%, var(--usage-chart-width));
@@ -756,7 +771,22 @@
 }
 
 .usage-history-axis span {
+  display: grid;
+  gap: 3px;
   white-space: nowrap;
+}
+
+.usage-history-axis span:last-child {
+  justify-items: end;
+  text-align: right;
+}
+
+.usage-history-axis small {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
 }
 
 .usage-history-empty {

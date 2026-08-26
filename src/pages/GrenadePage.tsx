@@ -58,6 +58,11 @@ const detailTypeRgb: Record<string, string> = {
   HE: '52, 211, 153',
 };
 
+function historyDate(label?: string) {
+  const match = label?.match(/\d{4}-\d{2}-\d{2}/);
+  return match?.[0] ?? null;
+}
+
 function UsageHistoryChart({
   history,
   trackedThrows,
@@ -69,6 +74,12 @@ function UsageHistoryChart({
 }) {
   const { tr, count } = useI18n();
   const max = Math.max(1, ...history.map((point) => Math.max(0, point.count)));
+  const datedHistory = history.filter((point) => historyDate(point.label));
+  const earlierDate = historyDate(datedHistory[0]?.label);
+  const latestDate = historyDate(datedHistory[datedHistory.length - 1]?.label);
+  const latestIndex = datedHistory.length
+    ? history.indexOf(datedHistory[datedHistory.length - 1])
+    : history.length - 1;
 
   return (
     <div
@@ -121,6 +132,7 @@ function UsageHistoryChart({
                   <button
                     type="button"
                     className="usage-history-point"
+                    data-latest={index === latestIndex ? 'true' : undefined}
                     style={
                       {
                         '--usage-y': `${78 - ratio * 58}%`,
@@ -138,8 +150,14 @@ function UsageHistoryChart({
             })}
           </ol>
           <div className="usage-history-axis">
-            <span>{tr('Earlier', 'Раньше')}</span>
-            <span>{tr('Latest', 'Последние')}</span>
+            <span>
+              {tr('Earlier', 'Раньше')}
+              {earlierDate ? <small>{earlierDate}</small> : null}
+            </span>
+            <span>
+              {tr('Latest', 'Последние')}
+              {latestDate ? <small>{latestDate}</small> : null}
+            </span>
           </div>
         </div>
       ) : (

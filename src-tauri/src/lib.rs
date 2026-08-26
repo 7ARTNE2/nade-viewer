@@ -2214,9 +2214,17 @@ fn usage_stats_from_conn(
     };
     let mut history = demo_counts.into_iter().collect::<Vec<_>>();
     history.sort_by(|left, right| {
-        demo_date_from_filename(&left.0)
-            .cmp(&demo_date_from_filename(&right.0))
-            .then_with(|| left.0.cmp(&right.0))
+        match (
+            demo_date_from_filename(&left.0),
+            demo_date_from_filename(&right.0),
+        ) {
+            (Some(left_date), Some(right_date)) => left_date
+                .cmp(&right_date)
+                .then_with(|| left.0.cmp(&right.0)),
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+            (None, None) => left.0.cmp(&right.0),
+        }
     });
     Ok(GrenadeUsageStats {
         tracked_throws,
@@ -4593,8 +4601,9 @@ mod tests {
         assert_eq!(stats.most_used_team.as_deref(), Some("Alpha"));
         assert_eq!(stats.last_demo.as_deref(), Some("Cup_match_2024-02-03.dem"));
         assert_eq!(stats.last_tick, Some(30));
-        assert_eq!(stats.history[0].label, "Unknown demo");
-        assert_eq!(stats.history[1].label, "Cup_match_2024-01-03.dem");
+        assert_eq!(stats.history[0].label, "Cup_match_2024-01-03.dem");
+        assert_eq!(stats.history[1].label, "Cup_match_2024-02-03.dem");
+        assert_eq!(stats.history[2].label, "Unknown demo");
     }
 
     #[test]
