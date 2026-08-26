@@ -631,12 +631,17 @@
 .usage-history-chart {
   min-width: 0;
   margin-top: 9px;
+  overflow-x: auto;
+  padding: 3px 2px 5px;
+  scrollbar-color: var(--line) transparent;
+  scrollbar-width: thin;
 }
 
 .usage-history-bars {
   display: grid;
   height: 88px;
-  grid-template-columns: repeat(var(--usage-columns), minmax(5px, 1fr));
+  min-width: max(100%, calc(var(--usage-columns) * 25px));
+  grid-template-columns: repeat(var(--usage-columns), minmax(21px, 1fr));
   align-items: end;
   gap: 4px;
   padding: 9px 2px 0;
@@ -687,6 +692,7 @@
 
 .usage-history-axis {
   display: flex;
+  min-width: max(100%, calc(var(--usage-columns) * 25px));
   justify-content: space-between;
   gap: 10px;
   margin-top: 5px;

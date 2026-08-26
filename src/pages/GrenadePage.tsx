@@ -66,7 +66,7 @@ function UsageHistoryChart({
   peak: number;
 }) {
   const { tr, count } = useI18n();
-  const visibleHistory = history.slice(-18);
+  const visibleHistory = history;
   const max = Math.max(
     1,
     peak,
@@ -88,15 +88,13 @@ function UsageHistoryChart({
     <div
       className="usage-history-chart"
       aria-label={tr('Usage history by demo', 'История использования по демо')}
+      style={
+        {
+          '--usage-columns': visibleHistory.length,
+        } as React.CSSProperties
+      }
     >
-      <div
-        className="usage-history-bars"
-        style={
-          {
-            '--usage-columns': visibleHistory.length,
-          } as React.CSSProperties
-        }
-      >
+      <div className="usage-history-bars">
         {visibleHistory.map((point) => {
           const height = Math.max(8, (Math.max(0, point.count) / max) * 100);
           const label =
