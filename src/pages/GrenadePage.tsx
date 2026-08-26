@@ -67,10 +67,12 @@ function UsageHistoryChart({
   history,
   trackedThrows,
   peak,
+  currentDemo,
 }: {
   history: Array<{ label: string; count: number }>;
   trackedThrows: number;
   peak: number;
+  currentDemo?: string | null;
 }) {
   const { tr, count } = useI18n();
   const max = Math.max(1, ...history.map((point) => Math.max(0, point.count)));
@@ -80,6 +82,14 @@ function UsageHistoryChart({
   const latestIndex = datedHistory.length
     ? history.indexOf(datedHistory[datedHistory.length - 1])
     : history.length - 1;
+  const historyLinePoints = history
+    .map((point, index) => {
+      const ratio = Math.max(0, point.count) / max;
+      const x = ((index + 0.5) / Math.max(1, history.length)) * 100;
+      const y = 78 - ratio * 58;
+      return `${x},${y}`;
+    })
+    .join(' ');
 
   return (
     <div
@@ -93,6 +103,9 @@ function UsageHistoryChart({
         } as React.CSSProperties
       }
     >
+      <div className="usage-history-heading">
+        <span>{tr('Usage history', 'История использования')}</span>
+      </div>
       <dl className="usage-history-stats">
         <div>
           <dt>{tr('Demos', 'Демо')}</dt>
@@ -110,6 +123,14 @@ function UsageHistoryChart({
       {history.length ? (
         <div className="usage-history-scroll">
           <ol className="usage-history-track">
+            <svg
+              className="usage-history-connector"
+              viewBox="0 0 100 100"
+              preserveAspectRatio="none"
+              aria-hidden="true"
+            >
+              <polyline points={historyLinePoints} />
+            </svg>
             {history.map((point, index) => {
               const ratio = Math.max(0, point.count) / max;
               const label =
@@ -124,6 +145,10 @@ function UsageHistoryChart({
                 'броска',
                 'бросков',
               );
+              const isCurrent = Boolean(
+                currentDemo && point.label === currentDemo,
+              );
+              const currentLabel = tr('Current demo', 'Текущая демка');
               return (
                 <li
                   className="usage-history-point-slot"
@@ -133,6 +158,7 @@ function UsageHistoryChart({
                     type="button"
                     className="usage-history-point"
                     data-latest={index === latestIndex ? 'true' : undefined}
+                    data-current={isCurrent ? 'true' : undefined}
                     style={
                       {
                         '--usage-y': `${78 - ratio * 58}%`,
@@ -140,8 +166,8 @@ function UsageHistoryChart({
                         '--usage-opacity': `${0.55 + ratio * 0.45}`,
                       } as React.CSSProperties
                     }
-                    aria-label={`${label}: ${throwLabel}`}
-                    data-tip={`${label} · ${throwLabel}`}
+                    aria-label={`${label}: ${throwLabel}${isCurrent ? `. ${currentLabel}` : ''}`}
+                    data-tip={`${label} · ${throwLabel}${isCurrent ? ` · ${currentLabel}` : ''}`}
                   >
                     <span aria-hidden="true" />
                   </button>
@@ -530,6 +556,7 @@ export default function GrenadePage() {
             history={grenade.usage_stats.history}
             trackedThrows={grenade.usage_stats.tracked_throws}
             peak={grenade.usage_stats.peak}
+            currentDemo={grenade.demo_filename}
           />
         </div>
 

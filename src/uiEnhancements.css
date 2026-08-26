@@ -620,6 +620,17 @@
   padding: 0;
 }
 
+.usage-history-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0;
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 800;
+}
+
 .usage-history-stats > div {
   display: grid;
   min-width: 0;
@@ -675,6 +686,7 @@
 }
 
 .usage-history-track {
+  position: relative;
   display: grid;
   height: 96px;
   min-width: max(100%, var(--usage-chart-width));
@@ -684,6 +696,26 @@
   margin: 0;
   padding: 0 2px;
   list-style: none;
+}
+
+.usage-history-connector {
+  position: absolute;
+  z-index: 0;
+  inset: 0 2px;
+  width: calc(100% - 4px);
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.usage-history-connector polyline {
+  fill: none;
+  stroke: var(--blue);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-opacity: 0.7;
+  stroke-width: 1.2;
+  vector-effect: non-scaling-stroke;
 }
 
 .usage-history-point-slot {
@@ -754,6 +786,21 @@
   box-shadow:
     0 0 0 4px rgba(var(--acid-rgb), 0.2),
     0 0 16px rgba(var(--acid-rgb), 0.34);
+}
+
+.usage-history-point[data-current='true'] span {
+  border-color: var(--red);
+  background: var(--red);
+  box-shadow:
+    0 0 0 3px rgba(var(--red-rgb), 0.16),
+    0 0 14px rgba(var(--red-rgb), 0.35);
+}
+
+.usage-history-point[data-current='true']:hover span,
+.usage-history-point[data-current='true']:focus-visible span {
+  box-shadow:
+    0 0 0 4px rgba(var(--red-rgb), 0.22),
+    0 0 17px rgba(var(--red-rgb), 0.42);
 }
 
 .usage-history-axis {
