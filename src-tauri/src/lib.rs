@@ -62,6 +62,7 @@ type AppResult<T> = Result<T, AppError>;
 struct AppState {
     db_path: PathBuf,
     resource_dir: PathBuf,
+    radars: Arc<HashMap<String, RadarParams>>,
     import_status: Arc<Mutex<ImportStatus>>,
 }
 
@@ -682,9 +683,11 @@ fn init_state(app: &AppHandle) -> Result<AppState, Box<dyn std::error::Error>> {
     let resource_dir = resolve_resource_dir(app)?;
     allow_asset_directories(app, &resource_dir, &app_dir)?;
     let db_path = app_dir.join("nadeviewer.sqlite");
+    let radars = Arc::new(load_radars(&resource_dir)?);
     let state = AppState {
         db_path,
         resource_dir,
+        radars,
         import_status: Arc::new(Mutex::new(ImportStatus::default())),
     };
     let conn = open_conn(&state)?;
@@ -975,6 +978,32 @@ fn init_schema(conn: &Connection) -> AppResult<()> {
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_grenades_core_usage ON grenades(import_id, map, is_core, usage_count DESC, id)",
         [],
+    )?;
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_grenades_import_map_team
+         ON grenades(import_id, map, thrower_team)",
+        [],
+    )?;
+    let has_thrower_steamid64 = {
+        let mut stmt = conn.prepare("PRAGMA table_info(grenades)")?;
+        let columns = stmt.query_map([], |row| row.get::<_, String>(1))?;
+        columns
+            .collect::<Result<Vec<_>, _>>()?
+            .iter()
+            .any(|name| name == "thrower_steamid64")
+    };
+    if has_thrower_steamid64 {
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_grenades_import_map_player
+             ON grenades(import_id, map, thrower_steamid64)",
+            [],
+        )?;
+    }
+    conn.execute_batch(
+        "CREATE INDEX IF NOT EXISTS idx_grenade_usage_events_grenade_team
+             ON grenade_usage_events(grenade_id, thrower_team);
+         CREATE INDEX IF NOT EXISTS idx_grenade_usage_events_grenade_player
+             ON grenade_usage_events(grenade_id, thrower_steamid64);",
     )?;
     conn.execute_batch("PRAGMA optimize")?;
     Ok(())
@@ -2435,7 +2464,7 @@ fn import_index_blocking(
         "grenade_index"
     };
 
-    let radars = load_radars(&state.resource_dir)?;
+    let radars = &state.radars;
     let mut conn = open_conn(state)?;
     init_schema(&conn)?;
     seed_assets(&conn, &state.resource_dir)?;
@@ -3036,7 +3065,7 @@ fn get_import_summary_by_id(
 fn get_maps(state: tauri::State<'_, AppState>) -> AppResult<Vec<MapSummary>> {
     let conn = open_conn(&state)?;
     let active = active_import_id(&conn)?;
-    let radars = load_radars(&state.resource_dir)?;
+    let radars = &state.radars;
     let mut stmt = conn.prepare(
         "SELECT a.name, a.label, a.preview_image_path, a.map_image_path, a.lower_map_image_path,
          COALESCE(g.count, 0) AS grenade_count
@@ -3051,7 +3080,7 @@ fn get_maps(state: tauri::State<'_, AppState>) -> AppResult<Vec<MapSummary>> {
         |row| {
             let name: String = row.get(0)?;
             let lower_map_image_path: Option<String> = row.get(4)?;
-            let radar_split_z = radar_split_for_map(&radars, &name);
+            let radar_split_z = radar_split_for_map(radars, &name);
             let radar_scale = radars.get(&map_name_to_key(&name)).map(|radar| radar.scale);
             let has_lower_radar = lower_map_image_path.is_some() && radar_split_z.is_some();
             Ok(MapSummary {
@@ -3072,11 +3101,10 @@ fn get_maps(state: tauri::State<'_, AppState>) -> AppResult<Vec<MapSummary>> {
 
 fn map_summary(
     conn: &Connection,
-    resource_dir: &Path,
+    radars: &HashMap<String, RadarParams>,
     import_id: i64,
     map: &str,
 ) -> AppResult<MapSummary> {
-    let radars = load_radars(resource_dir)?;
     let mut summary = conn.query_row(
         "SELECT a.name, a.label, a.preview_image_path, a.map_image_path, a.lower_map_image_path,
          (SELECT COUNT(*) FROM grenades g WHERE g.import_id=?1 AND g.map=a.name AND g.usage_count >= ?3)
@@ -3107,7 +3135,7 @@ fn map_summary(
         radar_split_z: None,
         radar_scale: None,
     });
-    summary.radar_split_z = radar_split_for_map(&radars, &summary.name);
+    summary.radar_split_z = radar_split_for_map(radars, &summary.name);
     summary.radar_scale = radars
         .get(&map_name_to_key(&summary.name))
         .map(|radar| radar.scale);
@@ -3182,7 +3210,7 @@ fn map_overview_by(
     let conn = open_conn(&state)?;
     let import_id = active_import_id(&conn)?
         .ok_or_else(|| AppError::Message("No active import".to_string()))?;
-    let summary = map_summary(&conn, &state.resource_dir, import_id, &map)?;
+    let summary = map_summary(&conn, &state.radars, import_id, &map)?;
     let mut args: Vec<Box<dyn rusqlite::ToSql>> = vec![Box::new(import_id), Box::new(map.clone())];
     let visibility = visibility_sql(&conn, &mut args, "g")?;
     let filter = filter_sql(&filters, &mut args, "g");
@@ -3321,7 +3349,7 @@ fn cluster_grenades_by(
     let conn = open_conn(&state)?;
     let import_id = active_import_id(&conn)?
         .ok_or_else(|| AppError::Message("No active import".to_string()))?;
-    let summary = map_summary(&conn, &state.resource_dir, import_id, &map)?;
+    let summary = map_summary(&conn, &state.radars, import_id, &map)?;
     let (cx, cy) = parse_cluster_id(&cluster_id)?;
     let mut args: Vec<Box<dyn rusqlite::ToSql>> = vec![
         Box::new(import_id),
@@ -3376,7 +3404,7 @@ fn parse_cluster_id(id: &str) -> AppResult<(i64, i64)> {
 fn get_grenade(id: i64, state: tauri::State<'_, AppState>) -> AppResult<GrenadeDetail> {
     let conn = open_conn(&state)?;
     active_grenade_import_id(&conn, id)?;
-    let radars = load_radars(&state.resource_dir)?;
+    let radars = &state.radars;
     let mut stmt = conn.prepare(&format!(
         "SELECT {GRENADE_PREVIEW_COLUMNS}, g.usage_throwers_json, g.demo_filename,
                 g.throw_tick, g.lineup_tick, g.tickrate, g.round_time_seconds,
@@ -3395,7 +3423,7 @@ fn get_grenade(id: i64, state: tauri::State<'_, AppState>) -> AppResult<GrenadeD
     let mut detail = stmt.query_row(params![id], |row| {
         let mut preview = grenade_preview_from_row(row)?;
         let lower_map_image_path: Option<String> = row.get("lower_map_image_path")?;
-        let split_z = radar_split_for_map(&radars, &preview.map);
+        let split_z = radar_split_for_map(radars, &preview.map);
         let has_lower = lower_map_image_path.is_some() && split_z.is_some();
         preview.explode_radar_level =
             classify_radar_level(preview.explode_pos_z, split_z, has_lower);
@@ -3582,7 +3610,7 @@ fn import_core_nades_snapshot_blocking(
         "Preparing Core Nades snapshot",
     );
 
-    let radars = load_radars(&state.resource_dir)?;
+    let radars = &state.radars;
     let mut conn = open_conn(state)?;
     init_schema(&conn)?;
     seed_assets(&conn, &state.resource_dir)?;
@@ -3761,7 +3789,7 @@ fn get_similar_grenades(
     let Some((import_id, map, grenade_type, x, y)) = base else {
         return Ok(Vec::new());
     };
-    let summary = map_summary(&conn, &state.resource_dir, import_id, &map)?;
+    let summary = map_summary(&conn, &state.radars, import_id, &map)?;
     let split_literal = summary
         .radar_split_z
         .map(|v| v.to_string())
@@ -4006,6 +4034,7 @@ mod tests {
             AppState {
                 db_path: root.join("test.sqlite"),
                 resource_dir: root.join("resources"),
+                radars: Arc::new(HashMap::new()),
                 import_status: Arc::new(Mutex::new(ImportStatus::default())),
             },
             root,
