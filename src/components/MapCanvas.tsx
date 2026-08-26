@@ -157,7 +157,13 @@ export default function MapCanvas({
   } | null>(null);
   const draggedRef = useRef(false);
   const stageSizeRef = useRef({ width: 0, height: 0 });
+  const fittedClusterRef = useRef<string | null>(null);
+  const viewAnimationTimerRef = useRef<number | null>(null);
+  const viewAnimationFrameRef = useRef<number | null>(null);
+  const [stageSize, setStageSize] = useState({ width: 0, height: 0 });
   const [view, setView] = useState({ s: 1, tx: 0, ty: 0 });
+  const [viewAnimating, setViewAnimating] = useState(false);
+  const [viewAnimationDuration, setViewAnimationDuration] = useState(480);
   const [copied, setCopied] = useState<number | null>(null);
   const [copiedGrenadeId, setCopiedGrenadeId] = useState<number | null>(null);
   const [activeGroupId, setActiveGroupId] = useState<string | null>(null);
@@ -175,6 +181,15 @@ export default function MapCanvas({
         width: viewport.clientWidth,
         height: viewport.clientHeight,
       };
+      setStageSize((current) => {
+        const next = {
+          width: viewport.clientWidth,
+          height: viewport.clientHeight,
+        };
+        return current.width === next.width && current.height === next.height
+          ? current
+          : next;
+      });
     };
     resize();
     const observer = new ResizeObserver(resize);
@@ -260,12 +275,49 @@ export default function MapCanvas({
       ty: clamp(ty, size.height - size.height * s, 0),
     };
   };
-  const resetView = () => setView({ s: 1, tx: 0, ty: 0 });
+  const stopViewAnimation = () => {
+    if (viewAnimationFrameRef.current !== null) {
+      window.cancelAnimationFrame(viewAnimationFrameRef.current);
+      viewAnimationFrameRef.current = null;
+    }
+    if (viewAnimationTimerRef.current !== null) {
+      window.clearTimeout(viewAnimationTimerRef.current);
+      viewAnimationTimerRef.current = null;
+    }
+    setViewAnimating(false);
+  };
+  const resetView = () => {
+    stopViewAnimation();
+    setView({ s: 1, tx: 0, ty: 0 });
+  };
+  const animateView = (next: { s: number; tx: number; ty: number }) => {
+    stopViewAnimation();
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      setView(next);
+      return;
+    }
+    const travel = Math.hypot(next.tx - view.tx, next.ty - view.ty);
+    const scaleTravel = Math.abs(Math.log(next.s / view.s));
+    const duration = clamp(720 + travel * 0.18 + scaleTravel * 150, 720, 1100);
+    setViewAnimationDuration(duration);
+    setViewAnimating(true);
+    viewAnimationFrameRef.current = window.requestAnimationFrame(() => {
+      viewAnimationFrameRef.current = window.requestAnimationFrame(() => {
+        viewAnimationFrameRef.current = null;
+        setView(next);
+        viewAnimationTimerRef.current = window.setTimeout(() => {
+          setViewAnimating(false);
+          viewAnimationTimerRef.current = null;
+        }, duration);
+      });
+    });
+  };
   const zoomAt = (
     factor: number,
     x = stageSizeRef.current.width / 2,
     y = stageSizeRef.current.height / 2,
-  ) =>
+  ) => {
+    stopViewAnimation();
     setView((current) => {
       const s = clamp(current.s * factor, 1, 6);
       const ratio = s / current.s;
@@ -275,6 +327,7 @@ export default function MapCanvas({
         y - (y - current.ty) * ratio,
       );
     });
+  };
   const copySpawn = async (spawn: SpawnPoint, index: number) => {
     try {
       await navigator.clipboard.writeText(spawn.command);
@@ -338,6 +391,7 @@ export default function MapCanvas({
       )
     )
       return;
+    stopViewAnimation();
     draggedRef.current = false;
     dragRef.current = {
       x: event.clientX,
@@ -364,8 +418,78 @@ export default function MapCanvas({
       );
   };
   const panBy = (x: number, y: number) => {
+    stopViewAnimation();
     setView((current) => clampView(current.s, current.tx + x, current.ty + y));
   };
+
+  useEffect(() => {
+    if (!selectedClusterId) {
+      if (fittedClusterRef.current !== null)
+        animateView({ s: 1, tx: 0, ty: 0 });
+      fittedClusterRef.current = null;
+      return;
+    }
+    if (
+      fittedClusterRef.current === selectedClusterId ||
+      !grenades.length ||
+      stageSize.width <= 0 ||
+      stageSize.height <= 0
+    )
+      return;
+
+    const points: [number, number][] = grenades
+      .map((grenade) => grenadePoint(grenade, grenadePointMode))
+      .filter((point): point is [number, number] => point !== null);
+    if (selectedCluster) points.push([selectedCluster.x, selectedCluster.y]);
+    if (!points.length) return;
+
+    const worldSize = Math.min(stageSize.width, stageSize.height);
+    const padding = (72 / worldSize) * 1024;
+    const xs = points.map(([x]) => x);
+    const ys = points.map(([, y]) => y);
+    const minX = Math.max(0, Math.min(...xs) - padding);
+    const maxX = Math.min(1024, Math.max(...xs) + padding);
+    const minY = Math.max(0, Math.min(...ys) - padding);
+    const maxY = Math.min(1024, Math.max(...ys) + padding);
+    const scale = clamp(
+      Math.min(1024 / (maxX - minX), 1024 / (maxY - minY)),
+      1,
+      6,
+    );
+    const worldOffsetX = (stageSize.width - worldSize) / 2;
+    const worldOffsetY = (stageSize.height - worldSize) / 2;
+    const centerX = (minX + maxX) / 2;
+    const centerY = (minY + maxY) / 2;
+
+    animateView(
+      clampView(
+        scale,
+        stageSize.width / 2 -
+          (worldOffsetX + (centerX / 1024) * worldSize) * scale,
+        stageSize.height / 2 -
+          (worldOffsetY + (centerY / 1024) * worldSize) * scale,
+      ),
+    );
+    fittedClusterRef.current = selectedClusterId;
+  }, [
+    grenades,
+    grenadePointMode,
+    selectedClusterId,
+    selectedCluster?.x,
+    selectedCluster?.y,
+    stageSize.height,
+    stageSize.width,
+  ]);
+
+  useEffect(
+    () => () => {
+      if (viewAnimationTimerRef.current !== null)
+        window.clearTimeout(viewAnimationTimerRef.current);
+      if (viewAnimationFrameRef.current !== null)
+        window.cancelAnimationFrame(viewAnimationFrameRef.current);
+    },
+    [],
+  );
   const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     if (event.target !== event.currentTarget) return;
     const size = stageSizeRef.current;
@@ -592,7 +716,7 @@ export default function MapCanvas({
       </details>
       <div
         ref={viewportRef}
-        className={`map-viewport ${view.s > 1 ? 'is-draggable' : ''}`}
+        className={`map-viewport ${view.s > 1 ? 'is-draggable' : ''} ${viewAnimating ? 'is-camera-moving' : ''}`}
         tabIndex={0}
         role="region"
         aria-label={tr(
@@ -607,11 +731,12 @@ export default function MapCanvas({
       >
         <div ref={stageRef} className="map-stage">
           <div
-            className="map-camera"
+            className={`map-camera ${viewAnimating ? 'is-animating' : ''}`}
             style={
               {
                 transform: `translate(${view.tx}px, ${view.ty}px) scale(${view.s})`,
                 '--marker-scale': 1 / view.s,
+                '--camera-transition-duration': `${viewAnimationDuration}ms`,
               } as CSSProperties
             }
           >

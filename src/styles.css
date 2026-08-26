@@ -58,6 +58,9 @@
 /* Keep the radar and every overlay in one browser-scaled coordinate space. */
 .map-stage{container-type:size}
 .map-camera{position:absolute;inset:0;display:grid;place-items:center;transform-origin:0 0}
+.map-camera.is-animating{will-change:transform;transition:transform var(--camera-transition-duration,820ms) cubic-bezier(.38,.04,.16,1)}
+.map-viewport::after{position:absolute;z-index:24;inset:0;box-shadow:inset 0 0 110px rgba(0,0,0,.28);content:"";opacity:0;pointer-events:none;transition:opacity 320ms ease}
+.map-viewport.is-camera-moving::after{opacity:1}
 .map-world{position:relative;inset:auto;width:min(100cqw,100cqh);height:min(100cqw,100cqh)}
 .map-image{inset:0}
 .trajectory-screen-layer,.absolute-layer{width:100%;height:100%}
