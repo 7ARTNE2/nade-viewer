@@ -1,12 +1,14 @@
 use chrono::{Duration, NaiveDate, Utc};
 use regex::Regex;
+use reqwest::blocking::Client;
 use rusqlite::{params, Connection, OptionalExtension};
-use serde::{Deserialize, Serialize};
+use serde::{de::IgnoredAny, Deserialize, Serialize};
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     env, fs,
-    io::{BufReader, Read},
+    io::{BufReader, Read, Write},
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
 };
@@ -16,6 +18,8 @@ use thiserror::Error;
 
 const WORLD: f64 = 1024.0;
 const SUPPORTED_IMPORT_VERSION: i64 = 1;
+const DEFAULT_LIBRARY_MANIFEST_URL: &str =
+    "https://github.com/7ARTNE2/nade-viewer/releases/download/library/library-manifest.json";
 const GRENADE_PREVIEW_COLUMNS: &str = "g.id, g.map, g.side, g.grenade_type, g.is_core,
     g.throw_keys, g.coordinates, g.thrower, g.thrower_steamid64, g.thrower_team, g.airtime, g.usage_count, g.round_time_seconds,
     g.start_map_x, g.start_map_y, g.explode_map_x, g.explode_map_y, g.explode_pos_z,
@@ -74,6 +78,37 @@ struct ImportStatus {
     total: u64,
     message: String,
     error: Option<String>,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+struct LibraryManifest {
+    version: String,
+    url: String,
+    size: u64,
+    sha256: String,
+}
+
+#[derive(Serialize)]
+struct LibraryUpdate {
+    manifest: LibraryManifest,
+    current_version: Option<String>,
+}
+
+#[derive(Deserialize, Default)]
+struct ImportEnvelopeShape {
+    version: Option<Value>,
+    #[serde(default, deserialize_with = "deserialize_present")]
+    canonical_grenades: bool,
+    #[serde(default, deserialize_with = "deserialize_present")]
+    grenades: bool,
+}
+
+fn deserialize_present<'de, D>(deserializer: D) -> Result<bool, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    IgnoredAny::deserialize(deserializer)?;
+    Ok(true)
 }
 
 impl Default for ImportStatus {
@@ -646,6 +681,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             select_import_file,
             import_json,
+            check_library_update,
+            import_library_update,
             get_import_status,
             list_imports,
             get_import_teams,
@@ -1093,6 +1130,284 @@ fn parse_import_bytes(bytes: &[u8], messagepack: bool) -> AppResult<TypedImportF
         message: format!("Invalid MessagePack: {error}"),
     })?;
     parse_import_value(value)
+}
+
+fn fetch_library_manifest() -> AppResult<LibraryManifest> {
+    let manifest_url =
+        option_env!("NADE_VIEWER_LIBRARY_MANIFEST_URL").unwrap_or(DEFAULT_LIBRARY_MANIFEST_URL);
+    let response = Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|error| AppError::Import {
+            code: "library_manifest_unavailable",
+            message: format!("Unable to create library update client: {error}"),
+        })?
+        .get(manifest_url)
+        .send()
+        .map_err(|error| AppError::Import {
+            code: "library_manifest_unavailable",
+            message: format!("Unable to download library manifest: {error}"),
+        })?;
+    if !response.status().is_success() {
+        return Err(AppError::Import {
+            code: "library_manifest_unavailable",
+            message: format!("Library manifest returned HTTP {}", response.status()),
+        });
+    }
+    let value: LibraryManifest = response.json().map_err(|error| AppError::Import {
+        code: "library_manifest_unavailable",
+        message: format!("Invalid library manifest: {error}"),
+    })?;
+    validate_library_manifest(&value)?;
+    Ok(value)
+}
+
+fn validate_library_manifest(manifest: &LibraryManifest) -> AppResult<()> {
+    if manifest.version.trim().is_empty()
+        || manifest.size == 0
+        || !manifest.url.starts_with("https://")
+        || manifest.sha256.len() != 64
+        || !manifest.sha256.bytes().all(|byte| byte.is_ascii_hexdigit())
+    {
+        return Err(AppError::Import {
+            code: "library_update_invalid",
+            message: "Library manifest has invalid version, URL, size, or SHA-256".to_string(),
+        });
+    }
+    Ok(())
+}
+
+fn app_meta_value(conn: &Connection, key: &str) -> AppResult<Option<String>> {
+    Ok(conn
+        .query_row(
+            "SELECT value FROM app_meta WHERE key=?1",
+            params![key],
+            |row| row.get(0),
+        )
+        .optional()?)
+}
+
+fn installed_library_version(state: &AppState) -> AppResult<Option<String>> {
+    let conn = open_conn(state)?;
+    let version = app_meta_value(&conn, "library_version")?;
+    let import_id = app_meta_value(&conn, "library_import_id")?;
+    let installed = import_id
+        .as_deref()
+        .and_then(|value| value.parse::<i64>().ok())
+        .map(|id| {
+            conn.query_row(
+                "SELECT EXISTS(SELECT 1 FROM imports WHERE id=?1)",
+                params![id],
+                |row| row.get::<_, bool>(0),
+            )
+        })
+        .transpose()?
+        .unwrap_or(false);
+    Ok(installed.then_some(version).flatten())
+}
+
+#[tauri::command]
+async fn check_library_update(
+    state: tauri::State<'_, AppState>,
+) -> AppResult<Option<LibraryUpdate>> {
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let manifest = fetch_library_manifest()?;
+        let current_version = installed_library_version(&state)?;
+        if current_version.as_deref() == Some(manifest.version.as_str()) {
+            Ok(None)
+        } else {
+            Ok(Some(LibraryUpdate {
+                manifest,
+                current_version,
+            }))
+        }
+    })
+    .await
+    .map_err(|error| AppError::Message(format!("Library update check failed: {error}")))?
+}
+
+fn download_library_file(state: &AppState, manifest: &LibraryManifest) -> AppResult<PathBuf> {
+    let directory = state.db_path.parent().ok_or_else(|| {
+        AppError::Message("Application data directory is unavailable".to_string())
+    })?;
+    let destination = directory.join("library-update.msgpack.part");
+    let _ = fs::remove_file(&destination);
+    let response = Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(30))
+        .timeout(std::time::Duration::from_secs(2 * 60 * 60))
+        .build()
+        .map_err(|error| AppError::Import {
+            code: "library_download_failed",
+            message: format!("Unable to create library download client: {error}"),
+        })?
+        .get(&manifest.url)
+        .send()
+        .map_err(|error| AppError::Import {
+            code: "library_download_failed",
+            message: format!("Unable to download library: {error}"),
+        })?;
+    if !response.status().is_success() {
+        return Err(AppError::Import {
+            code: "library_download_failed",
+            message: format!("Library download returned HTTP {}", response.status()),
+        });
+    }
+
+    let mut file = fs::File::create(&destination).map_err(|error| AppError::Import {
+        code: "library_download_failed",
+        message: format!("Unable to create temporary library file: {error}"),
+    })?;
+    let mut response = response;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0_u8; 64 * 1024];
+    let mut downloaded = 0_u64;
+    set_status(
+        state,
+        "downloading",
+        0,
+        manifest.size,
+        "Downloading online library",
+    );
+    loop {
+        let read = response
+            .read(&mut buffer)
+            .map_err(|error| AppError::Import {
+                code: "library_download_failed",
+                message: format!("Unable to read library download: {error}"),
+            })?;
+        if read == 0 {
+            break;
+        }
+        downloaded = downloaded.saturating_add(read as u64);
+        if downloaded > manifest.size {
+            return Err(AppError::Import {
+                code: "library_size_mismatch",
+                message: format!("Library is larger than manifest size {}", manifest.size),
+            });
+        }
+        file.write_all(&buffer[..read])?;
+        hasher.update(&buffer[..read]);
+        set_status(
+            state,
+            "downloading",
+            downloaded,
+            manifest.size,
+            "Downloading online library",
+        );
+    }
+    file.flush()?;
+    if downloaded != manifest.size {
+        return Err(AppError::Import {
+            code: "library_size_mismatch",
+            message: format!(
+                "Library size is {downloaded} bytes; manifest expects {}",
+                manifest.size
+            ),
+        });
+    }
+    let digest = format!("{:x}", hasher.finalize());
+    if !digest.eq_ignore_ascii_case(&manifest.sha256) {
+        return Err(AppError::Import {
+            code: "library_hash_mismatch",
+            message: "Library SHA-256 does not match the manifest".to_string(),
+        });
+    }
+    Ok(destination)
+}
+
+fn import_typed_path_blocking(state: &AppState, path: &str) -> AppResult<JsonImportReport> {
+    let source_path = PathBuf::from(path);
+    if source_path
+        .extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("zip"))
+    {
+        let (report, screenshot_count) = import_screenshot_archive_blocking(state, path)?;
+        return Ok(JsonImportReport::screenshot_archive(
+            report,
+            screenshot_count,
+        ));
+    }
+    let file = fs::File::open(&source_path).map_err(|error| AppError::Import {
+        code: "file_unavailable",
+        message: format!("Cannot open import file '{path}': {error}"),
+    })?;
+    let bytes = read_import_bytes(file)?;
+    match parse_import_bytes(&bytes, is_messagepack_path(&source_path))? {
+        TypedImportFile::GrenadeIndex(index) => {
+            import_index_blocking(state, path, index, None).map(JsonImportReport::from)
+        }
+        TypedImportFile::CoreNades(core_file) => {
+            import_core_nades_snapshot_blocking(state, path, core_file, None)
+                .map(JsonImportReport::core_nades)
+        }
+    }
+}
+
+fn parse_messagepack_file(path: &Path) -> AppResult<TypedImportFile> {
+    let shape_file = fs::File::open(path).map_err(|error| AppError::Import {
+        code: "file_unavailable",
+        message: format!("Cannot open downloaded library: {error}"),
+    })?;
+    let shape: ImportEnvelopeShape =
+        rmp_serde::from_read(BufReader::new(shape_file)).map_err(|error| AppError::Import {
+            code: "invalid_messagepack",
+            message: format!("Invalid MessagePack: {error}"),
+        })?;
+    if shape.canonical_grenades && shape.grenades {
+        return Err(AppError::Import {
+            code: "ambiguous_format",
+            message: "Import cannot contain both canonical_grenades and grenades at the top level"
+                .to_string(),
+        });
+    }
+    if !shape.canonical_grenades && !shape.grenades {
+        return Err(AppError::Import {
+            code: "unsupported_format",
+            message: "Unsupported import format: expected canonical_grenades or grenades at the top level"
+                .to_string(),
+        });
+    }
+    let version = shape.version.as_ref().filter(|value| !value.is_null());
+    if shape.grenades && version.is_none() {
+        return Err(AppError::Import {
+            code: "missing_version",
+            message: "Core Nades import requires top-level version 1".to_string(),
+        });
+    }
+    if let Some(version) = version {
+        let Some(version) = version.as_i64() else {
+            return Err(AppError::Import {
+                code: "invalid_version",
+                message: "Top-level version must be an integer".to_string(),
+            });
+        };
+        if version != SUPPORTED_IMPORT_VERSION {
+            return Err(AppError::Import {
+                code: "unsupported_version",
+                message: format!(
+                    "Unsupported import version {version}; supported version is {SUPPORTED_IMPORT_VERSION}"
+                ),
+            });
+        }
+    }
+
+    let file = fs::File::open(path)?;
+    if shape.canonical_grenades {
+        rmp_serde::from_read(BufReader::new(file))
+            .map(TypedImportFile::GrenadeIndex)
+            .map_err(|error| AppError::Import {
+                code: "invalid_canonical_format",
+                message: format!("Invalid grenade_index import: {error}"),
+            })
+    } else {
+        rmp_serde::from_read(BufReader::new(file))
+            .map(TypedImportFile::CoreNades)
+            .map_err(|error| AppError::Import {
+                code: "invalid_core_format",
+                message: format!("Invalid Core Nades import: {error}"),
+            })
+    }
 }
 
 fn parse_import_value(value: Value) -> AppResult<TypedImportFile> {
@@ -2321,39 +2636,78 @@ async fn import_json(
     let import_path = path.clone();
     let import_state = state.clone();
     let result = tauri::async_runtime::spawn_blocking(move || {
-        let source_path = PathBuf::from(&import_path);
-        if source_path
-            .extension()
-            .is_some_and(|extension| extension.eq_ignore_ascii_case("zip"))
-        {
-            let (report, screenshot_count) =
-                import_screenshot_archive_blocking(&import_state, &import_path)?;
-            return Ok(JsonImportReport::screenshot_archive(
-                report,
-                screenshot_count,
-            ));
-        }
-        let file = fs::File::open(&source_path).map_err(|error| AppError::Import {
-            code: "file_unavailable",
-            message: format!("Cannot open import file '{}': {error}", import_path),
-        })?;
-        let bytes = read_import_bytes(file)?;
-        match parse_import_bytes(&bytes, is_messagepack_path(&source_path))? {
-            TypedImportFile::GrenadeIndex(index) => {
-                import_index_blocking(&import_state, &import_path, index)
-                    .map(JsonImportReport::from)
-            }
-            TypedImportFile::CoreNades(core_file) => {
-                import_core_nades_snapshot_blocking(&import_state, &import_path, core_file)
-                    .map(JsonImportReport::core_nades)
-            }
-        }
+        import_typed_path_blocking(&import_state, &import_path)
     })
     .await;
 
     match result {
         Ok(Ok(report)) => Ok(report),
         Ok(Err(err)) => {
+            set_error(&state, &err.to_string());
+            Err(err)
+        }
+        Err(err) => {
+            set_error(&state, &err.to_string());
+            Err(AppError::Message(err.to_string()))
+        }
+    }
+}
+
+#[tauri::command]
+async fn import_library_update(state: tauri::State<'_, AppState>) -> AppResult<JsonImportReport> {
+    let state = state.inner().clone();
+    try_begin_import(&state.import_status)?;
+    set_status(&state, "checking_update", 0, 0, "Checking online library");
+    let worker_state = state.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let manifest = fetch_library_manifest()?;
+        if installed_library_version(&worker_state)?.as_deref() == Some(manifest.version.as_str()) {
+            return Err(AppError::Import {
+                code: "library_already_current",
+                message: "The online library is already current".to_string(),
+            });
+        }
+        let path = download_library_file(&worker_state, &manifest)?;
+        let import_result = (|| {
+            set_status(
+                &worker_state,
+                "verifying",
+                manifest.size,
+                manifest.size,
+                "Library download verified",
+            );
+            match parse_messagepack_file(&path)? {
+                TypedImportFile::GrenadeIndex(index) => import_index_blocking(
+                    &worker_state,
+                    &manifest.url,
+                    index,
+                    Some(&manifest.version),
+                )
+                .map(JsonImportReport::from),
+                TypedImportFile::CoreNades(core_file) => import_core_nades_snapshot_blocking(
+                    &worker_state,
+                    &manifest.url,
+                    core_file,
+                    Some(&manifest.version),
+                )
+                .map(JsonImportReport::core_nades),
+            }
+        })();
+        let _ = fs::remove_file(path);
+        import_result
+    })
+    .await;
+
+    match result {
+        Ok(Ok(report)) => Ok(report),
+        Ok(Err(err)) => {
+            let temporary = state
+                .db_path
+                .parent()
+                .map(|directory| directory.join("library-update.msgpack.part"));
+            if let Some(temporary) = temporary {
+                let _ = fs::remove_file(temporary);
+            }
             set_error(&state, &err.to_string());
             Err(err)
         }
@@ -2407,7 +2761,7 @@ fn import_screenshot_archive_blocking(
         players: Vec::new(),
         processed_demos: None,
     };
-    let mut report = import_index_blocking(state, path, index)?;
+    let mut report = import_index_blocking(state, path, index, None)?;
     let screenshot_root = state
         .db_path
         .parent()
@@ -2547,6 +2901,7 @@ fn import_index_blocking(
     state: &AppState,
     path: &str,
     index: ParserIndex,
+    library_version: Option<&str>,
 ) -> AppResult<ImportReport> {
     let total = index.canonical_grenades.len() as u64;
     set_status(state, "preparing", 0, total, "Preparing local database");
@@ -2692,6 +3047,19 @@ fn import_index_blocking(
 
     insert_demo_metadata(&tx, import_id, &demo_metadata)?;
     populate_import_map_players(&tx, import_id)?;
+
+    if let Some(version) = library_version {
+        tx.execute(
+            "INSERT INTO app_meta(key, value) VALUES ('library_version', ?1)
+             ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            params![version],
+        )?;
+        tx.execute(
+            "INSERT INTO app_meta(key, value) VALUES ('library_import_id', ?1)
+             ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            params![import_id.to_string()],
+        )?;
+    }
 
     tx.execute(
         "INSERT INTO app_meta(key, value) VALUES ('active_import_id', ?1)
@@ -3057,6 +3425,23 @@ fn delete_import_from_conn(
         params![import_id],
     )?;
     tx.execute("DELETE FROM imports WHERE id=?1", params![import_id])?;
+    let remote_import_id = tx
+        .query_row(
+            "SELECT value FROM app_meta WHERE key='library_import_id'",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?;
+    if remote_import_id
+        .as_deref()
+        .and_then(|value| value.parse::<i64>().ok())
+        == Some(import_id)
+    {
+        tx.execute(
+            "DELETE FROM app_meta WHERE key IN ('library_import_id', 'library_version')",
+            [],
+        )?;
+    }
 
     let next_active = if current_active == Some(import_id) {
         tx.query_row(
@@ -3665,6 +4050,7 @@ fn import_core_nades_snapshot_blocking(
     state: &AppState,
     path: &str,
     core_file: CoreNadesFile,
+    library_version: Option<&str>,
 ) -> AppResult<ImportReport> {
     let total = core_file.grenades.len() as u64;
     set_status(
@@ -3808,6 +4194,19 @@ fn import_core_nades_snapshot_blocking(
 
     insert_demo_metadata(&tx, import_id, &demo_metadata)?;
     populate_import_map_players(&tx, import_id)?;
+
+    if let Some(version) = library_version {
+        tx.execute(
+            "INSERT INTO app_meta(key, value) VALUES ('library_version', ?1)
+             ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            params![version],
+        )?;
+        tx.execute(
+            "INSERT INTO app_meta(key, value) VALUES ('library_import_id', ?1)
+             ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            params![import_id.to_string()],
+        )?;
+    }
 
     tx.execute(
         "INSERT INTO app_meta(key, value) VALUES ('active_import_id', ?1)
@@ -4012,6 +4411,25 @@ mod tests {
 
     fn count(conn: &Connection, sql: &str) -> i64 {
         conn.query_row(sql, [], |row| row.get(0)).unwrap()
+    }
+
+    #[test]
+    fn validates_online_library_manifest_security_fields() {
+        let valid = LibraryManifest {
+            version: "2026.08.26.1".to_string(),
+            url: "https://example.com/library.msgpack".to_string(),
+            size: 600 * 1024 * 1024,
+            sha256: "a".repeat(64),
+        };
+        assert!(validate_library_manifest(&valid).is_ok());
+
+        let mut invalid_url = valid.clone();
+        invalid_url.url = "http://example.com/library.msgpack".to_string();
+        assert!(validate_library_manifest(&invalid_url).is_err());
+
+        let mut invalid_hash = valid;
+        invalid_hash.sha256 = "not-a-sha256".to_string();
+        assert!(validate_library_manifest(&invalid_hash).is_err());
     }
 
     #[test]
@@ -4296,7 +4714,8 @@ mod tests {
         .unwrap() else {
             panic!("expected canonical import");
         };
-        let canonical_report = import_index_blocking(&state, "canonical.json", index).unwrap();
+        let canonical_report =
+            import_index_blocking(&state, "canonical.json", index, None).unwrap();
 
         let TypedImportFile::CoreNades(core) = parse_import(
             br#"{
@@ -4322,7 +4741,8 @@ mod tests {
         .unwrap() else {
             panic!("expected Core Nades import");
         };
-        let core_report = import_core_nades_snapshot_blocking(&state, "core.json", core).unwrap();
+        let core_report =
+            import_core_nades_snapshot_blocking(&state, "core.json", core, None).unwrap();
 
         let conn = open_conn(&state).unwrap();
         let canonical: (String, Option<String>, Option<i64>) = conn

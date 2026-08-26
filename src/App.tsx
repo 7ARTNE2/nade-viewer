@@ -34,10 +34,17 @@ import {
   setActiveImport,
   updateImportLabel,
   completeOnboarding,
+  checkLibraryUpdate,
+  getImportStatus,
+  importLibraryUpdate,
 } from './lib/tauri';
 import { compactDate, formatNumber } from './lib/format';
 import { startWindowActiveTracking } from './lib/windowActive';
-import type { ImportSummary } from './types/domain';
+import type {
+  ImportStatus,
+  ImportSummary,
+  LibraryUpdate,
+} from './types/domain';
 import { version } from '../package.json';
 import HomePage from './pages/HomePage';
 import ImportPage from './pages/ImportPage';
@@ -55,6 +62,15 @@ function importFileName(path: string) {
 
 function snapshotDisplayName(snapshot: ImportSummary) {
   return snapshot.label?.trim() || importFileName(snapshot.source_path);
+}
+
+function formatBytes(bytes: number, locale: string) {
+  const units = ['B', 'KB', 'MB', 'GB'];
+  const unit = Math.min(
+    units.length - 1,
+    Math.floor(Math.log(Math.max(bytes, 1)) / Math.log(1024)),
+  );
+  return `${new Intl.NumberFormat(locale, { maximumFractionDigits: unit > 1 ? 1 : 0 }).format(bytes / 1024 ** unit)} ${units[unit]}`;
 }
 
 function Shell() {
@@ -81,6 +97,12 @@ function Shell() {
   const [operationError, setOperationError] = useState<string | null>(null);
   const [availableUpdate, setAvailableUpdate] = useState<Update | null>(null);
   const [updateBusy, setUpdateBusy] = useState(false);
+  const [libraryUpdate, setLibraryUpdate] = useState<LibraryUpdate | null>(
+    null,
+  );
+  const [libraryUpdateBusy, setLibraryUpdateBusy] = useState(false);
+  const [libraryUpdateStatus, setLibraryUpdateStatus] =
+    useState<ImportStatus | null>(null);
   const closeDeleteModal = useCallback(() => setDeleteSnapshotOpen(false), []);
   const deleteDialogRef = useModalAccessibility<HTMLDivElement>(
     deleteSnapshotOpen,
@@ -192,12 +214,105 @@ function Shell() {
     }
   };
 
+  const checkForLibraryUpdate = useCallback(
+    async (manual = false) => {
+      if (!('__TAURI_INTERNALS__' in window)) {
+        if (manual)
+          showToast(
+            tr(
+              'Online library updates are available in the installed application',
+              'Обновления онлайн-библиотеки доступны в установленном приложении',
+            ),
+          );
+        return;
+      }
+      try {
+        const update = await checkLibraryUpdate();
+        setLibraryUpdate(update);
+        if (manual && !update)
+          showToast(
+            tr(
+              'The online library is already current',
+              'Онлайн-библиотека уже обновлена',
+            ),
+          );
+      } catch (error) {
+        console.error(error);
+        if (manual)
+          showToast(
+            tr(
+              'Could not check the online library',
+              'Не удалось проверить онлайн-библиотеку',
+            ),
+            { tone: 'error' },
+          );
+      }
+    },
+    [showToast, tr],
+  );
+
+  const installLibraryUpdate = async () => {
+    if (!libraryUpdate) return;
+    setLibraryUpdateBusy(true);
+    setLibraryUpdateStatus({
+      running: true,
+      stage: 'checking_update',
+      current: 0,
+      total: libraryUpdate.manifest.size,
+      message: tr('Preparing download', 'Подготовка загрузки'),
+    });
+    try {
+      await importLibraryUpdate();
+      await refreshImports();
+      setLibraryUpdate(null);
+      showToast(
+        tr(
+          `Library ${libraryUpdate.manifest.version} installed`,
+          `Библиотека ${libraryUpdate.manifest.version} установлена`,
+        ),
+        { tone: 'success', duration: 2600 },
+      );
+      navigate('/maps', { replace: true });
+    } catch (error) {
+      console.error(error);
+      showToast(
+        tr(
+          'Library update failed. The previous library is unchanged.',
+          'Не удалось обновить библиотеку. Предыдущая библиотека не изменена.',
+        ),
+        { tone: 'error', duration: 4200 },
+      );
+    } finally {
+      setLibraryUpdateBusy(false);
+      setLibraryUpdateStatus(null);
+    }
+  };
+
   useEffect(() => {
     const timer = window.setTimeout(() => {
       void checkForUpdate();
     }, 1500);
     return () => window.clearTimeout(timer);
   }, [checkForUpdate]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void checkForLibraryUpdate();
+    }, 2400);
+    return () => window.clearTimeout(timer);
+  }, [checkForLibraryUpdate]);
+
+  useEffect(() => {
+    if (!libraryUpdateBusy) return;
+    const timer = window.setInterval(() => {
+      getImportStatus()
+        .then(setLibraryUpdateStatus)
+        .catch((error) =>
+          console.error('Unable to read library update progress', error),
+        );
+    }, 350);
+    return () => window.clearInterval(timer);
+  }, [libraryUpdateBusy]);
 
   useEffect(() => {
     if (!coreTransferStatus && !operationError) return;
@@ -595,6 +710,17 @@ function Shell() {
                   ) : null}
                   <button
                     type="button"
+                    onClick={() => {
+                      setLibraryActionsOpen(false);
+                      void checkForLibraryUpdate(true);
+                    }}
+                    disabled={libraryUpdateBusy}
+                  >
+                    <Database size={15} />
+                    {tr('Check online library', 'Проверить онлайн-библиотеку')}
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => window.location.reload()}
                   >
                     <RotateCw size={15} />
@@ -727,6 +853,67 @@ function Shell() {
           >
             <X size={15} />
           </button>
+        </div>
+      ) : null}
+
+      {libraryUpdate ? (
+        <div className="library-update-notice" role="status" aria-live="polite">
+          <div className="library-update-copy">
+            <strong>
+              {libraryUpdateBusy
+                ? tr('Updating online library', 'Обновление онлайн-библиотеки')
+                : tr(
+                    `Library ${libraryUpdate.manifest.version} is available`,
+                    `Доступна библиотека ${libraryUpdate.manifest.version}`,
+                  )}
+            </strong>
+            <span>
+              {libraryUpdateBusy
+                ? libraryUpdateStatus?.stage === 'downloading'
+                  ? tr(
+                      'Downloading and verifying data',
+                      'Загрузка и проверка данных',
+                    )
+                  : tr(
+                      'Importing into local storage',
+                      'Импорт в локальное хранилище',
+                    )
+                : tr(
+                    `${formatBytes(libraryUpdate.manifest.size, locale)} will be downloaded. Your current library stays available until import succeeds.`,
+                    `Будет загружено ${formatBytes(libraryUpdate.manifest.size, locale)}. Текущая библиотека останется доступна до успешного импорта.`,
+                  )}
+            </span>
+            {libraryUpdateBusy ? (
+              <div className="library-update-progress" aria-hidden="true">
+                <span
+                  style={{
+                    width: `${libraryUpdateStatus?.total ? Math.min(100, (libraryUpdateStatus.current / libraryUpdateStatus.total) * 100) : 4}%`,
+                  }}
+                />
+              </div>
+            ) : null}
+          </div>
+          <button
+            className="btn primary"
+            type="button"
+            onClick={() => void installLibraryUpdate()}
+            disabled={libraryUpdateBusy}
+          >
+            <Download size={15} />
+            {libraryUpdateBusy
+              ? tr('Updating', 'Обновление')
+              : tr('Download and install', 'Скачать и установить')}
+          </button>
+          {!libraryUpdateBusy ? (
+            <button
+              className="icon-btn"
+              type="button"
+              onClick={() => setLibraryUpdate(null)}
+              aria-label={tr('Later', 'Позже')}
+            >
+              <X size={15} />
+            </button>
+          ) : null}
         </div>
       ) : null}
 

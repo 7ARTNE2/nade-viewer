@@ -1,6 +1,6 @@
 [package]
 name = "nade-viewer"
-version = "0.5.0"
+version = "0.5.1"
 description = "Compact desktop grenade lineup explorer"
 authors = ["Nade Viewer"]
 edition = "2021"
@@ -15,11 +15,13 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 chrono = { version = "0.4", features = ["serde"] }
 regex = "1"
+reqwest = { version = "0.13", default-features = false, features = ["blocking", "json", "rustls"] }
 rfd = "0.15"
 rmp-serde = "1"
 rusqlite = { version = "0.32", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+sha2 = "0.10"
 tauri = { version = "2", features = ["protocol-asset"] }
 tauri-plugin-updater = "2.10.1"
 thiserror = "2"

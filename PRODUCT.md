@@ -40,7 +40,9 @@ and copy a console-ready coordinate command or mark it as Core.
 
 - Windows desktop distribution through Tauri 2 with a React and TypeScript
   frontend plus Rust IPC and SQLite storage.
-- No HTTP backend, accounts, cloud sync, or network data source.
+- No HTTP backend, accounts, or cloud sync. An optional read-only HTTPS
+  download checks a published library manifest and imports the selected data
+  snapshot into local SQLite.
 - English and Russian interfaces.
 - Bundled radar assets currently cover ten CS2 maps, with lower-radar support
   where assets and coordinate configuration exist.

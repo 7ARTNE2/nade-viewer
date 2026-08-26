@@ -7,6 +7,18 @@ export type ImportStatus = {
   error?: string | null;
 };
 
+export type LibraryManifest = {
+  version: string;
+  url: string;
+  size: number;
+  sha256: string;
+};
+
+export type LibraryUpdate = {
+  manifest: LibraryManifest;
+  current_version?: string | null;
+};
+
 export type ImportSummary = {
   id: number;
   source_path: string;

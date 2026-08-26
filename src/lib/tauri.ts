@@ -9,6 +9,7 @@ import type {
   ImportTeamOption,
   ImportTournamentOption,
   JsonImportReport,
+  LibraryUpdate,
   MapFilters,
   MapOverview,
   MapSummary,
@@ -36,6 +37,14 @@ export function importJson(path: string) {
 
 export function getImportStatus() {
   return invoke<ImportStatus>('get_import_status');
+}
+
+export function checkLibraryUpdate() {
+  return invoke<LibraryUpdate | null>('check_library_update');
+}
+
+export function importLibraryUpdate() {
+  return invoke<JsonImportReport>('import_library_update');
 }
 
 export function listImports() {
