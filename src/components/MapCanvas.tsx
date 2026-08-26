@@ -413,7 +413,7 @@ export default function MapCanvas({
         y: event.clientY - rect.top,
       });
   };
-  const previewKeys = splitThrowKeys(preview?.grenade.throw_description);
+  const previewKeys = splitThrowKeys(preview?.grenade.throw_keys);
   const previewCommands = splitCommands(preview?.grenade.coordinates);
   const previewStyle = preview
     ? ({

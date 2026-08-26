@@ -136,29 +136,33 @@ export default function ImportPage({ onImported, lastImport }: Props) {
           'The JSON file is invalid',
           'JSON-файл содержит некорректные данные',
         ),
+        invalid_messagepack: tr(
+          'The MessagePack file is invalid',
+          'MessagePack-файл содержит некорректные данные',
+        ),
         invalid_top_level: tr(
-          'The top-level JSON value must be an object',
-          'Верхний уровень JSON должен быть объектом',
+          'The top-level JSON or MessagePack value must be an object',
+          'Верхний уровень JSON или MessagePack должен быть объектом',
         ),
         ambiguous_format: tr(
           'The file mixes two import formats',
           'В файле смешаны два формата импорта',
         ),
         unsupported_format: tr(
-          'Expected grenade_index, Core Nades JSON, or a Nadegrid screenshot ZIP',
-          'Ожидается JSON grenade_index, Core Nades или ZIP-архив скриншотов Nadegrid',
+          'Expected grenade_index, Core Nades JSON/MessagePack, or a Nadegrid screenshot ZIP',
+          'Ожидается grenade_index, JSON/MessagePack Core Nades или ZIP-архив скриншотов Nadegrid',
         ),
         missing_version: tr(
-          'Core Nades JSON requires version 1',
-          'Для Core Nades JSON требуется версия 1',
+          'Core Nades JSON or MessagePack requires version 1',
+          'Для Core Nades JSON или MessagePack требуется версия 1',
         ),
         invalid_version: tr(
           'The top-level version must be an integer',
           'Версия верхнего уровня должна быть целым числом',
         ),
         unsupported_version: tr(
-          'This JSON version is not supported',
-          'Эта версия JSON не поддерживается',
+          'This JSON or MessagePack version is not supported',
+          'Эта версия JSON или MessagePack не поддерживается',
         ),
         invalid_canonical_format: tr(
           'Invalid grenade_index structure',
@@ -198,7 +202,7 @@ export default function ImportPage({ onImported, lastImport }: Props) {
         } else {
           setDragging(false);
           const droppedPath = payload.paths.find((candidate) =>
-            /\.(json|zip)$/i.test(candidate),
+            /\.(json|messagepack|msgpack|mpk|zip)$/i.test(candidate),
           );
           if (droppedPath) {
             setPath(droppedPath);
@@ -210,8 +214,8 @@ export default function ImportPage({ onImported, lastImport }: Props) {
             });
           } else {
             const summary = tr(
-              'Drop a JSON or Nadegrid ZIP file',
-              'Перетащите JSON-файл или ZIP Nadegrid',
+              'Drop a JSON, MessagePack, or Nadegrid ZIP file',
+              'Перетащите JSON-, MessagePack- или ZIP-файл Nadegrid',
             );
             setMessage(summary);
             showToast(summary, { tone: 'info' });
@@ -250,8 +254,8 @@ export default function ImportPage({ onImported, lastImport }: Props) {
           <h1>{tr('Bring your lineups in.', 'Импортируйте раскидки.')}</h1>
           <p className="muted wide">
             {tr(
-              'Load a grenade index or a curated Core Nades collection. Everything stays on this device.',
-              'Загрузите индекс гранат или коллекцию Core Nades. Все данные останутся на этом устройстве.',
+              'Load a grenade index or a curated Core Nades collection in JSON or MessagePack. Everything stays on this device.',
+              'Загрузите индекс гранат или коллекцию Core Nades в JSON или MessagePack. Все данные останутся на этом устройстве.',
             )}
           </p>
           <div className="import-features">
@@ -289,8 +293,8 @@ export default function ImportPage({ onImported, lastImport }: Props) {
               {busy
                 ? tr(`${progress}% complete`, `Выполнено ${progress}%`)
                 : tr(
-                    'grenade_index.json, Core Nades JSON, or Nadegrid Screenshot ZIP',
-                    'grenade_index.json, JSON Core Nades или ZIP Screenshot Capture Nadegrid',
+                    'grenade_index.json, Core Nades JSON/MessagePack, or Nadegrid Screenshot ZIP',
+                    'grenade_index.json, JSON/MessagePack Core Nades или ZIP скриншотов Nadegrid',
                   )}
             </span>
           </div>
@@ -317,7 +321,10 @@ export default function ImportPage({ onImported, lastImport }: Props) {
             <input
               value={path}
               onChange={(event) => setPath(event.target.value)}
-              placeholder={tr('Path to JSON file', 'Путь к JSON-файлу')}
+              placeholder={tr(
+                'Path to JSON or MessagePack file',
+                'Путь к JSON- или MessagePack-файлу',
+              )}
               disabled={busy}
             />
             <button

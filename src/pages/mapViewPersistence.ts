@@ -25,6 +25,8 @@ export const defaultMapFilters = (): MapFilters => ({
   side: 'T',
   search: '',
   thrower_team: '',
+  thrower_steamid64: '',
+  tournament: '',
   min_usage: 0,
   is_core: false,
 });
@@ -36,6 +38,8 @@ export function filtersMatchDefault(filters: MapFilters) {
     filters.side === defaults.side &&
     (filters.search ?? '') === defaults.search &&
     (filters.thrower_team ?? '') === defaults.thrower_team &&
+    (filters.thrower_steamid64 ?? '') === defaults.thrower_steamid64 &&
+    (filters.tournament ?? '') === defaults.tournament &&
     (filters.min_usage ?? 0) === defaults.min_usage &&
     Boolean(filters.is_core) === Boolean(defaults.is_core)
   );

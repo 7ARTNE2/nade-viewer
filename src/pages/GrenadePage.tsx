@@ -3,7 +3,9 @@ import { createPortal } from 'react-dom';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowLeft,
+  BarChart3,
   BadgeCheck,
+  CalendarDays,
   Check,
   Clipboard,
   Clock,
@@ -14,6 +16,7 @@ import {
   MapPinned,
   Scan,
   Timer,
+  UsersRound,
   X,
 } from 'lucide-react';
 import MapCanvas from '../components/MapCanvas';
@@ -55,8 +58,76 @@ const detailTypeRgb: Record<string, string> = {
   HE: '52, 211, 153',
 };
 
+function UsageHistoryChart({
+  history,
+  peak,
+}: {
+  history: Array<{ label: string; count: number }>;
+  peak: number;
+}) {
+  const { tr, count } = useI18n();
+  const visibleHistory = history.slice(-18);
+  const max = Math.max(
+    1,
+    peak,
+    ...visibleHistory.map((point) => Math.max(0, point.count)),
+  );
+
+  if (!visibleHistory.length) {
+    return (
+      <div className="usage-history-empty">
+        {tr(
+          'No usage history in this snapshot.',
+          'В этом снимке нет истории использования.',
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="usage-history-chart"
+      aria-label={tr('Usage history by demo', 'История использования по демо')}
+    >
+      <div
+        className="usage-history-bars"
+        style={
+          {
+            '--usage-columns': visibleHistory.length,
+          } as React.CSSProperties
+        }
+      >
+        {visibleHistory.map((point) => {
+          const height = Math.max(8, (Math.max(0, point.count) / max) * 100);
+          const label =
+            point.label === 'Unknown demo'
+              ? tr('Unknown demo', 'Неизвестное демо')
+              : point.label;
+          return (
+            <span
+              key={`${point.label}-${point.count}`}
+              className="usage-history-bar"
+              role="img"
+              tabIndex={0}
+              style={{ '--usage-height': `${height}%` } as React.CSSProperties}
+              aria-label={`${label}: ${count(point.count, 'throw', 'throws', 'бросок', 'броска', 'бросков')}`}
+              data-tip={`${label} · ${count(point.count, 'throw', 'throws', 'бросок', 'броска', 'бросков')}`}
+            >
+              <span />
+            </span>
+          );
+        })}
+      </div>
+      <div className="usage-history-axis">
+        <span>{tr('Earlier', 'Раньше')}</span>
+        <span>{tr('Latest', 'Последние')}</span>
+      </div>
+    </div>
+  );
+}
+
 export default function GrenadePage() {
-  const { tr } = useI18n();
+  const { tr, count } = useI18n();
   const { showToast } = useToast();
   const { id = '' } = useParams();
   const navigate = useNavigate();
@@ -94,6 +165,24 @@ export default function GrenadePage() {
           usage_throwers: Array.isArray(detail.usage_throwers)
             ? detail.usage_throwers
             : [],
+          usage_stats: detail.usage_stats ?? {
+            tracked_throws: detail.usage_count ?? 0,
+            peak: detail.usage_count ?? 0,
+            most_used_player: detail.thrower ?? null,
+            most_used_player_throws: detail.usage_count ?? 0,
+            most_used_team: detail.thrower_team ?? null,
+            most_used_team_throws: detail.usage_count ?? 0,
+            last_demo: detail.demo_filename ?? null,
+            last_tick: detail.throw_tick ?? null,
+            history: detail.demo_filename
+              ? [
+                  {
+                    label: detail.demo_filename,
+                    count: detail.usage_count ?? 0,
+                  },
+                ]
+              : [],
+          },
         });
         recordGrenadeView(detail.id).catch((error) => {
           console.warn(
@@ -133,7 +222,7 @@ export default function GrenadePage() {
     [spawnPoints],
   );
   const isInsta = grenade ? isInstaGrenade(grenade, spawnMapPoints) : false;
-  const throwKeys = splitThrowKeys(grenade?.throw_description);
+  const throwKeys = splitThrowKeys(grenade?.throw_keys);
   const detailAccent = grenade
     ? (detailTypeColor[grenade.grenade_type] ?? '#e5e7eb')
     : '#e5e7eb';
@@ -325,6 +414,100 @@ export default function GrenadePage() {
             <span>{tr('Tickrate', 'Тикрейт')}</span>
             <strong>{grenade.tickrate ?? '-'}</strong>
           </div>
+        </div>
+
+        <div className="info-block usage-snapshot-block">
+          <div className="usage-snapshot-heading">
+            <div className="block-title">
+              <span>
+                <BarChart3 size={14} aria-hidden="true" />
+                {tr('Usage snapshot', 'Снимок использования')}
+              </span>
+              <strong>
+                {count(
+                  grenade.usage_stats.tracked_throws,
+                  'tracked throw',
+                  'tracked throws',
+                  'зафиксированный бросок',
+                  'зафиксированных броска',
+                  'зафиксированных бросков',
+                )}
+              </strong>
+            </div>
+          </div>
+          <div className="usage-leader-grid">
+            <div className="usage-leader">
+              <span className="usage-leader-label">
+                <UsersRound size={12} aria-hidden="true" />
+                {tr('Most used player', 'Чаще всего бросал игрок')}
+              </span>
+              <strong>{grenade.usage_stats.most_used_player || '-'}</strong>
+              <small>
+                {count(
+                  grenade.usage_stats.most_used_player_throws,
+                  'throw',
+                  'throws',
+                  'бросок',
+                  'броска',
+                  'бросков',
+                )}
+              </small>
+            </div>
+            <div className="usage-leader">
+              <span className="usage-leader-label">
+                <UsersRound size={12} aria-hidden="true" />
+                {tr('Most used team', 'Чаще всего бросала команда')}
+              </span>
+              <strong>{grenade.usage_stats.most_used_team || '-'}</strong>
+              <small>
+                {count(
+                  grenade.usage_stats.most_used_team_throws,
+                  'throw',
+                  'throws',
+                  'бросок',
+                  'броска',
+                  'бросков',
+                )}
+              </small>
+            </div>
+          </div>
+          <div className="usage-last-throw">
+            <span>
+              <CalendarDays size={12} aria-hidden="true" />
+              {tr('Last throw', 'Последний бросок')}
+            </span>
+            <strong title={grenade.usage_stats.last_demo ?? undefined}>
+              {grenade.usage_stats.last_demo ||
+                tr('No demo data', 'Нет данных демо')}
+            </strong>
+            <small>
+              {grenade.usage_stats.last_tick !== null &&
+              grenade.usage_stats.last_tick !== undefined
+                ? tr(
+                    `Tick ${grenade.usage_stats.last_tick}`,
+                    `Тик ${grenade.usage_stats.last_tick}`,
+                  )
+                : tr('Tick unavailable', 'Тик недоступен')}
+            </small>
+          </div>
+          <div className="usage-history-heading">
+            <span>{tr('Usage history', 'История использования')}</span>
+            <small>
+              {tr('Peak', 'Пик')} {formatNumber(grenade.usage_stats.peak)} ·{' '}
+              {count(
+                grenade.usage_stats.history.length,
+                'demo',
+                'demos',
+                'демо',
+                'демо',
+                'демо',
+              )}
+            </small>
+          </div>
+          <UsageHistoryChart
+            history={grenade.usage_stats.history}
+            peak={grenade.usage_stats.peak}
+          />
         </div>
 
         <div className="info-block">

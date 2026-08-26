@@ -20,6 +20,24 @@ export type ImportSummary = {
   is_active: boolean;
 };
 
+export type ImportTeamOption = {
+  team_name: string;
+  player_count: number;
+};
+
+export type ImportPlayerOption = {
+  steamid64: string;
+  name: string;
+  team_name: string;
+  side: string;
+};
+
+export type ImportTournamentOption = {
+  name: string;
+  start_date: string;
+  end_date: string;
+};
+
 export type SiteSettings = {
   public_min_usage_count: number;
 };
@@ -74,6 +92,8 @@ export type MapFilters = {
   side?: string;
   search?: string;
   thrower_team?: string;
+  thrower_steamid64?: string;
+  tournament?: string;
   min_usage?: number;
   radar_level?: 'default' | 'lower';
   is_core?: boolean;
@@ -104,9 +124,10 @@ export type GrenadePreview = {
   side: 'T' | 'CT' | 'Any' | string;
   grenade_type: 'smoke' | 'flash' | 'molotov' | 'HE' | string;
   is_core: boolean;
-  throw_description?: string | null;
+  throw_keys?: string | null;
   coordinates?: string | null;
   thrower?: string | null;
+  thrower_steamid64?: string | null;
   thrower_team?: string | null;
   airtime?: number | null;
   usage_count: number;
@@ -118,6 +139,21 @@ export type GrenadePreview = {
   explode_pos_z?: number | null;
   explode_radar_level: 'default' | 'lower' | 'unknown' | string;
   trajectory_preview?: Array<[number, number]> | null;
+};
+
+export type GrenadeUsageStats = {
+  tracked_throws: number;
+  peak: number;
+  most_used_player: string | null;
+  most_used_player_throws: number;
+  most_used_team: string | null;
+  most_used_team_throws: number;
+  last_demo: string | null;
+  last_tick: number | null;
+  history: Array<{
+    label: string;
+    count: number;
+  }>;
 };
 
 export type ViewedGrenade = GrenadePreview & {
@@ -141,6 +177,7 @@ export type GrenadeDetail = GrenadePreview & {
   preview_image_path?: string | null;
   screenshot_image_path?: string | null;
   screenshot_wide_image_path?: string | null;
+  usage_stats: GrenadeUsageStats;
 };
 
 export type SpawnPoint = {

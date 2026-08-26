@@ -6,6 +6,7 @@ import AppErrorBoundary from './components/AppErrorBoundary';
 import { I18nProvider } from './i18n';
 import { ToastProvider } from './components/Toast';
 import './styles.css';
+import './uiEnhancements.css';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

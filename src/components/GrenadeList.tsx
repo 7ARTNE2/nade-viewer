@@ -38,7 +38,7 @@ export default function GrenadeList({
   );
 
   const copyGrenadeText = async (grenade: GrenadePreview) => {
-    const text = grenade.coordinates || grenade.throw_description;
+    const text = grenade.coordinates || grenade.throw_keys;
     if (!text) return;
     try {
       await navigator.clipboard.writeText(text);
@@ -97,7 +97,7 @@ export default function GrenadeList({
     <div className={compact ? 'nade-list compact' : 'nade-list'}>
       {grenades.map((g) => {
         const isInsta = isInstaGrenade(g, spawnMapPoints);
-        const throwKeys = splitThrowKeys(g.throw_description);
+        const throwKeys = splitThrowKeys(g.throw_keys);
         return (
           <div
             key={g.id}
@@ -121,7 +121,7 @@ export default function GrenadeList({
                     event.stopPropagation();
                     copyGrenadeText(g);
                   }}
-                  disabled={!g.coordinates && !g.throw_description}
+                  disabled={!g.coordinates && !g.throw_keys}
                   aria-label={tr(
                     'Copy grenade coordinates',
                     'Копировать координаты гранаты',

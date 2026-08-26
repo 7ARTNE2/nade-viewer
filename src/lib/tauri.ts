@@ -3,8 +3,11 @@ import type {
   CoreNadesExportReport,
   GrenadeDetail,
   GrenadePreview,
+  ImportPlayerOption,
   ImportStatus,
   ImportSummary,
+  ImportTeamOption,
+  ImportTournamentOption,
   JsonImportReport,
   MapFilters,
   MapOverview,
@@ -37,6 +40,26 @@ export function getImportStatus() {
 
 export function listImports() {
   return invoke<ImportSummary[]>('list_imports');
+}
+
+export function getImportTeams(map?: string, tournament?: string) {
+  return invoke<ImportTeamOption[]>('get_import_teams', { map, tournament });
+}
+
+export function getImportPlayers(
+  teamName?: string,
+  map?: string,
+  tournament?: string,
+) {
+  return invoke<ImportPlayerOption[]>('get_import_players', {
+    teamName,
+    map,
+    tournament,
+  });
+}
+
+export function getImportTournaments(map?: string) {
+  return invoke<ImportTournamentOption[]>('get_import_tournaments', { map });
 }
 
 export function setActiveImport(importId: number) {

@@ -1,7 +1,7 @@
 # Nade Viewer
 
 Nade Viewer is a Windows desktop application for browsing Counter-Strike grenade
-lineups from local JSON files. It imports lineups into a local SQLite database
+lineups from local JSON and MessagePack files. It imports lineups into a local SQLite database
 and presents them on bundled radar images; no server or network data source is
 configured in this repository.
 
@@ -9,14 +9,14 @@ Current application version: **0.4.1**.
 
 ## Features
 
-- Imports canonical `grenade_index`, Core Nades JSON snapshots, and Nadegrid
+- Imports canonical `grenade_index`, Core Nades JSON/MessagePack snapshots, and Nadegrid
   Screenshot Capture ZIP archives with their lineup images.
 - Keeps multiple imports, lets the user switch between them, rename them, and
   delete them.
 - Groups grenade starts and landings on map radars.
 - Filters by grenade type, side, usage count, radar level, Core status, thrower,
-  thrower team, demo name, and coordinates.
-- Shows trajectories, lineup metadata, similar grenades, spawn points, and
+  thrower team, player, tournament, demo name, and coordinates.
+- Shows usage snapshots, trajectories, lineup metadata, similar grenades, spawn points, and
   recently viewed grenades when the source data supports them.
 - Marks selected lineups as Core and exports the current Core collection.
 - Copies grenade and spawn coordinates with animated success and error feedback.
@@ -25,7 +25,7 @@ Current application version: **0.4.1**.
 - Stores imported data and settings locally in SQLite.
 - Provides English and Russian interfaces.
 
-The accepted JSON structures, field requirements, examples, and import
+The accepted library structures, field requirements, examples, and import
 limitations are documented in [Data formats](docs/data-formats.md).
 
 ## Technology stack
@@ -77,6 +77,7 @@ The project also uses `@eslint/js` 9.39.5, `@types/react` 18.3.28, and
 | `rusqlite`    |  0.32.1 | Bundled SQLite storage and queries |
 | Serde         | 1.0.228 | Rust data serialization            |
 | `serde_json`  | 1.0.149 | JSON import and export             |
+| `rmp-serde`   |   1.3.1 | MessagePack import                 |
 | Chrono        |  0.4.44 | Date and time handling             |
 | Regex         |  1.12.3 | Parsing and text normalization     |
 | RFD           |  0.15.4 | Native file selection dialogs      |
@@ -272,13 +273,18 @@ directory under roaming application data, so the database is:
 SQLite may create `nadeviewer.sqlite-wal` and `nadeviewer.sqlite-shm` beside the
 database while the application is running. The database contains imports,
 lineups, Core flags, view history, onboarding state, and the minimum-usage
-setting. Deleting an import in the UI deletes that import's lineups and view
-history; it does not delete the original JSON file.
+setting, usage events, player rosters, and tournament metadata. Deleting an
+import in the UI deletes that import's local data; it does not delete the source file.
+
+The `throw_keys` storage schema intentionally has no migration from earlier
+local databases. Close the application and remove `nadeviewer.sqlite` together
+with any adjacent `-wal` and `-shm` files before loading a newly parsed library.
 
 ## Import workflow
 
 1. Start Nade Viewer and open the import screen.
-2. Choose a `.json` file, enter its local path, or drag it onto the import area.
+2. Choose a `.json`, `.messagepack`, `.msgpack`, or `.mpk` file, enter its local
+   path, or drag it onto the import area.
 3. Start the import. The application detects the format by the top-level
    `canonical_grenades` or `grenades` key.
 4. Wait for reading, database preparation, and indexing to complete. The new
@@ -316,7 +322,7 @@ complete world-space trajectory from preview points because that conversion
 would be lossy and potentially incorrect.
 
 See [Core Nades formats](docs/data-formats.md#core-nades-formats) for the exact
-JSON fields.
+decoded fields.
 
 ### Map rendering
 
@@ -356,23 +362,23 @@ The authoritative asset inventory is the repository itself:
   boundaries
 - `src-tauri/resources/spawn_points.json` for spawn positions
 
-Map names present in imported JSON are still added to the library, but a map
+Map names present in imported data are still added to the library, but a map
 without matching bundled assets/config can lack a preview, radar background,
 coordinate projection, and level handling. Asset discovery extracts a
 `de_<name>` key from filenames; radar config filenames must match that key.
 
 ## Troubleshooting
 
-### `Unsupported JSON`
+### Unsupported library format
 
 The root object has neither `canonical_grenades` nor `grenades`. Check the
 envelope and required fields against [Data formats](docs/data-formats.md).
 
-### A serde JSON error names a missing field or invalid type
+### A serde error names a missing field or invalid type
 
-JSON field types are strict. In particular, `map` is required for canonical
+Decoded field types are strict. In particular, `map` is required for canonical
 records, while Core Nades records require `map`, `side`, and `grenade_type`.
-Numbers must be JSON numbers, not numeric strings.
+Numeric fields must be decoded as numbers, not numeric strings.
 
 ### A map is listed but has no radar or markers
 
@@ -400,8 +406,8 @@ Install or repair the Microsoft Edge WebView2 Runtime, then rerun
 ## Limitations
 
 - The application is configured and bundled for Windows installers.
-- It reads local JSON snapshots; it does not fetch or refresh an online index.
-- Imported unknown JSON fields are ignored by Serde, so a successful import does
+- It reads local JSON and MessagePack snapshots; it does not fetch or refresh an online index.
+- Imported unknown fields are ignored by Serde, so a successful import does
   not imply that every source field is used.
 - Values are structurally type-checked but domain values such as map names,
   sides, grenade types, timestamps, coordinate ranges, and positive counts are

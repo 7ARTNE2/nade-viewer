@@ -1,10 +1,10 @@
-use chrono::{Duration, Utc};
+use chrono::{Duration, NaiveDate, Utc};
 use regex::Regex;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     env, fs,
     io::{BufReader, Read},
     path::{Path, PathBuf},
@@ -17,7 +17,7 @@ use thiserror::Error;
 const WORLD: f64 = 1024.0;
 const SUPPORTED_IMPORT_VERSION: i64 = 1;
 const GRENADE_PREVIEW_COLUMNS: &str = "g.id, g.map, g.side, g.grenade_type, g.is_core,
-    g.throw_description, g.coordinates, g.thrower, g.thrower_team, g.airtime, g.usage_count, g.round_time_seconds,
+    g.throw_keys, g.coordinates, g.thrower, g.thrower_steamid64, g.thrower_team, g.airtime, g.usage_count, g.round_time_seconds,
     g.start_map_x, g.start_map_y, g.explode_map_x, g.explode_map_y, g.explode_pos_z,
     g.trajectory_preview_json";
 
@@ -172,6 +172,8 @@ struct MapFilters {
     side: Option<String>,
     search: Option<String>,
     thrower_team: Option<String>,
+    thrower_steamid64: Option<String>,
+    tournament: Option<String>,
     min_usage: Option<i64>,
     radar_level: Option<String>,
     is_core: Option<bool>,
@@ -192,6 +194,8 @@ struct CoreNadesFile {
     version: i64,
     exported_at: String,
     grenades: Vec<CoreNadeRecord>,
+    #[serde(default, deserialize_with = "deserialize_players")]
+    players: Vec<RawPlayer>,
 }
 
 enum TypedImportFile {
@@ -226,9 +230,11 @@ struct CoreNadeRecord {
     map: String,
     side: String,
     grenade_type: String,
-    throw_description: Option<String>,
+    throw_keys: Option<String>,
     coordinates: Option<String>,
     thrower: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_optional_string")]
+    thrower_steamid64: Option<String>,
     thrower_team: Option<String>,
     airtime: Option<f64>,
     usage_count: Option<i64>,
@@ -236,7 +242,7 @@ struct CoreNadeRecord {
     demo_filename: Option<String>,
     throw_tick: Option<i64>,
     lineup_tick: Option<i64>,
-    tickrate: Option<i64>,
+    tickrate: Option<f64>,
     round_time_seconds: Option<f64>,
     start_pos_x: Option<f64>,
     start_pos_y: Option<f64>,
@@ -250,6 +256,8 @@ struct CoreNadeRecord {
     explode_map_y: Option<f64>,
     trajectory: Option<Vec<Vec<f64>>>,
     trajectory_preview: Option<Value>,
+    #[serde(default)]
+    usage_events: Vec<GrenadeUsageEvent>,
 }
 
 #[derive(Serialize)]
@@ -277,21 +285,30 @@ struct ParserIndex {
     updated_at: Option<String>,
     core_nades: Option<bool>,
     canonical_grenades: Vec<RawGrenade>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_players",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    players: Vec<RawPlayer>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    processed_demos: Option<Value>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
 struct RawGrenade {
+    source_index: Option<i64>,
     map: String,
     side: Option<String>,
     grenade_type: Option<String>,
-    throw_description: Option<String>,
+    throw_keys: Option<String>,
     usage_count: Option<i64>,
     usage_throwers: Option<Vec<String>>,
     coordinates: Option<String>,
     demo_filename: Option<String>,
     throw_tick: Option<i64>,
     lineup_tick: Option<i64>,
-    tickrate: Option<i64>,
+    tickrate: Option<f64>,
     round_time_seconds: Option<f64>,
     start_pos_x: Option<f64>,
     start_pos_y: Option<f64>,
@@ -299,11 +316,185 @@ struct RawGrenade {
     explode_pos_x: Option<f64>,
     explode_pos_y: Option<f64>,
     explode_pos_z: Option<f64>,
+    start_map_x: Option<f64>,
+    start_map_y: Option<f64>,
+    explode_map_x: Option<f64>,
+    explode_map_y: Option<f64>,
     trajectory: Option<Vec<Vec<f64>>>,
     trajectory_preview: Option<Value>,
     thrower: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_optional_string")]
+    thrower_steamid64: Option<String>,
     thrower_team: Option<String>,
     airtime: Option<f64>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    usage_events: Vec<GrenadeUsageEvent>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tournament: Option<String>,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+struct GrenadeUsageEvent {
+    demo_filename: Option<String>,
+    #[serde(alias = "tick")]
+    throw_tick: Option<i64>,
+    #[serde(alias = "player", alias = "player_name")]
+    thrower: Option<String>,
+    #[serde(
+        default,
+        alias = "steamid64",
+        deserialize_with = "deserialize_optional_string"
+    )]
+    thrower_steamid64: Option<String>,
+    #[serde(alias = "team", alias = "team_name")]
+    thrower_team: Option<String>,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+struct RawPlayer {
+    #[serde(alias = "demo")]
+    demo_filename: Option<String>,
+    #[serde(
+        default,
+        alias = "steam_id",
+        alias = "steamId64",
+        deserialize_with = "deserialize_optional_string"
+    )]
+    steamid64: Option<String>,
+    #[serde(rename = "name", alias = "player_name", alias = "player")]
+    player_name: Option<String>,
+    #[serde(alias = "team", alias = "thrower_team")]
+    team_name: Option<String>,
+    side: Option<String>,
+}
+
+fn deserialize_optional_string<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = Option::<Value>::deserialize(deserializer)?;
+    match value {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(value)) => Ok(nonempty(value)),
+        Some(Value::Number(value)) => Ok(Some(value.to_string())),
+        Some(other) => Err(serde::de::Error::custom(format!(
+            "expected a string or number, got {other}"
+        ))),
+    }
+}
+
+fn deserialize_players<'de, D>(deserializer: D) -> Result<Vec<RawPlayer>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = Value::deserialize(deserializer)?;
+    let mut players = Vec::new();
+    collect_players(&value, None, None, None, None, &mut players);
+    Ok(players)
+}
+
+fn collect_players(
+    value: &Value,
+    demo_hint: Option<&str>,
+    steamid_hint: Option<&str>,
+    team_hint: Option<&str>,
+    side_hint: Option<&str>,
+    players: &mut Vec<RawPlayer>,
+) {
+    match value {
+        Value::Array(values) => {
+            for value in values {
+                collect_players(
+                    value,
+                    demo_hint,
+                    steamid_hint,
+                    team_hint,
+                    side_hint,
+                    players,
+                );
+            }
+        }
+        Value::Object(object) => {
+            let is_player = [
+                "steamid64",
+                "steam_id",
+                "steamId64",
+                "player_name",
+                "player",
+                "name",
+                "team_name",
+                "team",
+                "side",
+            ]
+            .iter()
+            .any(|key| object.contains_key(*key));
+            if is_player {
+                if let Ok(mut player) = serde_json::from_value::<RawPlayer>(value.clone()) {
+                    if player.demo_filename.is_none() {
+                        player.demo_filename = demo_hint.map(str::to_string);
+                    }
+                    if player.steamid64.is_none() {
+                        player.steamid64 = steamid_hint.map(str::to_string);
+                    }
+                    if player.team_name.is_none() {
+                        player.team_name = team_hint.map(str::to_string);
+                    }
+                    if player.side.is_none() {
+                        player.side = side_hint.map(str::to_string);
+                    }
+                    players.push(player);
+                }
+                return;
+            }
+
+            let object_demo = object
+                .get("demo_filename")
+                .or_else(|| object.get("filename"))
+                .or_else(|| object.get("demo"))
+                .and_then(Value::as_str)
+                .or(demo_hint);
+            let object_team = object
+                .get("team_name")
+                .or_else(|| object.get("team"))
+                .and_then(Value::as_str)
+                .or(team_hint);
+            let object_side = object.get("side").and_then(Value::as_str).or(side_hint);
+            for (key, nested) in object {
+                let nested_demo = if looks_like_demo_filename(key) {
+                    Some(key.as_str())
+                } else {
+                    object_demo
+                };
+                let nested_steamid = if key.chars().all(|character| character.is_ascii_digit()) {
+                    Some(key.as_str())
+                } else {
+                    steamid_hint
+                };
+                let nested_team = if key.eq_ignore_ascii_case("t")
+                    || key.eq_ignore_ascii_case("ct")
+                    || key.to_lowercase().contains("team")
+                {
+                    Some(key.as_str())
+                } else {
+                    object_team
+                };
+                collect_players(
+                    nested,
+                    nested_demo,
+                    nested_steamid,
+                    nested_team,
+                    object_side,
+                    players,
+                );
+            }
+        }
+        _ => {}
+    }
+}
+
+fn nonempty(value: String) -> Option<String> {
+    let value = value.trim();
+    (!value.is_empty()).then(|| value.to_string())
 }
 
 #[derive(Serialize)]
@@ -334,9 +525,10 @@ struct GrenadePreview {
     side: String,
     grenade_type: String,
     is_core: bool,
-    throw_description: Option<String>,
+    throw_keys: Option<String>,
     coordinates: Option<String>,
     thrower: Option<String>,
+    thrower_steamid64: Option<String>,
     thrower_team: Option<String>,
     airtime: Option<f64>,
     usage_count: i64,
@@ -378,6 +570,47 @@ struct GrenadeDetail {
     preview_image_path: Option<String>,
     screenshot_image_path: Option<String>,
     screenshot_wide_image_path: Option<String>,
+    usage_stats: GrenadeUsageStats,
+}
+
+#[derive(Clone, Default, Serialize)]
+struct GrenadeUsageStats {
+    tracked_throws: i64,
+    peak: i64,
+    most_used_player: Option<String>,
+    most_used_player_throws: i64,
+    most_used_team: Option<String>,
+    most_used_team_throws: i64,
+    last_demo: Option<String>,
+    last_tick: Option<i64>,
+    history: Vec<GrenadeUsageHistoryPoint>,
+}
+
+#[derive(Clone, Serialize)]
+struct GrenadeUsageHistoryPoint {
+    label: String,
+    count: i64,
+}
+
+#[derive(Serialize)]
+struct ImportTeam {
+    team_name: String,
+    player_count: i64,
+}
+
+#[derive(Clone, Serialize)]
+struct ImportPlayer {
+    steamid64: String,
+    name: String,
+    team_name: String,
+    side: String,
+}
+
+#[derive(Serialize)]
+struct ImportTournament {
+    name: String,
+    start_date: String,
+    end_date: String,
 }
 
 #[derive(Serialize)]
@@ -413,6 +646,9 @@ pub fn run() {
             import_json,
             get_import_status,
             list_imports,
+            get_import_teams,
+            get_import_players,
+            get_import_tournaments,
             set_active_import,
             update_import_label,
             delete_import,
@@ -543,9 +779,10 @@ fn init_schema(conn: &Connection) -> AppResult<()> {
             side TEXT NOT NULL,
             grenade_type TEXT NOT NULL,
             is_core INTEGER NOT NULL DEFAULT 0,
-            throw_description TEXT,
+            throw_keys TEXT,
             coordinates TEXT,
             thrower TEXT,
+            thrower_steamid64 TEXT,
             thrower_team TEXT,
             airtime REAL,
             usage_count INTEGER NOT NULL DEFAULT 1,
@@ -567,7 +804,38 @@ fn init_schema(conn: &Connection) -> AppResult<()> {
             explode_map_y REAL,
             trajectory_preview_json TEXT,
             trajectory_json TEXT,
-            FOREIGN KEY(import_id) REFERENCES imports(id)
+            FOREIGN KEY(import_id) REFERENCES imports(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS grenade_usage_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            import_id INTEGER NOT NULL,
+            grenade_id INTEGER NOT NULL,
+            demo_filename TEXT,
+            throw_tick INTEGER,
+            thrower TEXT,
+            thrower_steamid64 TEXT,
+            thrower_team TEXT,
+            FOREIGN KEY(import_id) REFERENCES imports(id) ON DELETE CASCADE,
+            FOREIGN KEY(grenade_id) REFERENCES grenades(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS import_players (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            import_id INTEGER NOT NULL,
+            demo_filename TEXT,
+            steamid64 TEXT,
+            player_name TEXT,
+            team_name TEXT,
+            side TEXT,
+            FOREIGN KEY(import_id) REFERENCES imports(id) ON DELETE CASCADE,
+            UNIQUE(import_id, demo_filename, steamid64, player_name, team_name, side)
+        );
+        CREATE TABLE IF NOT EXISTS demo_metadata (
+            import_id INTEGER NOT NULL,
+            demo_filename TEXT NOT NULL,
+            tournament TEXT NOT NULL,
+            demo_date TEXT NOT NULL,
+            PRIMARY KEY(import_id, demo_filename),
+            FOREIGN KEY(import_id) REFERENCES imports(id) ON DELETE CASCADE
         );
         CREATE TABLE IF NOT EXISTS spawn_points (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -612,6 +880,14 @@ fn init_schema(conn: &Connection) -> AppResult<()> {
         CREATE INDEX IF NOT EXISTS idx_grenades_start ON grenades(import_id, map, start_map_x, start_map_y);
         CREATE INDEX IF NOT EXISTS idx_grenades_usage ON grenades(import_id, usage_count);
         CREATE INDEX IF NOT EXISTS idx_grenades_similar ON grenades(import_id, map, grenade_type, usage_count DESC, explode_map_x, explode_map_y, id);
+        CREATE INDEX IF NOT EXISTS idx_grenade_usage_events_grenade ON grenade_usage_events(grenade_id, demo_filename, throw_tick);
+        CREATE INDEX IF NOT EXISTS idx_grenade_usage_events_import_demo ON grenade_usage_events(import_id, demo_filename);
+        CREATE INDEX IF NOT EXISTS idx_grenade_usage_events_player ON grenade_usage_events(import_id, thrower_steamid64);
+        CREATE INDEX IF NOT EXISTS idx_grenade_usage_events_team ON grenade_usage_events(import_id, thrower_team);
+        CREATE INDEX IF NOT EXISTS idx_import_players_import_team ON import_players(import_id, team_name);
+        CREATE INDEX IF NOT EXISTS idx_import_players_import_player ON import_players(import_id, steamid64);
+        CREATE INDEX IF NOT EXISTS idx_import_players_import_demo ON import_players(import_id, demo_filename);
+        CREATE INDEX IF NOT EXISTS idx_demo_metadata_tournament ON demo_metadata(import_id, tournament, demo_date);
         CREATE INDEX IF NOT EXISTS idx_spawn_side ON spawn_points(map, side);
         CREATE INDEX IF NOT EXISTS idx_grenade_view_history_recent ON grenade_view_history(viewed_at DESC);
         CREATE INDEX IF NOT EXISTS idx_grenade_screenshots_grenade ON grenade_screenshots(grenade_id);
@@ -652,6 +928,20 @@ fn init_schema(conn: &Connection) -> AppResult<()> {
     };
     if !has_thrower_team {
         conn.execute("ALTER TABLE grenades ADD COLUMN thrower_team TEXT", [])?;
+    }
+    let has_demo_filename = {
+        let mut stmt = conn.prepare("PRAGMA table_info(grenades)")?;
+        let columns = stmt.query_map([], |row| row.get::<_, String>(1))?;
+        columns
+            .collect::<Result<Vec<_>, _>>()?
+            .iter()
+            .any(|name| name == "demo_filename")
+    };
+    if has_demo_filename {
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_grenades_import_demo_map ON grenades(import_id, demo_filename, map)",
+            [],
+        )?;
     }
     let has_import_kind = {
         let mut stmt = conn.prepare("PRAGMA table_info(imports)")?;
@@ -718,35 +1008,49 @@ fn try_begin_import(status: &Mutex<ImportStatus>) -> AppResult<()> {
     status.stage = "reading".to_string();
     status.current = 0;
     status.total = 0;
-    status.message = "Reading JSON".to_string();
+    status.message = "Reading import".to_string();
     status.error = None;
     Ok(())
 }
 
-fn parse_import(reader: impl std::io::Read) -> AppResult<TypedImportFile> {
+fn parse_import(reader: impl Read) -> AppResult<TypedImportFile> {
     let value: Value = serde_json::from_reader(reader).map_err(|error| AppError::Import {
         code: "invalid_json",
         message: format!("Invalid JSON: {error}"),
     })?;
+    parse_import_value(value)
+}
+
+fn parse_import_bytes(bytes: &[u8], messagepack: bool) -> AppResult<TypedImportFile> {
+    if !messagepack {
+        return parse_import(bytes);
+    }
+    let value: Value = rmp_serde::from_slice(bytes).map_err(|error| AppError::Import {
+        code: "invalid_messagepack",
+        message: format!("Invalid MessagePack: {error}"),
+    })?;
+    parse_import_value(value)
+}
+
+fn parse_import_value(value: Value) -> AppResult<TypedImportFile> {
     let object = value.as_object().ok_or_else(|| AppError::Import {
         code: "invalid_top_level",
-        message: "The top-level JSON value must be an object".to_string(),
+        message: "The top-level import value must be an object".to_string(),
     })?;
     let has_canonical = object.contains_key("canonical_grenades");
     let has_core = object.contains_key("grenades");
     if has_canonical && has_core {
         return Err(AppError::Import {
             code: "ambiguous_format",
-            message: "JSON cannot contain both canonical_grenades and grenades at the top level"
+            message: "Import cannot contain both canonical_grenades and grenades at the top level"
                 .to_string(),
         });
     }
     if !has_canonical && !has_core {
         return Err(AppError::Import {
             code: "unsupported_format",
-            message:
-                "Unsupported JSON format: expected canonical_grenades or grenades at the top level"
-                    .to_string(),
+            message: "Unsupported import format: expected canonical_grenades or grenades at the top level"
+                .to_string(),
         });
     }
 
@@ -754,7 +1058,7 @@ fn parse_import(reader: impl std::io::Read) -> AppResult<TypedImportFile> {
     if has_core && version.is_none() {
         return Err(AppError::Import {
             code: "missing_version",
-            message: "Core Nades JSON requires top-level version 1".to_string(),
+            message: "Core Nades import requires top-level version 1".to_string(),
         });
     }
     if let Some(version) = version {
@@ -768,7 +1072,7 @@ fn parse_import(reader: impl std::io::Read) -> AppResult<TypedImportFile> {
             return Err(AppError::Import {
                 code: "unsupported_version",
                 message: format!(
-                    "Unsupported JSON version {version}; supported version is {SUPPORTED_IMPORT_VERSION}"
+                    "Unsupported import version {version}; supported version is {SUPPORTED_IMPORT_VERSION}"
                 ),
             });
         }
@@ -779,14 +1083,14 @@ fn parse_import(reader: impl std::io::Read) -> AppResult<TypedImportFile> {
             .map(TypedImportFile::GrenadeIndex)
             .map_err(|error| AppError::Import {
                 code: "invalid_canonical_format",
-                message: format!("Invalid grenade_index JSON: {error}"),
+                message: format!("Invalid grenade_index import: {error}"),
             })
     } else {
         serde_json::from_value::<CoreNadesFile>(value)
             .map(TypedImportFile::CoreNades)
             .map_err(|error| AppError::Import {
                 code: "invalid_core_format",
-                message: format!("Invalid Core Nades JSON: {error}"),
+                message: format!("Invalid Core Nades import: {error}"),
             })
     }
 }
@@ -797,9 +1101,310 @@ fn read_import_bytes(file: fs::File) -> AppResult<Vec<u8>> {
         .read_to_end(&mut bytes)
         .map_err(|error| AppError::Import {
             code: "file_unavailable",
-            message: format!("Cannot read JSON file: {error}"),
+            message: format!("Cannot read import file: {error}"),
         })?;
     Ok(bytes)
+}
+
+fn is_messagepack_path(path: &Path) -> bool {
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| {
+            extension.eq_ignore_ascii_case("messagepack")
+                || extension.eq_ignore_ascii_case("msgpack")
+                || extension.eq_ignore_ascii_case("mpk")
+        })
+}
+
+fn round_tickrate(tickrate: Option<f64>) -> Option<i64> {
+    let rounded = tickrate?.round();
+    if !rounded.is_finite() || rounded < i64::MIN as f64 || rounded >= i64::MAX as f64 + 1.0 {
+        None
+    } else {
+        Some(rounded as i64)
+    }
+}
+
+fn demo_date_from_filename(filename: &str) -> Option<NaiveDate> {
+    let filename = filename
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or(filename)
+        .as_bytes();
+    if filename.len() < 10 {
+        return None;
+    }
+
+    let preferred = filename.len().checked_sub(14);
+    preferred
+        .into_iter()
+        .chain(0..=filename.len() - 10)
+        .filter_map(|start| std::str::from_utf8(filename.get(start..start + 10)?).ok())
+        .find_map(|candidate| NaiveDate::parse_from_str(candidate, "%Y-%m-%d").ok())
+}
+
+fn demo_tournament_from_filename(filename: &str) -> Option<String> {
+    let filename = filename
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or(filename)
+        .trim();
+    nonempty(filename.split_once('_')?.0.to_string())
+}
+
+fn looks_like_demo_filename(value: &str) -> bool {
+    value.contains('_') && demo_date_from_filename(value).is_some()
+}
+
+fn record_demo_metadata(
+    metadata: &mut BTreeMap<String, (String, String)>,
+    filename: Option<&str>,
+    tournament: Option<&str>,
+) {
+    let Some(filename) = filename.map(str::trim).filter(|value| !value.is_empty()) else {
+        return;
+    };
+    let Some(date) = demo_date_from_filename(filename) else {
+        return;
+    };
+    let explicit_tournament = tournament
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+    let parsed_tournament = explicit_tournament
+        .clone()
+        .or_else(|| demo_tournament_from_filename(filename));
+    let Some(tournament) = parsed_tournament else {
+        return;
+    };
+
+    match metadata.entry(filename.to_string()) {
+        std::collections::btree_map::Entry::Vacant(entry) => {
+            entry.insert((tournament, date.to_string()));
+        }
+        std::collections::btree_map::Entry::Occupied(mut entry) => {
+            if explicit_tournament.is_some() {
+                entry.insert((tournament, date.to_string()));
+            }
+        }
+    }
+}
+
+fn collect_demo_metadata_from_value(
+    value: &Value,
+    metadata: &mut BTreeMap<String, (String, String)>,
+) {
+    match value {
+        Value::String(filename) => record_demo_metadata(metadata, Some(filename), None),
+        Value::Array(values) => {
+            for value in values {
+                collect_demo_metadata_from_value(value, metadata);
+            }
+        }
+        Value::Object(object) => {
+            let filename = object
+                .get("demo_filename")
+                .or_else(|| object.get("filename"))
+                .and_then(Value::as_str);
+            let tournament = object.get("tournament").and_then(Value::as_str);
+            record_demo_metadata(metadata, filename, tournament);
+            for (key, value) in object {
+                if looks_like_demo_filename(key) {
+                    record_demo_metadata(metadata, Some(key), tournament);
+                }
+                collect_demo_metadata_from_value(value, metadata);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn insert_usage_event(
+    conn: &Connection,
+    import_id: i64,
+    grenade_id: i64,
+    event: &GrenadeUsageEvent,
+) -> AppResult<()> {
+    conn.execute(
+        "INSERT INTO grenade_usage_events(
+            import_id, grenade_id, demo_filename, throw_tick, thrower,
+            thrower_steamid64, thrower_team
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        params![
+            import_id,
+            grenade_id,
+            event.demo_filename.as_deref(),
+            event.throw_tick,
+            event.thrower.as_deref(),
+            event.thrower_steamid64.as_deref(),
+            event.thrower_team.as_deref(),
+        ],
+    )?;
+    Ok(())
+}
+
+fn insert_import_player(conn: &Connection, import_id: i64, player: &RawPlayer) -> AppResult<()> {
+    let demo_filename = player.demo_filename.as_deref().unwrap_or("").trim();
+    let steamid64 = player.steamid64.as_deref().unwrap_or("").trim();
+    let player_name = player.player_name.as_deref().unwrap_or("").trim();
+    let team_name = player.team_name.as_deref().unwrap_or("").trim();
+    let side = player.side.as_deref().unwrap_or("").trim();
+    if steamid64.is_empty() && player_name.is_empty() {
+        return Ok(());
+    }
+    conn.execute(
+        "INSERT OR IGNORE INTO import_players(
+            import_id, demo_filename, steamid64, player_name, team_name, side
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![
+            import_id,
+            demo_filename,
+            steamid64,
+            player_name,
+            team_name,
+            side,
+        ],
+    )?;
+    Ok(())
+}
+
+fn insert_fallback_player(
+    conn: &Connection,
+    import_id: i64,
+    demo_filename: Option<&str>,
+    steamid64: Option<&str>,
+    player_name: Option<&str>,
+    team_name: Option<&str>,
+    side: Option<&str>,
+) -> AppResult<()> {
+    insert_import_player(
+        conn,
+        import_id,
+        &RawPlayer {
+            demo_filename: demo_filename.map(str::to_string),
+            steamid64: steamid64.map(str::to_string),
+            player_name: player_name.map(str::to_string),
+            team_name: team_name.map(str::to_string),
+            side: side.map(str::to_string),
+        },
+    )
+}
+
+fn insert_demo_metadata(
+    conn: &Connection,
+    import_id: i64,
+    metadata: &BTreeMap<String, (String, String)>,
+) -> AppResult<()> {
+    for (filename, (tournament, date)) in metadata {
+        conn.execute(
+            "INSERT INTO demo_metadata(import_id, demo_filename, tournament, demo_date)
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(import_id, demo_filename) DO UPDATE SET
+               tournament=excluded.tournament, demo_date=excluded.demo_date",
+            params![import_id, filename, tournament, date],
+        )?;
+    }
+    Ok(())
+}
+
+fn collect_grenade_metadata(
+    grenade: &RawGrenade,
+    metadata: &mut BTreeMap<String, (String, String)>,
+) {
+    record_demo_metadata(
+        metadata,
+        grenade.demo_filename.as_deref(),
+        grenade.tournament.as_deref(),
+    );
+    for event in &grenade.usage_events {
+        record_demo_metadata(metadata, event.demo_filename.as_deref(), None);
+    }
+}
+
+fn collect_player_metadata(player: &RawPlayer, metadata: &mut BTreeMap<String, (String, String)>) {
+    record_demo_metadata(metadata, player.demo_filename.as_deref(), None);
+}
+
+fn add_canonical_fallback_players(
+    conn: &Connection,
+    import_id: i64,
+    grenade: &RawGrenade,
+) -> AppResult<()> {
+    insert_fallback_player(
+        conn,
+        import_id,
+        grenade.demo_filename.as_deref(),
+        grenade.thrower_steamid64.as_deref(),
+        grenade.thrower.as_deref(),
+        grenade.thrower_team.as_deref(),
+        grenade.side.as_deref(),
+    )?;
+    for event in &grenade.usage_events {
+        insert_fallback_player(
+            conn,
+            import_id,
+            event.demo_filename.as_deref(),
+            event.thrower_steamid64.as_deref(),
+            event.thrower.as_deref(),
+            event.thrower_team.as_deref(),
+            grenade.side.as_deref(),
+        )?;
+    }
+    if let Some(throwers) = grenade.usage_throwers.as_deref() {
+        for thrower in throwers {
+            insert_fallback_player(
+                conn,
+                import_id,
+                grenade.demo_filename.as_deref(),
+                None,
+                Some(thrower),
+                grenade.thrower_team.as_deref(),
+                grenade.side.as_deref(),
+            )?;
+        }
+    }
+    Ok(())
+}
+
+fn add_core_fallback_players(
+    conn: &Connection,
+    import_id: i64,
+    grenade: &CoreNadeRecord,
+) -> AppResult<()> {
+    insert_fallback_player(
+        conn,
+        import_id,
+        grenade.demo_filename.as_deref(),
+        grenade.thrower_steamid64.as_deref(),
+        grenade.thrower.as_deref(),
+        grenade.thrower_team.as_deref(),
+        Some(&grenade.side),
+    )?;
+    for event in &grenade.usage_events {
+        insert_fallback_player(
+            conn,
+            import_id,
+            event.demo_filename.as_deref(),
+            event.thrower_steamid64.as_deref(),
+            event.thrower.as_deref(),
+            event.thrower_team.as_deref(),
+            Some(&grenade.side),
+        )?;
+    }
+    if let Some(throwers) = grenade.usage_throwers.as_deref() {
+        for thrower in throwers {
+            insert_fallback_player(
+                conn,
+                import_id,
+                grenade.demo_filename.as_deref(),
+                None,
+                Some(thrower),
+                grenade.thrower_team.as_deref(),
+                Some(&grenade.side),
+            )?;
+        }
+    }
+    Ok(())
 }
 
 fn set_error(state: &AppState, message: &str) {
@@ -1118,7 +1723,11 @@ fn configure_conn(conn: &Connection) -> AppResult<()> {
     Ok(())
 }
 
-fn filter_sql(filters: &MapFilters, args: &mut Vec<Box<dyn rusqlite::ToSql>>) -> String {
+fn filter_sql(
+    filters: &MapFilters,
+    args: &mut Vec<Box<dyn rusqlite::ToSql>>,
+    alias: &str,
+) -> String {
     let mut parts = Vec::new();
     if let Some(t) = filters
         .grenade_type
@@ -1127,9 +1736,11 @@ fn filter_sql(filters: &MapFilters, args: &mut Vec<Box<dyn rusqlite::ToSql>>) ->
     {
         if t == "molotov" {
             // Both team-specific fire grenades belong to the same filter.
-            parts.push("grenade_type IN ('molotov', 'incendiary grenade')".to_string());
+            parts.push(format!(
+                "{alias}.grenade_type IN ('molotov', 'incendiary grenade')"
+            ));
         } else {
-            parts.push("grenade_type = ?".to_string());
+            parts.push(format!("{alias}.grenade_type = ?"));
             args.push(Box::new(t.to_string()));
         }
     }
@@ -1138,11 +1749,11 @@ fn filter_sql(filters: &MapFilters, args: &mut Vec<Box<dyn rusqlite::ToSql>>) ->
         .as_deref()
         .filter(|v| !v.is_empty() && *v != "Any")
     {
-        parts.push("side = ?".to_string());
+        parts.push(format!("{alias}.side = ?"));
         args.push(Box::new(side.to_string()));
     }
     if let Some(min_usage) = filters.min_usage.filter(|v| *v > 0) {
-        parts.push("usage_count >= ?".to_string());
+        parts.push(format!("{alias}.usage_count >= ?"));
         args.push(Box::new(min_usage));
     }
     if let Some(team) = filters
@@ -1151,14 +1762,47 @@ fn filter_sql(filters: &MapFilters, args: &mut Vec<Box<dyn rusqlite::ToSql>>) ->
         .map(str::trim)
         .filter(|v| !v.is_empty())
     {
-        parts.push("LOWER(COALESCE(thrower_team, '')) LIKE ? ESCAPE '\\'".to_string());
+        parts.push(format!(
+            "(LOWER(COALESCE({alias}.thrower_team, '')) LIKE ? ESCAPE '\\' OR EXISTS (SELECT 1 FROM grenade_usage_events ue WHERE ue.grenade_id={alias}.id AND LOWER(COALESCE(ue.thrower_team, '')) LIKE ? ESCAPE '\\'))"
+        ));
+        args.push(Box::new(format!(
+            "%{}%",
+            escape_like_pattern(&team.to_lowercase())
+        )));
         args.push(Box::new(format!(
             "%{}%",
             escape_like_pattern(&team.to_lowercase())
         )));
     }
+    if let Some(steamid64) = filters
+        .thrower_steamid64
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        parts.push(format!(
+            "({alias}.thrower_steamid64 = ? OR EXISTS (SELECT 1 FROM grenade_usage_events ue WHERE ue.grenade_id={alias}.id AND ue.thrower_steamid64 = ?))"
+        ));
+        args.push(Box::new(steamid64.to_string()));
+        args.push(Box::new(steamid64.to_string()));
+    }
+    if let Some(tournament) = filters
+        .tournament
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        // Keyed by demo_filename on both sides so SQLite can use the
+        // demo_metadata primary key instead of walking every demo in the
+        // tournament for each candidate grenade.
+        parts.push(format!(
+            "(EXISTS (SELECT 1 FROM demo_metadata dm WHERE dm.import_id={alias}.import_id AND dm.demo_filename={alias}.demo_filename AND dm.tournament = ?) OR EXISTS (SELECT 1 FROM grenade_usage_events ue JOIN demo_metadata dm ON dm.import_id=ue.import_id AND dm.demo_filename=ue.demo_filename WHERE ue.grenade_id={alias}.id AND dm.tournament = ?))"
+        ));
+        args.push(Box::new(tournament.to_string()));
+        args.push(Box::new(tournament.to_string()));
+    }
     if filters.is_core.unwrap_or(false) {
-        parts.push("is_core = 1".to_string());
+        parts.push(format!("{alias}.is_core = 1"));
     }
     if let Some(search) = filters
         .search
@@ -1167,13 +1811,14 @@ fn filter_sql(filters: &MapFilters, args: &mut Vec<Box<dyn rusqlite::ToSql>>) ->
         .filter(|v| !v.is_empty())
     {
         parts.push(
-            "(LOWER(COALESCE(thrower, '')) LIKE ? ESCAPE '\\' OR LOWER(COALESCE(usage_throwers_json, '')) LIKE ? ESCAPE '\\' OR LOWER(COALESCE(coordinates, '')) LIKE ? ESCAPE '\\' OR LOWER(COALESCE(demo_filename, '')) LIKE ? ESCAPE '\\')".to_string(),
+            format!(
+                "(LOWER(COALESCE({alias}.thrower, '')) LIKE ? ESCAPE '\\' OR LOWER(COALESCE({alias}.thrower_steamid64, '')) LIKE ? ESCAPE '\\' OR LOWER(COALESCE({alias}.usage_throwers_json, '')) LIKE ? ESCAPE '\\' OR LOWER(COALESCE({alias}.coordinates, '')) LIKE ? ESCAPE '\\' OR LOWER(COALESCE({alias}.demo_filename, '')) LIKE ? ESCAPE '\\' OR EXISTS (SELECT 1 FROM grenade_usage_events ue WHERE ue.grenade_id={alias}.id AND (LOWER(COALESCE(ue.thrower, '')) LIKE ? ESCAPE '\\' OR LOWER(COALESCE(ue.thrower_steamid64, '')) LIKE ? ESCAPE '\\' OR LOWER(COALESCE(ue.thrower_team, '')) LIKE ? ESCAPE '\\' OR LOWER(COALESCE(ue.demo_filename, '')) LIKE ? ESCAPE '\\')))"
+            ),
         );
         let pattern = format!("%{}%", escape_like_pattern(&search.to_lowercase()));
-        args.push(Box::new(pattern.clone()));
-        args.push(Box::new(pattern.clone()));
-        args.push(Box::new(pattern.clone()));
-        args.push(Box::new(pattern));
+        for _ in 0..9 {
+            args.push(Box::new(pattern.clone()));
+        }
     }
     if parts.is_empty() {
         String::new()
@@ -1192,9 +1837,10 @@ fn escape_like_pattern(value: &str) -> String {
 fn visibility_sql(
     conn: &Connection,
     args: &mut Vec<Box<dyn rusqlite::ToSql>>,
+    alias: &str,
 ) -> AppResult<String> {
     args.push(Box::new(public_min_usage_count(conn)?));
-    Ok(" AND usage_count >= ?".to_string())
+    Ok(format!(" AND {alias}.usage_count >= ?"))
 }
 
 fn has_lower_radar(summary: &MapSummary) -> bool {
@@ -1217,6 +1863,7 @@ fn radar_level_sql(
     level: Option<&str>,
     summary: &MapSummary,
     args: &mut Vec<Box<dyn rusqlite::ToSql>>,
+    alias: &str,
 ) -> String {
     if !has_lower_radar(summary) {
         return String::new();
@@ -1227,11 +1874,11 @@ fn radar_level_sql(
     match level {
         Some("lower") => {
             args.push(Box::new(split_z));
-            " AND explode_pos_z IS NOT NULL AND explode_pos_z <= ?".to_string()
+            format!(" AND {alias}.explode_pos_z IS NOT NULL AND {alias}.explode_pos_z <= ?")
         }
         Some("default") => {
             args.push(Box::new(split_z));
-            " AND (explode_pos_z IS NULL OR explode_pos_z > ?)".to_string()
+            format!(" AND ({alias}.explode_pos_z IS NULL OR {alias}.explode_pos_z > ?)")
         }
         _ => String::new(),
     }
@@ -1252,9 +1899,10 @@ fn grenade_preview_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Grenade
         side: row.get("side")?,
         grenade_type: row.get("grenade_type")?,
         is_core: row.get::<_, i64>("is_core")? == 1,
-        throw_description: row.get("throw_description")?,
+        throw_keys: row.get("throw_keys")?,
         coordinates: row.get("coordinates")?,
         thrower: row.get("thrower")?,
+        thrower_steamid64: row.get("thrower_steamid64")?,
         thrower_team: row.get("thrower_team")?,
         airtime: row.get("airtime")?,
         usage_count: row.get("usage_count")?,
@@ -1274,17 +1922,20 @@ fn raw_grenade_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<RawGrenade>
     let trajectory_json: Option<String> = row.get("trajectory_json")?;
     let trajectory_preview_json: Option<String> = row.get("trajectory_preview_json")?;
     Ok(RawGrenade {
+        source_index: row.get("source_index")?,
         map: row.get("map")?,
         side: Some(row.get("side")?),
         grenade_type: Some(row.get("grenade_type")?),
-        throw_description: row.get("throw_description")?,
+        throw_keys: row.get("throw_keys")?,
         usage_count: row.get("usage_count")?,
         usage_throwers: usage_throwers_json.and_then(|s| serde_json::from_str(&s).ok()),
         coordinates: row.get("coordinates")?,
         demo_filename: row.get("demo_filename")?,
         throw_tick: row.get("throw_tick")?,
         lineup_tick: row.get("lineup_tick")?,
-        tickrate: row.get("tickrate")?,
+        tickrate: row
+            .get::<_, Option<i64>>("tickrate")?
+            .map(|tickrate| tickrate as f64),
         round_time_seconds: row.get("round_time_seconds")?,
         start_pos_x: row.get("start_pos_x")?,
         start_pos_y: row.get("start_pos_y")?,
@@ -1292,11 +1943,199 @@ fn raw_grenade_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<RawGrenade>
         explode_pos_x: row.get("explode_pos_x")?,
         explode_pos_y: row.get("explode_pos_y")?,
         explode_pos_z: row.get("explode_pos_z")?,
+        start_map_x: row.get("start_map_x")?,
+        start_map_y: row.get("start_map_y")?,
+        explode_map_x: row.get("explode_map_x")?,
+        explode_map_y: row.get("explode_map_y")?,
         trajectory: trajectory_json.and_then(|s| serde_json::from_str(&s).ok()),
         trajectory_preview: trajectory_preview_json.and_then(|s| serde_json::from_str(&s).ok()),
         thrower: row.get("thrower")?,
+        thrower_steamid64: row.get("thrower_steamid64")?,
         thrower_team: row.get("thrower_team")?,
         airtime: row.get("airtime")?,
+        usage_events: Vec::new(),
+        tournament: None,
+    })
+}
+
+fn load_usage_events(conn: &Connection, grenade_id: i64) -> AppResult<Vec<GrenadeUsageEvent>> {
+    let mut stmt = conn.prepare(
+        "SELECT demo_filename, throw_tick, thrower, thrower_steamid64, thrower_team
+         FROM grenade_usage_events WHERE grenade_id=?1 ORDER BY id",
+    )?;
+    let rows = stmt.query_map(params![grenade_id], |row| {
+        Ok(GrenadeUsageEvent {
+            demo_filename: row.get(0)?,
+            throw_tick: row.get(1)?,
+            thrower: row.get(2)?,
+            thrower_steamid64: row.get(3)?,
+            thrower_team: row.get(4)?,
+        })
+    })?;
+    Ok(rows.collect::<Result<Vec<_>, _>>()?)
+}
+
+struct UsageFallback<'a> {
+    usage_count: i64,
+    usage_throwers: &'a [String],
+    thrower: Option<&'a str>,
+    steamid64: Option<&'a str>,
+    team: Option<&'a str>,
+    demo: Option<&'a str>,
+    tick: Option<i64>,
+}
+
+fn usage_stats_from_conn(
+    conn: &Connection,
+    grenade_id: i64,
+    fallback: UsageFallback<'_>,
+) -> AppResult<GrenadeUsageStats> {
+    let events = load_usage_events(conn, grenade_id)?;
+    if events.is_empty() {
+        let tracked_throws = fallback.usage_count.max(0);
+        let player = fallback
+            .thrower
+            .or_else(|| fallback.usage_throwers.first().map(String::as_str))
+            .or(fallback.steamid64)
+            .map(str::to_string);
+        return Ok(GrenadeUsageStats {
+            tracked_throws,
+            peak: tracked_throws,
+            most_used_player: player,
+            most_used_player_throws: tracked_throws,
+            most_used_team: fallback.team.map(str::to_string),
+            most_used_team_throws: tracked_throws,
+            last_demo: fallback.demo.map(str::to_string),
+            last_tick: fallback.tick,
+            history: fallback
+                .demo
+                .map(|demo| {
+                    vec![GrenadeUsageHistoryPoint {
+                        label: demo.to_string(),
+                        count: tracked_throws,
+                    }]
+                })
+                .unwrap_or_default(),
+        });
+    }
+
+    let mut player_counts: HashMap<String, i64> = HashMap::new();
+    let mut team_counts: HashMap<String, i64> = HashMap::new();
+    let mut demo_counts: HashMap<String, i64> = HashMap::new();
+    let mut last: Option<(String, Option<i64>)> = None;
+    let mut unknown_last_tick: Option<i64> = None;
+    for event in &events {
+        let player = event
+            .thrower
+            .as_deref()
+            .or(event.thrower_steamid64.as_deref())
+            .filter(|value| !value.is_empty());
+        if let Some(player) = player {
+            *player_counts.entry(player.to_string()).or_default() += 1;
+        }
+        if let Some(team) = event
+            .thrower_team
+            .as_deref()
+            .filter(|value| !value.is_empty())
+        {
+            *team_counts.entry(team.to_string()).or_default() += 1;
+        }
+        let demo = event
+            .demo_filename
+            .as_deref()
+            .filter(|value| !value.is_empty())
+            .unwrap_or("Unknown demo");
+        *demo_counts.entry(demo.to_string()).or_default() += 1;
+        if demo != "Unknown demo" {
+            let current_key = demo_date_from_filename(demo)
+                .map(|date| date.to_string())
+                .unwrap_or_else(|| demo.to_string());
+            let should_replace = last
+                .as_ref()
+                .map(|(old_demo, old_tick)| {
+                    let old_key = demo_date_from_filename(old_demo)
+                        .map(|date| date.to_string())
+                        .unwrap_or_else(|| old_demo.clone());
+                    current_key > old_key
+                        || (current_key == old_key
+                            && event.throw_tick.unwrap_or(i64::MIN) >= old_tick.unwrap_or(i64::MIN))
+                })
+                .unwrap_or(true);
+            if should_replace {
+                last = Some((demo.to_string(), event.throw_tick));
+            }
+        } else if event.throw_tick.unwrap_or(i64::MIN) >= unknown_last_tick.unwrap_or(i64::MIN) {
+            unknown_last_tick = event.throw_tick;
+        }
+    }
+    if last.is_none() && unknown_last_tick.is_some() {
+        last = Some(("Unknown demo".to_string(), unknown_last_tick));
+    }
+
+    let tracked_throws = events.len() as i64;
+    let peak = demo_counts
+        .values()
+        .copied()
+        .max()
+        .unwrap_or(tracked_throws);
+    let most_used_player = player_counts
+        .into_iter()
+        .max_by(|left, right| left.1.cmp(&right.1).then_with(|| left.0.cmp(&right.0)));
+    let most_used_team = team_counts
+        .into_iter()
+        .max_by(|left, right| left.1.cmp(&right.1).then_with(|| left.0.cmp(&right.0)));
+    let fallback_player = fallback
+        .thrower
+        .or_else(|| fallback.usage_throwers.first().map(String::as_str))
+        .or(fallback.steamid64)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+    let fallback_player_throws = if fallback_player.is_some() {
+        tracked_throws
+    } else {
+        0
+    };
+    let fallback_team = fallback
+        .team
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+    let fallback_team_throws = if fallback_team.is_some() {
+        tracked_throws
+    } else {
+        0
+    };
+    let mut history = demo_counts.into_iter().collect::<Vec<_>>();
+    history.sort_by(|left, right| {
+        demo_date_from_filename(&left.0)
+            .cmp(&demo_date_from_filename(&right.0))
+            .then_with(|| left.0.cmp(&right.0))
+    });
+    Ok(GrenadeUsageStats {
+        tracked_throws,
+        peak,
+        most_used_player: most_used_player
+            .as_ref()
+            .map(|(name, _)| name.clone())
+            .or(fallback_player),
+        most_used_player_throws: most_used_player
+            .map(|(_, count)| count)
+            .unwrap_or(fallback_player_throws),
+        most_used_team: most_used_team
+            .as_ref()
+            .map(|(name, _)| name.clone())
+            .or(fallback_team),
+        most_used_team_throws: most_used_team
+            .map(|(_, count)| count)
+            .unwrap_or(fallback_team_throws),
+        last_demo: last
+            .as_ref()
+            .map(|(demo, _)| demo.clone())
+            .or_else(|| fallback.demo.map(str::to_string)),
+        last_tick: last.and_then(|(_, tick)| tick).or(fallback.tick),
+        history: history
+            .into_iter()
+            .map(|(label, count)| GrenadeUsageHistoryPoint { label, count })
+            .collect(),
     })
 }
 
@@ -1341,7 +2180,10 @@ fn trajectory_storage_json(
 #[tauri::command]
 fn select_import_file() -> Option<String> {
     rfd::FileDialog::new()
-        .add_filter("Nade libraries", &["json", "zip"])
+        .add_filter(
+            "Nade libraries",
+            &["json", "messagepack", "msgpack", "mpk", "zip"],
+        )
         .pick_file()
         .map(|p| p.to_string_lossy().to_string())
 }
@@ -1371,10 +2213,10 @@ async fn import_json(
         }
         let file = fs::File::open(&source_path).map_err(|error| AppError::Import {
             code: "file_unavailable",
-            message: format!("Cannot open JSON file '{}': {error}", import_path),
+            message: format!("Cannot open import file '{}': {error}", import_path),
         })?;
         let bytes = read_import_bytes(file)?;
-        match parse_import(bytes.as_slice())? {
+        match parse_import_bytes(&bytes, is_messagepack_path(&source_path))? {
             TypedImportFile::GrenadeIndex(index) => {
                 import_index_blocking(&import_state, &import_path, index)
                     .map(JsonImportReport::from)
@@ -1440,6 +2282,8 @@ fn import_screenshot_archive_blocking(
             .iter()
             .map(|record| record.grenade.clone())
             .collect(),
+        players: Vec::new(),
+        processed_demos: None,
     };
     let mut report = import_index_blocking(state, path, index)?;
     let screenshot_root = state
@@ -1602,8 +2446,18 @@ fn import_index_blocking(
         .canonical_grenades
         .iter()
         .map(|g| g.map.clone())
-        .collect::<std::collections::HashSet<_>>();
+        .collect::<HashSet<_>>();
     let map_count = unique_maps.len() as u64;
+    let mut demo_metadata = BTreeMap::new();
+    for grenade in &index.canonical_grenades {
+        collect_grenade_metadata(grenade, &mut demo_metadata);
+    }
+    for player in &index.players {
+        collect_player_metadata(player, &mut demo_metadata);
+    }
+    if let Some(processed_demos) = &index.processed_demos {
+        collect_demo_metadata_from_value(processed_demos, &mut demo_metadata);
+    }
 
     let tx = conn.transaction()?;
     tx.execute(
@@ -1629,17 +2483,21 @@ fn import_index_blocking(
         )?;
     }
 
+    for player in &index.players {
+        insert_import_player(&tx, import_id, player)?;
+    }
+
     {
         let mut stmt = tx.prepare(
             "INSERT INTO grenades(
-                import_id, source_index, map, side, grenade_type, is_core, throw_description, coordinates,
-                thrower, thrower_team, airtime, usage_count, usage_throwers_json, demo_filename, throw_tick,
+                import_id, source_index, map, side, grenade_type, is_core, throw_keys, coordinates,
+                thrower, thrower_steamid64, thrower_team, airtime, usage_count, usage_throwers_json, demo_filename, throw_tick,
                 lineup_tick, tickrate, round_time_seconds, start_pos_x, start_pos_y, start_pos_z,
                 explode_pos_x, explode_pos_y, explode_pos_z, start_map_x, start_map_y,
                 explode_map_x, explode_map_y, trajectory_preview_json, trajectory_json
             ) VALUES (
-                ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16,
-                ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30
+                ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17,
+                ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31
             )",
         )?;
 
@@ -1676,17 +2534,18 @@ fn import_index_blocking(
                 g.side.as_deref().unwrap_or("Any"),
                 g.grenade_type.as_deref().unwrap_or("smoke"),
                 if is_core_snapshot { 1 } else { 0 },
-                g.throw_description,
-                g.coordinates,
-                g.thrower,
-                g.thrower_team,
+                g.throw_keys.as_deref(),
+                g.coordinates.as_deref(),
+                g.thrower.as_deref(),
+                g.thrower_steamid64.as_deref(),
+                g.thrower_team.as_deref(),
                 g.airtime,
                 g.usage_count.unwrap_or(1),
                 serde_json::to_string(&g.usage_throwers.clone().unwrap_or_default())?,
-                g.demo_filename,
+                g.demo_filename.as_deref(),
                 g.throw_tick,
                 g.lineup_tick,
-                g.tickrate,
+                round_tickrate(g.tickrate),
                 g.round_time_seconds,
                 g.start_pos_x,
                 g.start_pos_y,
@@ -1701,8 +2560,15 @@ fn import_index_blocking(
                 trajectory_preview,
                 trajectory_json,
             ])?;
+            let grenade_id = tx.last_insert_rowid();
+            for event in &g.usage_events {
+                insert_usage_event(&tx, import_id, grenade_id, event)?;
+            }
+            add_canonical_fallback_players(&tx, import_id, g)?;
         }
     }
+
+    insert_demo_metadata(&tx, import_id, &demo_metadata)?;
 
     tx.execute(
         "INSERT INTO app_meta(key, value) VALUES ('active_import_id', ?1)
@@ -1740,6 +2606,249 @@ fn list_imports(state: tauri::State<'_, AppState>) -> AppResult<Vec<ImportSummar
         })
     })?;
     Ok(rows.collect::<Result<Vec<_>, _>>()?)
+}
+
+fn import_players_from_conn(
+    conn: &Connection,
+    import_id: i64,
+    team_name: Option<&str>,
+    map: Option<&str>,
+    tournament: Option<&str>,
+) -> AppResult<Vec<ImportPlayer>> {
+    let mut players = Vec::new();
+    let mut seen = HashSet::new();
+    let mut add_player = |steamid64: Option<String>,
+                          name: Option<String>,
+                          team: Option<String>,
+                          side: Option<String>| {
+        let player = ImportPlayer {
+            steamid64: steamid64.unwrap_or_default(),
+            name: name.unwrap_or_default(),
+            team_name: team.unwrap_or_default(),
+            side: side.unwrap_or_default(),
+        };
+        if player.steamid64.is_empty() && player.name.is_empty() {
+            return;
+        }
+        if team_name.is_some_and(|expected| player.team_name != expected) {
+            return;
+        }
+        let key = (
+            player.steamid64.clone(),
+            player.name.clone(),
+            player.team_name.clone(),
+            player.side.clone(),
+        );
+        if seen.insert(key) {
+            players.push(player);
+        }
+    };
+
+    let player_sql = if map.is_some() && tournament.is_some() {
+        "SELECT DISTINCT COALESCE(g.thrower_steamid64, ''), COALESCE(g.thrower, ''), COALESCE(g.thrower_team, ''), COALESCE(g.side, '')
+          FROM demo_metadata dm
+          JOIN grenades g INDEXED BY idx_grenades_import_demo_map
+            ON g.import_id=dm.import_id AND g.demo_filename=dm.demo_filename
+          WHERE dm.import_id=?1 AND dm.tournament=?4 AND g.map=?2
+            AND (?3 IS NULL OR g.thrower_team=?3)
+            AND (g.thrower_steamid64 IS NOT NULL OR g.thrower IS NOT NULL)
+          UNION
+          SELECT DISTINCT COALESCE(ue.thrower_steamid64, ''), COALESCE(ue.thrower, ''), COALESCE(ue.thrower_team, ''), COALESCE(g.side, '')
+          FROM demo_metadata dm
+          JOIN grenade_usage_events ue INDEXED BY idx_grenade_usage_events_import_demo
+            ON ue.import_id=dm.import_id AND ue.demo_filename=dm.demo_filename
+          JOIN grenades g ON g.id=ue.grenade_id
+          WHERE dm.import_id=?1 AND dm.tournament=?4 AND g.map=?2
+            AND (?3 IS NULL OR ue.thrower_team=?3)
+            AND (ue.thrower_steamid64 IS NOT NULL OR ue.thrower IS NOT NULL)
+            "
+    } else if map.is_some() {
+        "SELECT DISTINCT COALESCE(g.thrower_steamid64, ''), COALESCE(g.thrower, ''), COALESCE(g.thrower_team, ''), COALESCE(g.side, '')
+         FROM grenades g
+         WHERE g.import_id=?1 AND g.map=?2
+            AND (?3 IS NULL OR g.thrower_team=?3)
+           AND (g.thrower_steamid64 IS NOT NULL OR g.thrower IS NOT NULL)
+            AND (?4 IS NULL)
+         UNION
+         SELECT DISTINCT COALESCE(ue.thrower_steamid64, ''), COALESCE(ue.thrower, ''), COALESCE(ue.thrower_team, ''), COALESCE(g.side, '')
+         FROM grenades g INDEXED BY idx_grenades_filter
+         JOIN grenade_usage_events ue INDEXED BY idx_grenade_usage_events_grenade
+           ON ue.grenade_id=g.id
+          WHERE g.import_id=?1 AND g.map=?2
+            AND (?3 IS NULL OR ue.thrower_team=?3)
+           AND (ue.thrower_steamid64 IS NOT NULL OR ue.thrower IS NOT NULL)
+            AND (?4 IS NULL)"
+    } else {
+        "SELECT DISTINCT COALESCE(ip.steamid64, ''), COALESCE(ip.player_name, ''), COALESCE(ip.team_name, ''), COALESCE(ip.side, '')
+         FROM import_players ip
+          WHERE ip.import_id=?1 AND (?3 IS NULL OR ip.team_name=?3)
+            AND (?4 IS NULL)"
+    };
+    let mut stmt = conn.prepare(player_sql)?;
+    let rows = stmt.query_map(params![import_id, map, team_name, tournament], |row| {
+        Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+    })?;
+    for row in rows {
+        let (steamid64, name, team, side) = row?;
+        add_player(steamid64, name, team, side);
+    }
+
+    players.sort_by(|left, right| {
+        left.team_name
+            .cmp(&right.team_name)
+            .then_with(|| left.name.cmp(&right.name))
+            .then_with(|| left.steamid64.cmp(&right.steamid64))
+    });
+    Ok(players)
+}
+
+fn get_import_teams_blocking(
+    map: Option<String>,
+    tournament: Option<String>,
+    state: &AppState,
+) -> AppResult<Vec<ImportTeam>> {
+    let conn = open_conn(state)?;
+    let import_id = active_import_id(&conn)?
+        .ok_or_else(|| AppError::Message("No active import".to_string()))?;
+    let players = import_players_from_conn(
+        &conn,
+        import_id,
+        None,
+        map.as_deref(),
+        tournament.as_deref(),
+    )?;
+    Ok(import_teams_from_players(players))
+}
+
+fn import_teams_from_players(players: Vec<ImportPlayer>) -> Vec<ImportTeam> {
+    let mut teams: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    for player in players {
+        if player.team_name.is_empty() || player.steamid64.is_empty() {
+            continue;
+        }
+        teams
+            .entry(player.team_name)
+            .or_default()
+            .insert(player.steamid64);
+    }
+    teams
+        .into_iter()
+        .map(|(team_name, players)| ImportTeam {
+            team_name,
+            player_count: players.len() as i64,
+        })
+        .collect()
+}
+
+#[tauri::command]
+async fn get_import_teams(
+    map: Option<String>,
+    tournament: Option<String>,
+    state: tauri::State<'_, AppState>,
+) -> AppResult<Vec<ImportTeam>> {
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || get_import_teams_blocking(map, tournament, &state))
+        .await
+        .map_err(|error| AppError::Message(format!("Team filter query failed: {error}")))?
+}
+
+fn get_import_players_blocking(
+    team_name: Option<String>,
+    map: Option<String>,
+    tournament: Option<String>,
+    state: &AppState,
+) -> AppResult<Vec<ImportPlayer>> {
+    let conn = open_conn(state)?;
+    let import_id = active_import_id(&conn)?
+        .ok_or_else(|| AppError::Message("No active import".to_string()))?;
+    import_players_from_conn(
+        &conn,
+        import_id,
+        team_name
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty()),
+        map.as_deref(),
+        tournament
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty()),
+    )
+}
+
+#[tauri::command]
+async fn get_import_players(
+    team_name: Option<String>,
+    map: Option<String>,
+    tournament: Option<String>,
+    state: tauri::State<'_, AppState>,
+) -> AppResult<Vec<ImportPlayer>> {
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        get_import_players_blocking(team_name, map, tournament, &state)
+    })
+    .await
+    .map_err(|error| AppError::Message(format!("Player filter query failed: {error}")))?
+}
+
+fn get_import_tournaments_blocking(
+    map: Option<String>,
+    state: &AppState,
+) -> AppResult<Vec<ImportTournament>> {
+    let conn = open_conn(state)?;
+    let import_id = active_import_id(&conn)?
+        .ok_or_else(|| AppError::Message("No active import".to_string()))?;
+    let mut stmt = conn.prepare(
+        "SELECT dm.tournament, MIN(dm.demo_date), MAX(dm.demo_date)
+         FROM demo_metadata dm
+         WHERE dm.import_id=?1 AND (
+             EXISTS (
+                 SELECT 1
+                 FROM grenades g INDEXED BY idx_grenades_import_demo_map
+                 WHERE g.import_id=dm.import_id
+                   AND g.demo_filename=dm.demo_filename
+                   AND g.map=?2
+             )
+             OR EXISTS (
+                 SELECT 1
+                 FROM grenade_usage_events ue INDEXED BY idx_grenade_usage_events_import_demo
+                 JOIN grenades g ON g.id=ue.grenade_id
+                 WHERE ue.import_id=dm.import_id
+                   AND ue.demo_filename=dm.demo_filename
+                   AND g.map=?2
+             )
+         )
+         GROUP BY dm.tournament
+         ORDER BY MAX(dm.demo_date) DESC, dm.tournament COLLATE NOCASE",
+    )?;
+    let rows = stmt.query_map(params![import_id, map], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, String>(2)?,
+        ))
+    })?;
+    rows.map(|row| -> rusqlite::Result<ImportTournament> {
+        let (name, start_date, end_date) = row?;
+        Ok(ImportTournament {
+            name,
+            start_date,
+            end_date,
+        })
+    })
+    .collect::<rusqlite::Result<Vec<_>>>()
+    .map_err(AppError::from)
+}
+
+#[tauri::command]
+async fn get_import_tournaments(
+    map: Option<String>,
+    state: tauri::State<'_, AppState>,
+) -> AppResult<Vec<ImportTournament>> {
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || get_import_tournaments_blocking(map, &state))
+        .await
+        .map_err(|error| AppError::Message(format!("Tournament filter query failed: {error}")))?
 }
 
 #[tauri::command]
@@ -1838,6 +2947,18 @@ fn delete_import_from_conn(
         params![import_id],
     )?;
     tx.execute(
+        "DELETE FROM grenade_usage_events WHERE import_id=?1",
+        params![import_id],
+    )?;
+    tx.execute(
+        "DELETE FROM import_players WHERE import_id=?1",
+        params![import_id],
+    )?;
+    tx.execute(
+        "DELETE FROM demo_metadata WHERE import_id=?1",
+        params![import_id],
+    )?;
+    tx.execute(
         "DELETE FROM grenades WHERE import_id=?1",
         params![import_id],
     )?;
@@ -1921,7 +3042,7 @@ fn get_maps(state: tauri::State<'_, AppState>) -> AppResult<Vec<MapSummary>> {
          COALESCE(g.count, 0) AS grenade_count
          FROM map_assets a
          LEFT JOIN (
-           SELECT map, COUNT(*) AS count FROM grenades WHERE import_id = ?1 AND usage_count >= ?2 GROUP BY map
+             SELECT g.map, COUNT(*) AS count FROM grenades g WHERE g.import_id = ?1 AND g.usage_count >= ?2 GROUP BY g.map
          ) g ON g.map = a.name
          ORDER BY grenade_count DESC, a.label ASC",
     )?;
@@ -1958,7 +3079,7 @@ fn map_summary(
     let radars = load_radars(resource_dir)?;
     let mut summary = conn.query_row(
         "SELECT a.name, a.label, a.preview_image_path, a.map_image_path, a.lower_map_image_path,
-         (SELECT COUNT(*) FROM grenades WHERE import_id=?1 AND map=a.name AND usage_count >= ?3)
+         (SELECT COUNT(*) FROM grenades g WHERE g.import_id=?1 AND g.map=a.name AND g.usage_count >= ?3)
          FROM map_assets a WHERE a.name=?2",
         params![import_id, map, public_min_usage_count(conn)?],
         |row| {
@@ -2024,6 +3145,29 @@ fn cluster_cell_size(coord: &str) -> i64 {
     }
 }
 
+/// Overview totals derived from a single grouped scan of the filtered set.
+struct OverviewBreakdown {
+    grenade_count: i64,
+    type_counts: BTreeMap<String, i64>,
+    side_counts: BTreeMap<String, i64>,
+}
+
+/// Folds `(grenade_type, side, count)` groups into the total plus the per-type
+/// and per-side breakdowns.
+fn fold_overview_breakdown(rows: Vec<(String, String, i64)>) -> OverviewBreakdown {
+    let mut breakdown = OverviewBreakdown {
+        grenade_count: 0,
+        type_counts: BTreeMap::new(),
+        side_counts: BTreeMap::new(),
+    };
+    for (grenade_type, side, count) in rows {
+        breakdown.grenade_count += count;
+        *breakdown.type_counts.entry(grenade_type).or_default() += count;
+        *breakdown.side_counts.entry(side).or_default() += count;
+    }
+    breakdown
+}
+
 /// Builds a map overview where grenades are clustered by either their landing
 /// point (`coord = "explode"`) or their throw origin (`coord = "start"`).
 fn map_overview_by(
@@ -2040,30 +3184,49 @@ fn map_overview_by(
         .ok_or_else(|| AppError::Message("No active import".to_string()))?;
     let summary = map_summary(&conn, &state.resource_dir, import_id, &map)?;
     let mut args: Vec<Box<dyn rusqlite::ToSql>> = vec![Box::new(import_id), Box::new(map.clone())];
-    let visibility = visibility_sql(&conn, &mut args)?;
-    let filter = filter_sql(&filters, &mut args);
-    let radar_filter = radar_level_sql(filters.radar_level.as_deref(), &summary, &mut args);
+    let visibility = visibility_sql(&conn, &mut args, "g")?;
+    let filter = filter_sql(&filters, &mut args, "g");
+    let radar_filter = radar_level_sql(filters.radar_level.as_deref(), &summary, &mut args, "g");
     let params_ref = rusqlite::params_from_iter(args.iter().map(|b| &**b));
 
-    let count_sql = format!(
-        "SELECT COUNT(*) FROM grenades WHERE import_id=? AND map=?{}{}{}",
+    // One pass over the filtered set feeds the total plus the per-type and
+    // per-side breakdowns, instead of scanning the same rows three times.
+    let breakdown_sql = format!(
+        "SELECT g.grenade_type, g.side, COUNT(*) FROM grenades g
+         WHERE g.import_id=? AND g.map=?{}{}{}
+         GROUP BY g.grenade_type, g.side",
         visibility, filter, radar_filter
     );
-    let grenade_count: i64 = conn.query_row(&count_sql, params_ref, |row| row.get(0))?;
+    let breakdown_rows = {
+        let mut stmt = conn.prepare(&breakdown_sql)?;
+        let rows = stmt.query_map(params_ref, |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, i64>(2)?,
+            ))
+        })?;
+        rows.collect::<Result<Vec<_>, _>>()?
+    };
+    let OverviewBreakdown {
+        grenade_count,
+        type_counts,
+        side_counts,
+    } = fold_overview_breakdown(breakdown_rows);
 
     let mut args: Vec<Box<dyn rusqlite::ToSql>> = vec![Box::new(import_id), Box::new(map.clone())];
-    let visibility = visibility_sql(&conn, &mut args)?;
-    let filter = filter_sql(&filters, &mut args);
-    let radar_filter = radar_level_sql(filters.radar_level.as_deref(), &summary, &mut args);
+    let visibility = visibility_sql(&conn, &mut args, "g")?;
+    let filter = filter_sql(&filters, &mut args, "g");
+    let radar_filter = radar_level_sql(filters.radar_level.as_deref(), &summary, &mut args, "g");
     let params_ref = rusqlite::params_from_iter(args.iter().map(|b| &**b));
     let cluster_sql = format!(
         "SELECT
-           CAST({x_col} / {cell} AS INTEGER) AS cx,
-           CAST({y_col} / {cell} AS INTEGER) AS cy,
-           AVG({x_col}), AVG({y_col}), COUNT(*), MIN(id),
-           GROUP_CONCAT(DISTINCT side), GROUP_CONCAT(DISTINCT grenade_type)
-         FROM grenades
-         WHERE import_id=? AND map=? AND {x_col} IS NOT NULL AND {y_col} IS NOT NULL {}{}{}
+           CAST(g.{x_col} / {cell} AS INTEGER) AS cx,
+           CAST(g.{y_col} / {cell} AS INTEGER) AS cy,
+           AVG(g.{x_col}), AVG(g.{y_col}), COUNT(*), MIN(g.id),
+           GROUP_CONCAT(DISTINCT g.side), GROUP_CONCAT(DISTINCT g.grenade_type)
+         FROM grenades g
+         WHERE g.import_id=? AND g.map=? AND g.{x_col} IS NOT NULL AND g.{y_col} IS NOT NULL {}{}{}
          GROUP BY cx, cy
          ORDER BY COUNT(*) DESC",
         visibility, filter, radar_filter
@@ -2108,8 +3271,6 @@ fn map_overview_by(
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
-    let type_counts = grouped_counts(&conn, import_id, &map, &summary, &filters, "grenade_type")?;
-    let side_counts = grouped_counts(&conn, import_id, &map, &summary, &filters, "side")?;
     Ok(MapOverview {
         map: summary,
         grenade_count,
@@ -2117,31 +3278,6 @@ fn map_overview_by(
         type_counts,
         side_counts,
     })
-}
-
-fn grouped_counts(
-    conn: &Connection,
-    import_id: i64,
-    map: &str,
-    summary: &MapSummary,
-    filters: &MapFilters,
-    field: &str,
-) -> AppResult<BTreeMap<String, i64>> {
-    let mut args: Vec<Box<dyn rusqlite::ToSql>> =
-        vec![Box::new(import_id), Box::new(map.to_string())];
-    let visibility = visibility_sql(conn, &mut args)?;
-    let filter = filter_sql(filters, &mut args);
-    let radar_filter = radar_level_sql(filters.radar_level.as_deref(), summary, &mut args);
-    let sql = format!(
-        "SELECT {field}, COUNT(*) FROM grenades WHERE import_id=? AND map=?{}{}{} GROUP BY {field}",
-        visibility, filter, radar_filter
-    );
-    let params_ref = rusqlite::params_from_iter(args.iter().map(|b| &**b));
-    let mut stmt = conn.prepare(&sql)?;
-    let rows = stmt.query_map(params_ref, |row| {
-        Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
-    })?;
-    Ok(rows.collect::<Result<BTreeMap<_, _>, _>>()?)
 }
 
 #[tauri::command]
@@ -2193,9 +3329,9 @@ fn cluster_grenades_by(
         Box::new(cx),
         Box::new(cy),
     ];
-    let visibility = visibility_sql(&conn, &mut args)?;
-    let filter = filter_sql(&filters, &mut args);
-    let radar_filter = radar_level_sql(filters.radar_level.as_deref(), &summary, &mut args);
+    let visibility = visibility_sql(&conn, &mut args, "g")?;
+    let filter = filter_sql(&filters, &mut args, "g");
+    let radar_filter = radar_level_sql(filters.radar_level.as_deref(), &summary, &mut args, "g");
     let split_literal = summary
         .radar_split_z
         .map(|v| v.to_string())
@@ -2210,8 +3346,8 @@ fn cluster_grenades_by(
     };
     let sql = format!(
         "SELECT {GRENADE_PREVIEW_COLUMNS}, {split_literal} AS radar_split_z, {has_lower_literal} AS has_lower_radar FROM grenades g
-         WHERE import_id=? AND map=? AND CAST({x_col} / {cell} AS INTEGER)=? AND CAST({y_col} / {cell} AS INTEGER)=?{}{}{}
-         ORDER BY usage_count DESC, id ASC{}",
+         WHERE g.import_id=? AND g.map=? AND CAST(g.{x_col} / {cell} AS INTEGER)=? AND CAST(g.{y_col} / {cell} AS INTEGER)=?{}{}{}
+         ORDER BY g.usage_count DESC, g.id ASC{}",
         visibility, filter, radar_filter, pagination
     );
     let params_ref = rusqlite::params_from_iter(args.iter().map(|b| &**b));
@@ -2256,7 +3392,7 @@ fn get_grenade(id: i64, state: tauri::State<'_, AppState>) -> AppResult<GrenadeD
              SELECT CAST(value AS INTEGER) FROM app_meta WHERE key='active_import_id'
          )"
     ))?;
-    Ok(stmt.query_row(params![id], |row| {
+    let mut detail = stmt.query_row(params![id], |row| {
         let mut preview = grenade_preview_from_row(row)?;
         let lower_map_image_path: Option<String> = row.get("lower_map_image_path")?;
         let split_z = radar_split_for_map(&radars, &preview.map);
@@ -2270,13 +3406,15 @@ fn get_grenade(id: i64, state: tauri::State<'_, AppState>) -> AppResult<GrenadeD
         } else {
             default_map_image_path
         };
+        let demo_filename: Option<String> = row.get("demo_filename")?;
+        let throw_tick: Option<i64> = row.get("throw_tick")?;
         Ok(GrenadeDetail {
             preview,
             usage_throwers: throwers_json
                 .and_then(|s| serde_json::from_str(&s).ok())
                 .unwrap_or_default(),
-            demo_filename: row.get("demo_filename")?,
-            throw_tick: row.get("throw_tick")?,
+            demo_filename,
+            throw_tick,
             lineup_tick: row.get("lineup_tick")?,
             tickrate: row.get("tickrate")?,
             round_time_seconds: row.get("round_time_seconds")?,
@@ -2290,8 +3428,24 @@ fn get_grenade(id: i64, state: tauri::State<'_, AppState>) -> AppResult<GrenadeD
             preview_image_path: row.get("preview_image_path")?,
             screenshot_image_path: row.get("screenshot_image_path")?,
             screenshot_wide_image_path: row.get("screenshot_wide_image_path")?,
+            usage_stats: GrenadeUsageStats::default(),
         })
-    })?)
+    })?;
+    drop(stmt);
+    detail.usage_stats = usage_stats_from_conn(
+        &conn,
+        id,
+        UsageFallback {
+            usage_count: detail.preview.usage_count,
+            usage_throwers: &detail.usage_throwers,
+            thrower: detail.preview.thrower.as_deref(),
+            steamid64: detail.preview.thrower_steamid64.as_deref(),
+            team: detail.preview.thrower_team.as_deref(),
+            demo: detail.demo_filename.as_deref(),
+            tick: detail.throw_tick,
+        },
+    )?;
+    Ok(detail)
 }
 
 #[tauri::command]
@@ -2380,22 +3534,31 @@ fn export_core_nades(
     };
 
     let mut stmt = conn.prepare(
-        "SELECT source_index, map, side, grenade_type, throw_description, coordinates,
-            thrower, thrower_team, airtime, usage_count, usage_throwers_json, demo_filename, throw_tick,
-            lineup_tick, tickrate, round_time_seconds, start_pos_x, start_pos_y, start_pos_z,
-            explode_pos_x, explode_pos_y, explode_pos_z, trajectory_json,
-            trajectory_preview_json
-         FROM grenades
-         WHERE import_id=?1 AND is_core=1
-         ORDER BY map ASC, grenade_type ASC, usage_count DESC, id ASC",
+        "SELECT g.id AS grenade_id, g.source_index, g.map, g.side, g.grenade_type, g.throw_keys, g.coordinates,
+            g.thrower, g.thrower_steamid64, g.thrower_team, g.airtime, g.usage_count, g.usage_throwers_json, g.demo_filename, g.throw_tick,
+            g.lineup_tick, g.tickrate, g.round_time_seconds, g.start_pos_x, g.start_pos_y, g.start_pos_z,
+            g.explode_pos_x, g.explode_pos_y, g.explode_pos_z,
+            g.start_map_x, g.start_map_y, g.explode_map_x, g.explode_map_y,
+            g.trajectory_json, g.trajectory_preview_json
+         FROM grenades g
+         WHERE g.import_id=?1 AND g.is_core=1
+         ORDER BY g.map ASC, g.grenade_type ASC, g.usage_count DESC, g.id ASC",
     )?;
-    let rows = stmt.query_map(params![import_id], raw_grenade_from_row)?;
-    let canonical_grenades = rows.collect::<Result<Vec<_>, _>>()?;
+    let mut rows = stmt.query(params![import_id])?;
+    let mut canonical_grenades = Vec::new();
+    while let Some(row) = rows.next()? {
+        let grenade_id: i64 = row.get("grenade_id")?;
+        let mut grenade = raw_grenade_from_row(row)?;
+        grenade.usage_events = load_usage_events(&conn, grenade_id)?;
+        canonical_grenades.push(grenade);
+    }
     let file = ParserIndex {
         version: Some(1),
         updated_at: Some(Utc::now().to_rfc3339()),
         core_nades: Some(true),
         canonical_grenades,
+        players: Vec::new(),
+        processed_demos: None,
     };
     let text = serde_json::to_string_pretty(&file)?;
     fs::write(&path, text)?;
@@ -2430,8 +3593,18 @@ fn import_core_nades_snapshot_blocking(
         .grenades
         .iter()
         .map(|g| g.map.clone())
-        .collect::<std::collections::HashSet<_>>();
+        .collect::<HashSet<_>>();
     let map_count = unique_maps.len() as u64;
+    let mut demo_metadata = BTreeMap::new();
+    for grenade in &core_file.grenades {
+        record_demo_metadata(&mut demo_metadata, grenade.demo_filename.as_deref(), None);
+        for event in &grenade.usage_events {
+            record_demo_metadata(&mut demo_metadata, event.demo_filename.as_deref(), None);
+        }
+    }
+    for player in &core_file.players {
+        collect_player_metadata(player, &mut demo_metadata);
+    }
 
     let tx = conn.transaction()?;
     tx.execute(
@@ -2456,17 +3629,21 @@ fn import_core_nades_snapshot_blocking(
         )?;
     }
 
+    for player in &core_file.players {
+        insert_import_player(&tx, import_id, player)?;
+    }
+
     {
         let mut stmt = tx.prepare(
             "INSERT INTO grenades(
-                import_id, source_index, map, side, grenade_type, is_core, throw_description, coordinates,
-                thrower, thrower_team, airtime, usage_count, usage_throwers_json, demo_filename, throw_tick,
+                import_id, source_index, map, side, grenade_type, is_core, throw_keys, coordinates,
+                thrower, thrower_steamid64, thrower_team, airtime, usage_count, usage_throwers_json, demo_filename, throw_tick,
                 lineup_tick, tickrate, round_time_seconds, start_pos_x, start_pos_y, start_pos_z,
                 explode_pos_x, explode_pos_y, explode_pos_z, start_map_x, start_map_y,
                 explode_map_x, explode_map_y, trajectory_preview_json, trajectory_json
             ) VALUES (
-                ?1, ?2, ?3, ?4, ?5, 1, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15,
-                ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29
+                ?1, ?2, ?3, ?4, ?5, 1, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16,
+                ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30
             )",
         )?;
 
@@ -2502,17 +3679,18 @@ fn import_core_nades_snapshot_blocking(
                 g.map,
                 g.side,
                 g.grenade_type,
-                g.throw_description,
-                g.coordinates,
-                g.thrower,
-                g.thrower_team,
+                g.throw_keys.as_deref(),
+                g.coordinates.as_deref(),
+                g.thrower.as_deref(),
+                g.thrower_steamid64.as_deref(),
+                g.thrower_team.as_deref(),
                 g.airtime,
                 g.usage_count.unwrap_or(1),
                 serde_json::to_string(&g.usage_throwers.clone().unwrap_or_default())?,
-                g.demo_filename,
+                g.demo_filename.as_deref(),
                 g.throw_tick,
                 g.lineup_tick,
-                g.tickrate,
+                round_tickrate(g.tickrate),
                 g.round_time_seconds,
                 g.start_pos_x,
                 g.start_pos_y,
@@ -2527,8 +3705,15 @@ fn import_core_nades_snapshot_blocking(
                 trajectory_preview,
                 trajectory_json,
             ])?;
+            let grenade_id = tx.last_insert_rowid();
+            for event in &g.usage_events {
+                insert_usage_event(&tx, import_id, grenade_id, event)?;
+            }
+            add_core_fallback_players(&tx, import_id, g)?;
         }
     }
+
+    insert_demo_metadata(&tx, import_id, &demo_metadata)?;
 
     tx.execute(
         "INSERT INTO app_meta(key, value) VALUES ('active_import_id', ?1)
@@ -2556,9 +3741,9 @@ fn get_similar_grenades(
     type SimilarBase = (i64, String, String, Option<f64>, Option<f64>);
     let base: Option<SimilarBase> = conn
         .query_row(
-            "SELECT import_id, map, grenade_type, explode_map_x, explode_map_y
-             FROM grenades
-             WHERE id=?1 AND import_id=(
+            "SELECT g.import_id, g.map, g.grenade_type, g.explode_map_x, g.explode_map_y
+              FROM grenades g
+              WHERE g.id=?1 AND g.import_id=(
                  SELECT CAST(value AS INTEGER) FROM app_meta WHERE key='active_import_id'
              )",
             params![id],
@@ -2584,10 +3769,10 @@ fn get_similar_grenades(
     let has_lower_literal = if summary.has_lower_radar { 1 } else { 0 };
     let mut stmt = conn.prepare(
         &format!("SELECT {GRENADE_PREVIEW_COLUMNS}, {split_literal} AS radar_split_z, {has_lower_literal} AS has_lower_radar,
-         ((COALESCE(explode_map_x, 0)-?4)*(COALESCE(explode_map_x, 0)-?4) + (COALESCE(explode_map_y, 0)-?5)*(COALESCE(explode_map_y, 0)-?5)) AS dist
-         FROM grenades g
-         WHERE import_id=?1 AND map=?2 AND grenade_type=?3 AND id<>?6 AND usage_count >= ?8
-         ORDER BY dist ASC, usage_count DESC LIMIT ?7"),
+          ((COALESCE(g.explode_map_x, 0)-?4)*(COALESCE(g.explode_map_x, 0)-?4) + (COALESCE(g.explode_map_y, 0)-?5)*(COALESCE(g.explode_map_y, 0)-?5)) AS dist
+          FROM grenades g
+          WHERE g.import_id=?1 AND g.map=?2 AND g.grenade_type=?3 AND g.id<>?6 AND g.usage_count >= ?8
+          ORDER BY dist ASC, g.usage_count DESC LIMIT ?7"),
     )?;
     let rows = stmt.query_map(
         params![
@@ -2735,6 +3920,98 @@ mod tests {
         conn.query_row(sql, [], |row| row.get(0)).unwrap()
     }
 
+    #[test]
+    fn overview_breakdown_folds_groups_into_total_and_per_field_counts() {
+        let breakdown = fold_overview_breakdown(vec![
+            ("smoke".to_string(), "T".to_string(), 3),
+            ("smoke".to_string(), "CT".to_string(), 2),
+            ("flash".to_string(), "T".to_string(), 4),
+        ]);
+        assert_eq!(breakdown.grenade_count, 9);
+        assert_eq!(breakdown.type_counts.get("smoke"), Some(&5));
+        assert_eq!(breakdown.type_counts.get("flash"), Some(&4));
+        assert_eq!(breakdown.side_counts.get("T"), Some(&7));
+        assert_eq!(breakdown.side_counts.get("CT"), Some(&2));
+    }
+
+    #[test]
+    fn single_pass_breakdown_matches_separate_grouped_queries() {
+        let conn = Connection::open_in_memory().unwrap();
+        init_schema(&conn).unwrap();
+        insert_import(&conn, 1);
+        for (id, grenade_type, side) in [
+            (1, "smoke", "T"),
+            (2, "smoke", "T"),
+            (3, "smoke", "CT"),
+            (4, "flash", "CT"),
+            (5, "HE", "T"),
+        ] {
+            conn.execute(
+                "INSERT INTO grenades(id, import_id, source_index, map, side, grenade_type, usage_count)
+                 VALUES (?1, 1, ?1, 'de_test', ?2, ?3, 1)",
+                params![id, side, grenade_type],
+            )
+            .unwrap();
+        }
+
+        let rows = conn
+            .prepare(
+                "SELECT g.grenade_type, g.side, COUNT(*) FROM grenades g
+                 WHERE g.import_id=1 AND g.map='de_test'
+                 GROUP BY g.grenade_type, g.side",
+            )
+            .unwrap()
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, i64>(2)?,
+                ))
+            })
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        let breakdown = fold_overview_breakdown(rows);
+
+        let grouped = |field: &str| -> BTreeMap<String, i64> {
+            conn.prepare(&format!(
+                "SELECT g.{field}, COUNT(*) FROM grenades g
+                 WHERE g.import_id=1 AND g.map='de_test' GROUP BY g.{field}"
+            ))
+            .unwrap()
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+            })
+            .unwrap()
+            .collect::<Result<BTreeMap<_, _>, _>>()
+            .unwrap()
+        };
+
+        assert_eq!(
+            breakdown.grenade_count,
+            count(&conn, "SELECT COUNT(*) FROM grenades WHERE import_id=1")
+        );
+        assert_eq!(breakdown.type_counts, grouped("grenade_type"));
+        assert_eq!(breakdown.side_counts, grouped("side"));
+    }
+
+    fn temporary_test_state(name: &str) -> (AppState, PathBuf) {
+        let root = std::env::temp_dir().join(format!(
+            "nade-viewer-{name}-{}-{}",
+            std::process::id(),
+            Utc::now().timestamp_nanos_opt().unwrap_or_default()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        (
+            AppState {
+                db_path: root.join("test.sqlite"),
+                resource_dir: root.join("resources"),
+                import_status: Arc::new(Mutex::new(ImportStatus::default())),
+            },
+            root,
+        )
+    }
+
     fn round_trip_core_trajectory(json: &str) -> RawGrenade {
         let TypedImportFile::CoreNades(file) = parse_import(json.as_bytes()).unwrap() else {
             panic!("expected Core Nades snapshot");
@@ -2753,12 +4030,13 @@ mod tests {
         conn.execute(
             "INSERT INTO grenades(
                 import_id, source_index, map, side, grenade_type, is_core,
-                trajectory_preview_json, trajectory_json
-             ) VALUES (1, 0, ?1, ?2, ?3, 1, ?4, ?5)",
+                 throw_keys, trajectory_preview_json, trajectory_json
+             ) VALUES (1, 0, ?1, ?2, ?3, 1, ?4, ?5, ?6)",
             params![
                 grenade.map,
                 grenade.side,
                 grenade.grenade_type,
+                grenade.throw_keys,
                 trajectory_preview_json,
                 trajectory_json
             ],
@@ -2766,12 +4044,13 @@ mod tests {
         .unwrap();
         let exported = conn
             .query_row(
-                "SELECT source_index, map, side, grenade_type, throw_description, coordinates,
-                    thrower, thrower_team, airtime, usage_count, usage_throwers_json, demo_filename, throw_tick,
+             "SELECT source_index, map, side, grenade_type, throw_keys, coordinates,
+                    thrower, thrower_steamid64, thrower_team, airtime, usage_count, usage_throwers_json, demo_filename, throw_tick,
                     lineup_tick, tickrate, round_time_seconds, start_pos_x, start_pos_y, start_pos_z,
-                    explode_pos_x, explode_pos_y, explode_pos_z, trajectory_json,
-                    trajectory_preview_json
-                 FROM grenades WHERE import_id=1",
+                    explode_pos_x, explode_pos_y, explode_pos_z,
+                    start_map_x, start_map_y, explode_map_x, explode_map_y,
+                    trajectory_json, trajectory_preview_json
+                  FROM grenades g WHERE g.import_id=1",
                 [],
                 raw_grenade_from_row,
             )
@@ -2781,6 +4060,8 @@ mod tests {
             updated_at: Some("now".to_string()),
             core_nades: Some(true),
             canonical_grenades: vec![exported],
+            players: Vec::new(),
+            processed_demos: None,
         })
         .unwrap();
         let TypedImportFile::GrenadeIndex(reimported) =
@@ -2859,6 +4140,362 @@ mod tests {
         let core =
             parse_import(r#"{"version":1,"exported_at":"now","grenades":[]}"#.as_bytes()).unwrap();
         assert!(matches!(core, TypedImportFile::CoreNades(_)));
+
+        let archive: ScreenshotArchiveFile = serde_json::from_str(
+            r#"{
+                "version": 1,
+                "exported_at": "now",
+                "grenades": [{
+                    "map": "de_test",
+                    "throw_keys": "M1+JUMP",
+                    "screenshots": {
+                        "normal": "screenshots/a.jpg",
+                        "wide": "screenshots/b.jpg",
+                        "wide_fov": 120
+                    }
+                }]
+            }"#,
+        )
+        .unwrap();
+        assert_eq!(
+            archive.grenades[0].grenade.throw_keys.as_deref(),
+            Some("M1+JUMP")
+        );
+    }
+
+    #[test]
+    fn canonical_and_core_imports_execute_with_nadegrid_fields() {
+        let (state, root) = temporary_test_state("format-import");
+        let TypedImportFile::GrenadeIndex(index) = parse_import(
+            br#"{
+                "version": 1,
+                "canonical_grenades": [{
+                    "map": "de_test",
+                    "side": "T",
+                    "grenade_type": "smoke",
+                    "throw_keys": "M1+JUMP",
+                    "thrower": "Alice",
+                    "thrower_steamid64": "76561198000000001",
+                    "thrower_team": "Alpha",
+                    "usage_count": 1,
+                    "demo_filename": "Cup_match_2024-01-02.dem",
+                    "tickrate": 64.0,
+                    "usage_events": [{
+                        "demo_filename": "Cup_match_2024-01-02.dem",
+                        "throw_tick": 100,
+                        "thrower": "Alice",
+                        "thrower_steamid64": "76561198000000001",
+                        "thrower_team": "Alpha"
+                    }]
+                }],
+                "players": [{
+                    "demo_filename": "Cup_match_2024-01-02.dem",
+                    "steamid64": "76561198000000001",
+                    "name": "Alice",
+                    "team_name": "Alpha",
+                    "side": "T"
+                }]
+            }"#
+            .as_slice(),
+        )
+        .unwrap() else {
+            panic!("expected canonical import");
+        };
+        let canonical_report = import_index_blocking(&state, "canonical.json", index).unwrap();
+
+        let TypedImportFile::CoreNades(core) = parse_import(
+            br#"{
+                "version": 1,
+                "exported_at": "now",
+                "grenades": [{
+                    "map": "de_test",
+                    "side": "CT",
+                    "grenade_type": "flash",
+                    "throw_keys": "M2",
+                    "tickrate": 128.5,
+                    "usage_events": [{
+                        "demo_filename": "Cup_match_2024-01-03.dem",
+                        "throw_tick": 200,
+                        "thrower": "Bob",
+                        "thrower_steamid64": "76561198000000002",
+                        "thrower_team": "Beta"
+                    }]
+                }]
+            }"#
+            .as_slice(),
+        )
+        .unwrap() else {
+            panic!("expected Core Nades import");
+        };
+        let core_report = import_core_nades_snapshot_blocking(&state, "core.json", core).unwrap();
+
+        let conn = open_conn(&state).unwrap();
+        let canonical: (String, Option<String>, Option<i64>) = conn
+            .query_row(
+                "SELECT throw_keys, thrower_steamid64, tickrate FROM grenades WHERE import_id=?1",
+                params![canonical_report.import_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            canonical,
+            (
+                "M1+JUMP".to_string(),
+                Some("76561198000000001".to_string()),
+                Some(64)
+            )
+        );
+        let core: (String, Option<i64>) = conn
+            .query_row(
+                "SELECT throw_keys, tickrate FROM grenades WHERE import_id=?1",
+                params![core_report.import_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(core, ("M2".to_string(), Some(129)));
+        assert_eq!(count(&conn, "SELECT COUNT(*) FROM grenade_usage_events"), 2);
+        assert!(count(&conn, "SELECT COUNT(*) FROM import_players") >= 2);
+        assert_eq!(count(&conn, "SELECT COUNT(*) FROM demo_metadata"), 2);
+        assert_eq!(
+            import_players_from_conn(
+                &conn,
+                canonical_report.import_id,
+                None,
+                Some("de_test"),
+                None,
+            )
+            .unwrap()[0]
+                .name,
+            "Alice"
+        );
+        drop(conn);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn team_counts_match_unique_selectable_players() {
+        let teams = import_teams_from_players(vec![
+            ImportPlayer {
+                steamid64: "76561198000000001".to_string(),
+                name: "Alice".to_string(),
+                team_name: "Alpha".to_string(),
+                side: "T".to_string(),
+            },
+            ImportPlayer {
+                steamid64: "76561198000000001".to_string(),
+                name: "Alice".to_string(),
+                team_name: "Alpha".to_string(),
+                side: "CT".to_string(),
+            },
+            ImportPlayer {
+                steamid64: "".to_string(),
+                name: "Alice".to_string(),
+                team_name: "Alpha".to_string(),
+                side: "T".to_string(),
+            },
+            ImportPlayer {
+                steamid64: "76561198000000002".to_string(),
+                name: "Bob".to_string(),
+                team_name: "Alpha".to_string(),
+                side: "CT".to_string(),
+            },
+        ]);
+        assert_eq!(teams.len(), 1);
+        assert_eq!(teams[0].team_name, "Alpha");
+        assert_eq!(teams[0].player_count, 2);
+    }
+
+    #[test]
+    fn fresh_schema_uses_throw_keys_and_usage_tables() {
+        let conn = Connection::open_in_memory().unwrap();
+        init_schema(&conn).unwrap();
+        let columns = conn
+            .prepare("PRAGMA table_info(grenades)")
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(1))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert!(columns.iter().any(|column| column == "throw_keys"));
+        for table in ["grenade_usage_events", "import_players", "demo_metadata"] {
+            let exists: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?1",
+                    params![table],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(exists, 1, "missing table {table}");
+        }
+    }
+
+    #[test]
+    fn parses_messagepack_with_the_same_root_format_detection() {
+        let value = serde_json::json!({
+            "version": 1,
+            "updated_at": "now",
+            "canonical_grenades": [{
+                "map": "de_test",
+                "throw_keys": "M1+JUMP",
+                "thrower_steamid64": 76561198000000001u64,
+                "tickrate": 128.5
+            }]
+        });
+        let bytes = rmp_serde::to_vec(&value).unwrap();
+        let TypedImportFile::GrenadeIndex(index) = parse_import_bytes(&bytes, true).unwrap() else {
+            panic!("expected canonical MessagePack import");
+        };
+        assert_eq!(
+            index.canonical_grenades[0].throw_keys.as_deref(),
+            Some("M1+JUMP")
+        );
+        assert_eq!(
+            index.canonical_grenades[0].thrower_steamid64.as_deref(),
+            Some("76561198000000001")
+        );
+        assert_eq!(index.canonical_grenades[0].tickrate, Some(128.5));
+        for extension in ["messagepack", "msgpack", "mpk"] {
+            assert!(is_messagepack_path(Path::new(&format!(
+                "library.{extension}"
+            ))));
+        }
+        assert_eq!(
+            serde_json::to_value(index.canonical_grenades[0].clone())
+                .unwrap()
+                .get("throw_keys")
+                .and_then(Value::as_str),
+            Some("M1+JUMP")
+        );
+    }
+
+    #[test]
+    fn parses_players_from_nested_demo_and_steamid_shapes() {
+        let TypedImportFile::GrenadeIndex(index) = parse_import(
+            br#"{
+                "version": 1,
+                "canonical_grenades": [],
+                "players": {
+                    "demo_a_2024-01-02.dem": {
+                        "76561198000000001": {"name": "Alice", "team": "Alpha", "side": "T"}
+                    }
+                }
+            }"#
+            .as_slice(),
+        )
+        .unwrap() else {
+            panic!("expected canonical import");
+        };
+        assert_eq!(index.players.len(), 1);
+        assert_eq!(
+            index.players[0].demo_filename.as_deref(),
+            Some("demo_a_2024-01-02.dem")
+        );
+        assert_eq!(
+            index.players[0].steamid64.as_deref(),
+            Some("76561198000000001")
+        );
+        assert_eq!(index.players[0].player_name.as_deref(), Some("Alice"));
+    }
+
+    #[test]
+    fn derives_metadata_from_unicode_demo_filenames() {
+        assert_eq!(
+            demo_date_from_filename("Кубок_match_2024-01-02.dem").map(|date| date.to_string()),
+            Some("2024-01-02".to_string())
+        );
+        assert_eq!(
+            demo_tournament_from_filename("Кубок_match_2024-01-02.dem").as_deref(),
+            Some("Кубок")
+        );
+    }
+
+    #[test]
+    fn event_filters_match_canonical_or_usage_event_rows() {
+        let conn = Connection::open_in_memory().unwrap();
+        init_schema(&conn).unwrap();
+        insert_import(&conn, 1);
+        conn.execute(
+            "INSERT INTO grenades(id, import_id, source_index, map, side, grenade_type)
+             VALUES (10, 1, 0, 'de_test', 'T', 'smoke')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO grenade_usage_events(import_id, grenade_id, demo_filename, thrower_steamid64, thrower_team)
+             VALUES (1, 10, 'Alpha_match_2024-01-02.dem', '76561198000000001', 'Team Alpha')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO demo_metadata(import_id, demo_filename, tournament, demo_date)
+             VALUES (1, 'Alpha_match_2024-01-02.dem', 'Alpha', '2024-01-02')",
+            [],
+        )
+        .unwrap();
+
+        let filters = MapFilters {
+            thrower_steamid64: Some("76561198000000001".to_string()),
+            thrower_team: Some("alpha".to_string()),
+            tournament: Some("Alpha".to_string()),
+            ..Default::default()
+        };
+        let mut args: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+        let sql = format!(
+            "SELECT g.id FROM grenades g WHERE 1=1{}",
+            filter_sql(&filters, &mut args, "g")
+        );
+        let id: i64 = conn
+            .query_row(
+                &sql,
+                rusqlite::params_from_iter(args.iter().map(|arg| &**arg)),
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(id, 10);
+    }
+
+    #[test]
+    fn usage_stats_aggregate_events_and_sort_history_by_demo_date() {
+        let conn = Connection::open_in_memory().unwrap();
+        init_schema(&conn).unwrap();
+        insert_import(&conn, 1);
+        conn.execute(
+            "INSERT INTO grenades(id, import_id, source_index, map, side, grenade_type, usage_count)
+             VALUES (10, 1, 0, 'de_test', 'T', 'smoke', 99)",
+            [],
+        )
+        .unwrap();
+        conn.execute_batch(
+            "INSERT INTO grenade_usage_events(import_id, grenade_id, demo_filename, throw_tick, thrower, thrower_team)
+             VALUES (1, 10, 'Cup_match_2024-02-03.dem', 20, 'Alice', 'Alpha'),
+                    (1, 10, 'Cup_match_2024-01-03.dem', 10, 'Bob', 'Beta'),
+                    (1, 10, 'Cup_match_2024-02-03.dem', 30, 'Alice', 'Alpha'),
+                    (1, 10, NULL, 40, 'Carol', 'Gamma');",
+        )
+        .unwrap();
+        let stats = usage_stats_from_conn(
+            &conn,
+            10,
+            UsageFallback {
+                usage_count: 99,
+                usage_throwers: &[],
+                thrower: None,
+                steamid64: None,
+                team: None,
+                demo: None,
+                tick: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(stats.tracked_throws, 4);
+        assert_eq!(stats.peak, 2);
+        assert_eq!(stats.most_used_player.as_deref(), Some("Alice"));
+        assert_eq!(stats.most_used_player_throws, 2);
+        assert_eq!(stats.most_used_team.as_deref(), Some("Alpha"));
+        assert_eq!(stats.last_demo.as_deref(), Some("Cup_match_2024-02-03.dem"));
+        assert_eq!(stats.last_tick, Some(30));
+        assert_eq!(stats.history[0].label, "Unknown demo");
+        assert_eq!(stats.history[1].label, "Cup_match_2024-01-03.dem");
     }
 
     #[test]
@@ -2983,8 +4620,8 @@ mod tests {
             };
             let mut args: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
             let sql = format!(
-                "SELECT source_index FROM grenades WHERE 1=1{}",
-                filter_sql(&filters, &mut args)
+                "SELECT g.source_index FROM grenades g WHERE 1=1{}",
+                filter_sql(&filters, &mut args, "g")
             );
             let found: i64 = conn
                 .query_row(
@@ -3062,6 +4699,33 @@ mod tests {
                 params![id * 10],
             )
             .unwrap();
+            conn.execute(
+                "INSERT INTO grenade_usage_events(import_id, grenade_id, demo_filename)
+                 VALUES (?1, ?2, ?3)",
+                params![id, id * 10, format!("Cup_match_2024-01-0{id}.dem")],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO import_players(import_id, demo_filename, steamid64, player_name)
+                 VALUES (?1, ?2, ?3, ?4)",
+                params![
+                    id,
+                    format!("Cup_match_2024-01-0{id}.dem"),
+                    format!("steam-{id}"),
+                    format!("Player {id}")
+                ],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO demo_metadata(import_id, demo_filename, tournament, demo_date)
+                 VALUES (?1, ?2, 'Cup', ?3)",
+                params![
+                    id,
+                    format!("Cup_match_2024-01-0{id}.dem"),
+                    format!("2024-01-0{id}")
+                ],
+            )
+            .unwrap();
         }
 
         assert_eq!(set_active_import_in_conn(&conn, 2).unwrap().id, 2);
@@ -3079,15 +4743,24 @@ mod tests {
             2
         );
         assert_eq!(count(&conn, "SELECT COUNT(*) FROM grenade_view_history"), 2);
+        assert_eq!(count(&conn, "SELECT COUNT(*) FROM grenade_usage_events"), 2);
+        assert_eq!(count(&conn, "SELECT COUNT(*) FROM import_players"), 2);
+        assert_eq!(count(&conn, "SELECT COUNT(*) FROM demo_metadata"), 2);
         assert_eq!(
             delete_import_from_conn(&mut conn, 2).unwrap().unwrap().id,
             3
         );
         assert_eq!(active_import_id(&conn).unwrap(), Some(3));
         assert_eq!(count(&conn, "SELECT COUNT(*) FROM grenade_view_history"), 1);
+        assert_eq!(count(&conn, "SELECT COUNT(*) FROM grenade_usage_events"), 1);
+        assert_eq!(count(&conn, "SELECT COUNT(*) FROM import_players"), 1);
+        assert_eq!(count(&conn, "SELECT COUNT(*) FROM demo_metadata"), 1);
         assert!(delete_import_from_conn(&mut conn, 3).unwrap().is_none());
         assert_eq!(active_import_id(&conn).unwrap(), None);
         assert_eq!(count(&conn, "SELECT COUNT(*) FROM grenade_view_history"), 0);
+        assert_eq!(count(&conn, "SELECT COUNT(*) FROM grenade_usage_events"), 0);
+        assert_eq!(count(&conn, "SELECT COUNT(*) FROM import_players"), 0);
+        assert_eq!(count(&conn, "SELECT COUNT(*) FROM demo_metadata"), 0);
     }
 
     #[test]

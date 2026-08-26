@@ -18,8 +18,8 @@ use in desktop windows.
 
 ## Product Purpose
 
-Nade Viewer imports local grenade lineup JSON snapshots into a local SQLite
-database. Users browse maps, filter and inspect lineups, study trajectories,
+Nade Viewer imports local grenade lineup JSON and MessagePack snapshots into a
+local SQLite database. Users browse maps, filter and inspect lineups, study trajectories,
 copy coordinates, and maintain a curated Core collection without sending data
 to a server.
 
@@ -31,8 +31,8 @@ and deeper analyst workflows across imported library snapshots.
 
 ## Operating Context
 
-Users work from local grenade_index and Core Nades JSON files, often while
-preparing for a match, reviewing demos, or building team playbooks. Primary
+Users work from local grenade_index and Core Nades JSON or MessagePack files,
+often while preparing for a match, reviewing demos, or building team playbooks. Primary
 flows are import a library, choose a map, narrow lineups, inspect a grenade,
 and copy a console-ready coordinate command or mark it as Core.
 
