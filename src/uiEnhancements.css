@@ -522,6 +522,38 @@
     linear-gradient(315deg, rgba(255, 116, 71, 0.035), transparent 38%);
 }
 
+.detail-inspector {
+  display: flex;
+  flex-direction: column;
+}
+
+.detail-order-keys {
+}
+
+.detail-order-coordinates {
+  order: 4;
+}
+
+.detail-order-screenshots {
+  order: 5;
+}
+
+.detail-order-metadata {
+  order: 6;
+}
+
+.detail-order-usage {
+  order: 7;
+}
+
+.detail-order-throwers {
+  order: 8;
+}
+
+.detail-order-similar {
+  order: 9;
+}
+
 .usage-snapshot-heading .block-title {
   margin-bottom: 14px;
 }
