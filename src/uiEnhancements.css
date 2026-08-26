@@ -514,7 +514,12 @@
 }
 
 .usage-snapshot-block {
-  padding-top: 15px;
+  margin-inline: -9px;
+  padding: 15px 9px 14px;
+  border-radius: 9px;
+  background:
+    linear-gradient(135deg, rgba(101, 167, 255, 0.045), transparent 42%),
+    linear-gradient(315deg, rgba(255, 116, 71, 0.035), transparent 38%);
 }
 
 .usage-snapshot-heading .block-title {
@@ -543,20 +548,26 @@
 .usage-leader-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 7px;
+  gap: 8px;
 }
 
 .usage-leader {
+  --usage-leader-rgb: var(--detail-rgb, var(--acid-rgb));
   display: grid;
   min-width: 0;
-  gap: 5px;
-  padding: 3px 11px 4px 0;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid rgba(var(--usage-leader-rgb), 0.14);
+  border-radius: 7px;
+  background: rgba(var(--usage-leader-rgb), 0.045);
 }
 
-.usage-leader + .usage-leader {
-  padding-right: 0;
-  padding-left: 12px;
-  border-left: 1px solid var(--line-soft);
+.usage-leader-player {
+  --usage-leader-rgb: 101, 167, 255;
+}
+
+.usage-leader-team {
+  --usage-leader-rgb: 255, 116, 71;
 }
 
 .usage-leader-label,
@@ -594,22 +605,53 @@
   font-variant-numeric: tabular-nums;
 }
 
+.usage-leader .usage-leader-count {
+  color: rgb(var(--usage-leader-rgb));
+  font:
+    600 14px/1.15 Orbitron,
+    sans-serif;
+  letter-spacing: 0;
+}
+
 .usage-last-throw {
   display: grid;
   min-width: 0;
   gap: 5px;
   margin-top: 10px;
-  padding-top: 11px;
-  border-top: 1px solid var(--line-soft);
+  padding: 11px 12px 12px;
+  border: 1px solid rgba(var(--detail-rgb, var(--acid-rgb)), 0.14);
+  border-radius: 7px;
+  background: linear-gradient(
+    115deg,
+    rgba(var(--detail-rgb, var(--acid-rgb)), 0.075),
+    rgba(var(--detail-rgb, var(--acid-rgb)), 0.018) 60%,
+    transparent
+  );
 }
 
 .usage-last-throw strong {
-  overflow: hidden;
+  display: block;
+  min-width: 0;
   color: var(--text);
-  font-size: 11px;
-  line-height: 1.45;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.usage-last-throw small {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  min-height: 20px;
+  padding: 0 7px;
+  border: 1px solid var(--line-soft);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
 }
 
 .usage-history-stats {
@@ -864,10 +906,7 @@
   }
 
   .usage-leader + .usage-leader {
-    padding-top: 10px;
-    padding-left: 0;
-    border-top: 1px solid var(--line-soft);
-    border-left: 0;
+    padding: 10px;
   }
 
   .usage-history-track {

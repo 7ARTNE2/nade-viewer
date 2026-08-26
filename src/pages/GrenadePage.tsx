@@ -498,13 +498,13 @@ export default function GrenadePage() {
             </div>
           </div>
           <div className="usage-leader-grid">
-            <div className="usage-leader">
+            <div className="usage-leader usage-leader-player">
               <span className="usage-leader-label">
                 <UsersRound size={12} aria-hidden="true" />
                 {tr('Most used player', 'Чаще всего бросал игрок')}
               </span>
               <strong>{grenade.usage_stats.most_used_player || '-'}</strong>
-              <small>
+              <small className="usage-leader-count">
                 {count(
                   grenade.usage_stats.most_used_player_throws,
                   'throw',
@@ -515,13 +515,13 @@ export default function GrenadePage() {
                 )}
               </small>
             </div>
-            <div className="usage-leader">
+            <div className="usage-leader usage-leader-team">
               <span className="usage-leader-label">
                 <UsersRound size={12} aria-hidden="true" />
                 {tr('Most used team', 'Чаще всего бросала команда')}
               </span>
               <strong>{grenade.usage_stats.most_used_team || '-'}</strong>
-              <small>
+              <small className="usage-leader-count">
                 {count(
                   grenade.usage_stats.most_used_team_throws,
                   'throw',
