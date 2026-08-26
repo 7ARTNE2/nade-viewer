@@ -840,6 +840,17 @@ fn init_schema(conn: &Connection) -> AppResult<()> {
             PRIMARY KEY(import_id, demo_filename),
             FOREIGN KEY(import_id) REFERENCES imports(id) ON DELETE CASCADE
         );
+        CREATE TABLE IF NOT EXISTS import_map_players (
+            import_id INTEGER NOT NULL,
+            map TEXT NOT NULL,
+            tournament TEXT NOT NULL DEFAULT '',
+            steamid64 TEXT NOT NULL DEFAULT '',
+            player_name TEXT NOT NULL DEFAULT '',
+            team_name TEXT NOT NULL DEFAULT '',
+            side TEXT NOT NULL DEFAULT '',
+            PRIMARY KEY(import_id, map, tournament, steamid64, player_name, team_name, side),
+            FOREIGN KEY(import_id) REFERENCES imports(id) ON DELETE CASCADE
+        );
         CREATE TABLE IF NOT EXISTS spawn_points (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             map TEXT NOT NULL,
@@ -892,6 +903,8 @@ fn init_schema(conn: &Connection) -> AppResult<()> {
         CREATE INDEX IF NOT EXISTS idx_import_players_import_demo ON import_players(import_id, demo_filename);
         CREATE INDEX IF NOT EXISTS idx_demo_metadata_tournament ON demo_metadata(import_id, tournament, demo_date);
         CREATE INDEX IF NOT EXISTS idx_demo_metadata_tournament_demo ON demo_metadata(import_id, tournament, demo_filename);
+        CREATE INDEX IF NOT EXISTS idx_import_map_players_scope
+            ON import_map_players(import_id, map, tournament, team_name, steamid64);
         CREATE INDEX IF NOT EXISTS idx_spawn_side ON spawn_points(map, side);
         CREATE INDEX IF NOT EXISTS idx_grenade_view_history_recent ON grenade_view_history(viewed_at DESC);
         CREATE INDEX IF NOT EXISTS idx_grenade_screenshots_grenade ON grenade_screenshots(grenade_id);
@@ -1004,6 +1017,18 @@ fn init_schema(conn: &Connection) -> AppResult<()> {
              ON grenades(import_id, map, thrower_team, thrower_steamid64, thrower)",
             [],
         )?;
+        let lookup_backfilled = conn
+            .query_row(
+                "SELECT value FROM app_meta WHERE key='import_map_players_backfill'",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?
+            .as_deref()
+            == Some("1");
+        if !lookup_backfilled {
+            backfill_import_map_players(conn)?;
+        }
     }
     conn.execute_batch(
         "CREATE INDEX IF NOT EXISTS idx_grenade_usage_events_grenade_team
@@ -1341,6 +1366,52 @@ fn insert_demo_metadata(
             params![import_id, filename, tournament, date],
         )?;
     }
+    Ok(())
+}
+
+fn populate_import_map_players(conn: &Connection, import_id: i64) -> AppResult<()> {
+    conn.execute(
+        "INSERT OR IGNORE INTO import_map_players(
+             import_id, map, tournament, steamid64, player_name, team_name, side
+         )
+         SELECT g.import_id, g.map, COALESCE(dm.tournament, ''),
+                COALESCE(g.thrower_steamid64, ''), COALESCE(g.thrower, ''),
+                COALESCE(g.thrower_team, ''), COALESCE(g.side, '')
+         FROM grenades g
+         LEFT JOIN demo_metadata dm
+           ON dm.import_id=g.import_id AND dm.demo_filename=g.demo_filename
+         WHERE g.import_id=?1
+           AND (g.thrower_steamid64 IS NOT NULL OR g.thrower IS NOT NULL)
+           AND (g.thrower_steamid64 IS NOT NULL AND g.thrower_steamid64 <> '' OR g.thrower IS NOT NULL AND g.thrower <> '')
+         UNION
+         SELECT g.import_id, g.map, COALESCE(dm.tournament, ''),
+                COALESCE(ue.thrower_steamid64, ''), COALESCE(ue.thrower, ''),
+                COALESCE(ue.thrower_team, ''), COALESCE(g.side, '')
+         FROM grenades g
+         JOIN grenade_usage_events ue ON ue.grenade_id=g.id
+         LEFT JOIN demo_metadata dm
+           ON dm.import_id=ue.import_id AND dm.demo_filename=ue.demo_filename
+         WHERE g.import_id=?1
+           AND (ue.thrower_steamid64 IS NOT NULL OR ue.thrower IS NOT NULL)
+           AND (ue.thrower_steamid64 IS NOT NULL AND ue.thrower_steamid64 <> '' OR ue.thrower IS NOT NULL AND ue.thrower <> '')",
+        params![import_id],
+    )?;
+    Ok(())
+}
+
+fn backfill_import_map_players(conn: &Connection) -> AppResult<()> {
+    let mut stmt = conn.prepare("SELECT id FROM imports ORDER BY id")?;
+    let ids = stmt
+        .query_map([], |row| row.get::<_, i64>(0))?
+        .collect::<Result<Vec<_>, _>>()?;
+    for import_id in ids {
+        populate_import_map_players(conn, import_id)?;
+    }
+    conn.execute(
+        "INSERT INTO app_meta(key, value) VALUES ('import_map_players_backfill', '1')
+         ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+        [],
+    )?;
     Ok(())
 }
 
@@ -2606,6 +2677,7 @@ fn import_index_blocking(
     }
 
     insert_demo_metadata(&tx, import_id, &demo_metadata)?;
+    populate_import_map_players(&tx, import_id)?;
 
     tx.execute(
         "INSERT INTO app_meta(key, value) VALUES ('active_import_id', ?1)
@@ -2681,47 +2753,13 @@ fn import_players_from_conn(
         }
     };
 
-    let player_sql = if map.is_some() && tournament.is_some() {
-        "SELECT DISTINCT COALESCE(g.thrower_steamid64, ''), COALESCE(g.thrower, ''), COALESCE(g.thrower_team, ''), COALESCE(g.side, '')
-          FROM demo_metadata dm
-          JOIN grenades g INDEXED BY idx_grenades_import_demo_map
-            ON g.import_id=dm.import_id AND g.demo_filename=dm.demo_filename
-          WHERE dm.import_id=?1 AND dm.tournament=?4 AND g.map=?2
-            AND (?3 IS NULL OR g.thrower_team=?3)
-            AND (g.thrower_steamid64 IS NOT NULL OR g.thrower IS NOT NULL)
-          UNION
-          SELECT DISTINCT COALESCE(ue.thrower_steamid64, ''), COALESCE(ue.thrower, ''), COALESCE(ue.thrower_team, ''), COALESCE(g.side, '')
-          FROM grenades g INDEXED BY idx_grenades_filter
-          JOIN grenade_usage_events ue INDEXED BY idx_grenade_usage_events_grenade
-            ON ue.grenade_id=g.id
-          JOIN demo_metadata dm
-            ON dm.import_id=ue.import_id AND dm.demo_filename=ue.demo_filename
-          WHERE g.import_id=?1 AND g.map=?2 AND dm.tournament=?4
-            AND (?3 IS NULL OR ue.thrower_team=?3)
-            AND (ue.thrower_steamid64 IS NOT NULL OR ue.thrower IS NOT NULL)
-            "
-    } else if map.is_some() {
-        "SELECT DISTINCT COALESCE(g.thrower_steamid64, ''), COALESCE(g.thrower, ''), COALESCE(g.thrower_team, ''), COALESCE(g.side, '')
-         FROM grenades g
-         WHERE g.import_id=?1 AND g.map=?2
-            AND (?3 IS NULL OR g.thrower_team=?3)
-           AND (g.thrower_steamid64 IS NOT NULL OR g.thrower IS NOT NULL)
-            AND (?4 IS NULL)
-         UNION
-         SELECT DISTINCT COALESCE(ue.thrower_steamid64, ''), COALESCE(ue.thrower, ''), COALESCE(ue.thrower_team, ''), COALESCE(g.side, '')
-         FROM grenades g INDEXED BY idx_grenades_filter
-         JOIN grenade_usage_events ue INDEXED BY idx_grenade_usage_events_grenade
-           ON ue.grenade_id=g.id
-          WHERE g.import_id=?1 AND g.map=?2
-            AND (?3 IS NULL OR ue.thrower_team=?3)
-           AND (ue.thrower_steamid64 IS NOT NULL OR ue.thrower IS NOT NULL)
-            AND (?4 IS NULL)"
-    } else {
-        "SELECT DISTINCT COALESCE(ip.steamid64, ''), COALESCE(ip.player_name, ''), COALESCE(ip.team_name, ''), COALESCE(ip.side, '')
-         FROM import_players ip
-          WHERE ip.import_id=?1 AND (?3 IS NULL OR ip.team_name=?3)
-            AND (?4 IS NULL)"
-    };
+    let player_sql = "SELECT DISTINCT steamid64, player_name, team_name, side
+         FROM import_map_players
+         WHERE import_id=?1
+           AND (?2 IS NULL OR map=?2)
+           AND (?3 IS NULL OR team_name=?3)
+           AND (?4 IS NULL OR tournament=?4)
+         ORDER BY team_name, player_name, steamid64, side";
     let mut stmt = conn.prepare(player_sql)?;
     let rows = stmt.query_map(params![import_id, map, team_name, tournament], |row| {
         Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
@@ -2982,6 +3020,10 @@ fn delete_import_from_conn(
     let current_active = active_import_id(&tx)?;
     tx.execute(
         "DELETE FROM grenade_view_history WHERE grenade_id IN (SELECT id FROM grenades WHERE import_id=?1)",
+        params![import_id],
+    )?;
+    tx.execute(
+        "DELETE FROM import_map_players WHERE import_id=?1",
         params![import_id],
     )?;
     tx.execute(
@@ -3751,6 +3793,7 @@ fn import_core_nades_snapshot_blocking(
     }
 
     insert_demo_metadata(&tx, import_id, &demo_metadata)?;
+    populate_import_map_players(&tx, import_id)?;
 
     tx.execute(
         "INSERT INTO app_meta(key, value) VALUES ('active_import_id', ?1)
@@ -4306,6 +4349,19 @@ mod tests {
                 .name,
             "Alice"
         );
+        assert_eq!(
+            import_players_from_conn(
+                &conn,
+                canonical_report.import_id,
+                Some("Alpha"),
+                Some("de_test"),
+                Some("Cup"),
+            )
+            .unwrap()[0]
+                .steamid64,
+            "76561198000000001"
+        );
+        assert!(count(&conn, "SELECT COUNT(*) FROM import_map_players") >= 2);
         drop(conn);
         fs::remove_dir_all(root).unwrap();
     }
@@ -4355,7 +4411,12 @@ mod tests {
             .collect::<Result<Vec<_>, _>>()
             .unwrap();
         assert!(columns.iter().any(|column| column == "throw_keys"));
-        for table in ["grenade_usage_events", "import_players", "demo_metadata"] {
+        for table in [
+            "grenade_usage_events",
+            "import_players",
+            "demo_metadata",
+            "import_map_players",
+        ] {
             let exists: i64 = conn
                 .query_row(
                     "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?1",
@@ -4764,6 +4825,12 @@ mod tests {
                 ],
             )
             .unwrap();
+            conn.execute(
+                "INSERT INTO import_map_players(import_id, map, tournament, steamid64, player_name)
+                 VALUES (?1, 'de_test', 'Cup', ?2, ?3)",
+                params![id, format!("steam-{id}"), format!("Player {id}")],
+            )
+            .unwrap();
         }
 
         assert_eq!(set_active_import_in_conn(&conn, 2).unwrap().id, 2);
@@ -4784,6 +4851,7 @@ mod tests {
         assert_eq!(count(&conn, "SELECT COUNT(*) FROM grenade_usage_events"), 2);
         assert_eq!(count(&conn, "SELECT COUNT(*) FROM import_players"), 2);
         assert_eq!(count(&conn, "SELECT COUNT(*) FROM demo_metadata"), 2);
+        assert_eq!(count(&conn, "SELECT COUNT(*) FROM import_map_players"), 2);
         assert_eq!(
             delete_import_from_conn(&mut conn, 2).unwrap().unwrap().id,
             3
@@ -4793,12 +4861,14 @@ mod tests {
         assert_eq!(count(&conn, "SELECT COUNT(*) FROM grenade_usage_events"), 1);
         assert_eq!(count(&conn, "SELECT COUNT(*) FROM import_players"), 1);
         assert_eq!(count(&conn, "SELECT COUNT(*) FROM demo_metadata"), 1);
+        assert_eq!(count(&conn, "SELECT COUNT(*) FROM import_map_players"), 1);
         assert!(delete_import_from_conn(&mut conn, 3).unwrap().is_none());
         assert_eq!(active_import_id(&conn).unwrap(), None);
         assert_eq!(count(&conn, "SELECT COUNT(*) FROM grenade_view_history"), 0);
         assert_eq!(count(&conn, "SELECT COUNT(*) FROM grenade_usage_events"), 0);
         assert_eq!(count(&conn, "SELECT COUNT(*) FROM import_players"), 0);
         assert_eq!(count(&conn, "SELECT COUNT(*) FROM demo_metadata"), 0);
+        assert_eq!(count(&conn, "SELECT COUNT(*) FROM import_map_players"), 0);
     }
 
     #[test]
