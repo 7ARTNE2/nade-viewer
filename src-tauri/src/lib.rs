@@ -1328,12 +1328,19 @@ fn import_typed_path_blocking(state: &AppState, path: &str) -> AppResult<JsonImp
             screenshot_count,
         ));
     }
-    let file = fs::File::open(&source_path).map_err(|error| AppError::Import {
-        code: "file_unavailable",
-        message: format!("Cannot open import file '{path}': {error}"),
-    })?;
-    let bytes = read_import_bytes(file)?;
-    match parse_import_bytes(&bytes, is_messagepack_path(&source_path))? {
+    let imported = if is_messagepack_path(&source_path) {
+        // Decode MessagePack directly into the typed envelope to avoid keeping
+        // both a 600+ MB byte buffer and an intermediate JSON value in memory.
+        parse_messagepack_file(&source_path)?
+    } else {
+        let file = fs::File::open(&source_path).map_err(|error| AppError::Import {
+            code: "file_unavailable",
+            message: format!("Cannot open import file '{path}': {error}"),
+        })?;
+        let bytes = read_import_bytes(file)?;
+        parse_import_bytes(&bytes, false)?
+    };
+    match imported {
         TypedImportFile::GrenadeIndex(index) => {
             import_index_blocking(state, path, index, None).map(JsonImportReport::from)
         }
@@ -4899,6 +4906,26 @@ mod tests {
                 .and_then(Value::as_str),
             Some("M1+JUMP")
         );
+    }
+
+    #[test]
+    fn parses_messagepack_file_without_building_a_byte_buffer() {
+        let root = std::env::temp_dir().join(format!(
+            "nade-viewer-messagepack-{}-{}",
+            std::process::id(),
+            Utc::now().timestamp_nanos_opt().unwrap_or_default()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let path = root.join("library.msgpack");
+        let value = serde_json::json!({
+            "version": 1,
+            "canonical_grenades": [{"map": "de_test"}]
+        });
+        fs::write(&path, rmp_serde::to_vec(&value).unwrap()).unwrap();
+
+        let parsed = parse_messagepack_file(&path).unwrap();
+        assert!(matches!(parsed, TypedImportFile::GrenadeIndex(_)));
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

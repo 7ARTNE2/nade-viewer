@@ -172,12 +172,34 @@ export default function ImportPage({ onImported, lastImport }: Props) {
           'Invalid Core Nades structure',
           'Некорректная структура Core Nades',
         ),
+        library_manifest_unavailable: tr(
+          'The online library manifest is unavailable',
+          'Манифест онлайн-библиотеки недоступен',
+        ),
+        library_update_invalid: tr(
+          'The online library manifest is invalid',
+          'Манифест онлайн-библиотеки содержит ошибку',
+        ),
+        library_download_failed: tr(
+          'The online library could not be downloaded',
+          'Не удалось скачать онлайн-библиотеку',
+        ),
+        library_size_mismatch: tr(
+          'The downloaded library size is incorrect',
+          'Размер скачанной библиотеки не совпадает',
+        ),
+        library_hash_mismatch: tr(
+          'The downloaded library failed its integrity check',
+          'Проверка целостности скачанной библиотеки не пройдена',
+        ),
       };
       if (importError) {
         const summary =
           translated[importError.code] ?? tr('Import failed', 'Ошибка импорта');
-        setMessage(summary);
-        showToast(summary, { tone: 'error', duration: 3260 });
+        const detail = importError.message?.trim();
+        const visibleMessage = detail ? `${summary}: ${detail}` : summary;
+        setMessage(visibleMessage);
+        showToast(visibleMessage, { tone: 'error', duration: 4600 });
       } else {
         const summary = tr('Import failed', 'Ошибка импорта');
         setMessage(summary);

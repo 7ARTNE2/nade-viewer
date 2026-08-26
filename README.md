@@ -5,7 +5,7 @@ lineups from local JSON and MessagePack files. It imports lineups into a local S
 and presents them on bundled radar images. An optional online library update path
 can download a MessagePack snapshot from a configured HTTPS URL and verify its digest.
 
-Current application version: **0.5.1**.
+Current application version: **0.5.2**.
 
 ## Features
 
@@ -31,7 +31,7 @@ limitations are documented in [Data formats](docs/data-formats.md).
 ## Technology stack
 
 Versions below are the resolved versions from `package-lock.json` and
-`src-tauri/Cargo.lock` for Nade Viewer 0.5.1.
+`src-tauri/Cargo.lock` for Nade Viewer 0.5.2.
 
 ### Application architecture
 
@@ -251,8 +251,8 @@ git push origin v0.2.0
 For the current release:
 
 ```powershell
-  git tag v0.5.1
-  git push origin v0.5.1
+  git tag v0.5.2
+  git push origin v0.5.2
 ```
 
 Check existing local tags with `git tag` and tags on GitHub with:
