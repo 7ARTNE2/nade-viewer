@@ -129,6 +129,7 @@ function UsageHistoryChart({
               preserveAspectRatio="none"
               aria-hidden="true"
             >
+              <polygon points={`0,90 ${historyLinePoints} 100,90`} />
               <polyline points={historyLinePoints} />
             </svg>
             {history.map((point, index) => {

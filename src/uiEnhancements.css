@@ -658,7 +658,7 @@
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0;
-  margin: 14px 0 2px;
+  margin: 14px 0 5px;
   padding: 0;
 }
 
@@ -676,7 +676,7 @@
 .usage-history-stats > div {
   display: grid;
   min-width: 0;
-  gap: 4px;
+  gap: 5px;
   padding: 0 10px;
   border-left: 1px solid var(--line-soft);
 }
@@ -692,7 +692,7 @@
 
 .usage-history-stats dt {
   overflow: hidden;
-  color: var(--dim);
+  color: var(--muted);
   font-size: 9px;
   font-weight: 800;
   letter-spacing: 0.06em;
@@ -705,9 +705,17 @@
   margin: 0;
   color: var(--text);
   font:
-    600 16px/1 Orbitron,
+    600 18px/1 Orbitron,
     sans-serif;
   font-variant-numeric: tabular-nums;
+}
+
+.usage-history-stats > div:first-child dd {
+  color: var(--blue);
+}
+
+.usage-history-stats > div:nth-child(2) dd {
+  color: var(--text);
 }
 
 .usage-history-stats > div:last-child dd {
@@ -738,6 +746,11 @@
   margin: 0;
   padding: 0 2px;
   list-style: none;
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent 0 23px,
+    rgba(137, 146, 159, 0.08) 23px 24px
+  );
 }
 
 .usage-history-connector {
@@ -758,6 +771,11 @@
   stroke-opacity: 0.7;
   stroke-width: 1.2;
   vector-effect: non-scaling-stroke;
+}
+
+.usage-history-connector polygon {
+  fill: var(--blue);
+  fill-opacity: 0.07;
 }
 
 .usage-history-point-slot {
