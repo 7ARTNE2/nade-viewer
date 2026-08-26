@@ -9,7 +9,7 @@ import {
   type ReactNode,
 } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, ChevronDown, Search } from 'lucide-react';
+import { Check, ChevronDown, LoaderCircle, Search } from 'lucide-react';
 
 export type FilterSelectOption = {
   value: string;
@@ -26,6 +26,8 @@ type Props = {
   icon: ReactNode;
   searchPlaceholder: string;
   emptyLabel: string;
+  loading?: boolean;
+  loadingLabel?: string;
   disabled?: boolean;
 };
 
@@ -44,6 +46,8 @@ export default function FilterSelect({
   icon,
   searchPlaceholder,
   emptyLabel,
+  loading = false,
+  loadingLabel = 'Loading',
   disabled = false,
 }: Props) {
   const menuId = useId();
@@ -108,7 +112,7 @@ export default function FilterSelect({
   };
 
   const openMenu = () => {
-    if (disabled) return;
+    if (disabled || loading) return;
     calculatePosition();
     setOpen(true);
   };
@@ -208,7 +212,9 @@ export default function FilterSelect({
     : undefined;
 
   return (
-    <div className={`tactical-filter-select ${value ? 'has-value' : ''}`}>
+    <div
+      className={`tactical-filter-select ${value ? 'has-value' : ''} ${loading ? 'is-loading' : ''}`}
+    >
       <span className="tactical-filter-label">
         {icon}
         {label}
@@ -217,7 +223,8 @@ export default function FilterSelect({
         ref={triggerRef}
         className="tactical-filter-trigger"
         type="button"
-        disabled={disabled}
+        disabled={disabled || loading}
+        aria-busy={loading}
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
@@ -229,11 +236,29 @@ export default function FilterSelect({
           }
         }}
       >
-        <span className="tactical-filter-value">
-          <strong>{selected.label}</strong>
-          {selected.meta ? <small>{selected.meta}</small> : null}
-        </span>
-        <ChevronDown className={open ? 'open' : ''} size={15} />
+        {loading ? (
+          <span className="tactical-filter-loading">
+            <span className="tactical-filter-loading-mark">
+              <LoaderCircle size={15} aria-hidden="true" />
+            </span>
+            <span className="tactical-filter-loading-copy">
+              <strong>{loadingLabel}</strong>
+              <small aria-hidden="true">
+                <i />
+                <i />
+                <i />
+              </small>
+            </span>
+          </span>
+        ) : (
+          <>
+            <span className="tactical-filter-value">
+              <strong>{selected.label}</strong>
+              {selected.meta ? <small>{selected.meta}</small> : null}
+            </span>
+            <ChevronDown className={open ? 'open' : ''} size={15} />
+          </>
+        )}
       </button>
       {open && position
         ? createPortal(

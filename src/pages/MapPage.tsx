@@ -1215,7 +1215,8 @@ export default function MapPage({ activeImportId }: MapPageProps) {
               icon={<Trophy size={13} aria-hidden="true" />}
               searchPlaceholder={tr('Search tournaments', 'Найти турнир')}
               emptyLabel={tr('No tournaments found', 'Турниры не найдены')}
-              disabled={tournamentsLoading}
+              loading={tournamentsLoading}
+              loadingLabel={tr('Loading events', 'Загрузка турниров')}
               onChange={(value) =>
                 setFilters((state) => ({
                   ...state,
