@@ -5,7 +5,7 @@ lineups from local JSON and MessagePack files. It imports lineups into a local S
 and presents them on bundled radar images; no server or network data source is
 configured in this repository.
 
-Current application version: **0.4.1**.
+Current application version: **0.5.0**.
 
 ## Features
 
@@ -31,7 +31,7 @@ limitations are documented in [Data formats](docs/data-formats.md).
 ## Technology stack
 
 Versions below are the resolved versions from `package-lock.json` and
-`src-tauri/Cargo.lock` for Nade Viewer 0.4.1.
+`src-tauri/Cargo.lock` for Nade Viewer 0.5.0.
 
 ### Application architecture
 
