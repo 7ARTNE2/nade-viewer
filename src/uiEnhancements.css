@@ -849,11 +849,16 @@
 }
 
 .usage-history-point[data-current='true'] span {
-  border-color: var(--red);
+  width: calc(var(--usage-size) + 5px);
+  height: calc(var(--usage-size) + 5px);
+  border: 2px solid var(--text);
+  border-radius: 0;
   background: var(--red);
   box-shadow:
-    0 0 0 3px rgba(var(--red-rgb), 0.16),
+    0 0 0 3px rgba(var(--red-rgb), 0.2),
     0 0 14px rgba(var(--red-rgb), 0.35);
+  opacity: 1;
+  transform: rotate(45deg) scale(0.86);
 }
 
 .usage-history-point[data-current='true']:hover span,
@@ -861,6 +866,11 @@
   box-shadow:
     0 0 0 4px rgba(var(--red-rgb), 0.22),
     0 0 17px rgba(var(--red-rgb), 0.42);
+  transform: rotate(45deg) scale(1);
+}
+
+.usage-history-point[data-current='true']:active span {
+  transform: rotate(45deg) scale(0.9);
 }
 
 .usage-history-axis {
