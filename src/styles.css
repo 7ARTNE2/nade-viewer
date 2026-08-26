@@ -52,6 +52,8 @@
 .map-orb{min-width:0;min-height:0;overflow:hidden}
 .map-orb img{display:block;width:min(58%,120px);height:min(58%,120px);max-width:100%;max-height:100%;object-fit:contain}
 
+.map-toolbar .insta-toolbar-toggle{color:#ff9877}.map-toolbar .insta-toolbar-toggle.active{border-color:rgba(255,116,71,.4);background:rgba(255,116,71,.12);color:#ffa083}
+
 .map-stage{width:100%;height:100%}
 .map-image{position:absolute;object-fit:contain}
 

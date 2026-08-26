@@ -7,6 +7,7 @@ import {
   ChevronRight,
   ChevronDown,
   ChevronUp,
+  Crosshair,
   Filter,
   PanelRightClose,
   PanelRightOpen,
@@ -562,6 +563,7 @@ export default function MapPage({ activeImportId }: MapPageProps) {
     Boolean(filters.thrower_steamid64?.trim()),
     Boolean(filters.tournament?.trim()),
     filters.is_core,
+    filters.is_insta,
   ].filter(Boolean).length;
   const filterSummary = activeFilterCount
     ? count(
@@ -954,6 +956,24 @@ export default function MapPage({ activeImportId }: MapPageProps) {
             >
               <BadgeCheck size={15} />
               {tr('Core', 'Избранные')}
+            </button>
+            <button
+              aria-pressed={filters.is_insta}
+              className={`toggle insta-toolbar-toggle ${filters.is_insta ? 'active' : ''}`}
+              onClick={() =>
+                setFilters((state) => ({ ...state, is_insta: !state.is_insta }))
+              }
+              data-tip={tr(
+                'Show only insta grenades',
+                'Показывать только инста-гранаты',
+              )}
+              aria-label={tr(
+                'Show only insta grenades',
+                'Показывать только инста-гранаты',
+              )}
+            >
+              <Crosshair size={15} />
+              {tr('Insta', 'Инста')}
             </button>
             <button
               aria-pressed={showSpawns}

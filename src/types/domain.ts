@@ -97,6 +97,7 @@ export type MapFilters = {
   min_usage?: number;
   radar_level?: 'default' | 'lower';
   is_core?: boolean;
+  is_insta?: boolean;
 };
 
 export type LandingCluster = {

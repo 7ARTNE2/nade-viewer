@@ -178,6 +178,7 @@ struct MapFilters {
     min_usage: Option<i64>,
     radar_level: Option<String>,
     is_core: Option<bool>,
+    is_insta: Option<bool>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -1911,6 +1912,11 @@ fn filter_sql(
     }
     if filters.is_core.unwrap_or(false) {
         parts.push(format!("{alias}.is_core = 1"));
+    }
+    if filters.is_insta.unwrap_or(false) {
+        parts.push(format!(
+            "EXISTS (SELECT 1 FROM spawn_points sp WHERE sp.map={alias}.map AND sp.map_x IS NOT NULL AND sp.map_y IS NOT NULL AND ABS(sp.map_x - {alias}.start_map_x) <= 0.05 AND ABS(sp.map_y - {alias}.start_map_y) <= 0.05)"
+        ));
     }
     if let Some(search) = filters
         .search
@@ -4559,6 +4565,48 @@ mod tests {
             )
             .unwrap();
         assert_eq!(id, 10);
+    }
+
+    #[test]
+    fn insta_filter_matches_grenades_started_at_spawn_points() {
+        let conn = Connection::open_in_memory().unwrap();
+        init_schema(&conn).unwrap();
+        insert_import(&conn, 1);
+        conn.execute(
+            "INSERT INTO grenades(id, import_id, source_index, map, side, grenade_type, start_map_x, start_map_y)
+             VALUES (10, 1, 0, 'de_test', 'T', 'smoke', 100.02, 200.01),
+                    (11, 1, 1, 'de_test', 'T', 'smoke', 120.0, 220.0)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO spawn_points(map, side, pos_x, pos_y, pos_z, map_x, map_y)
+             VALUES ('de_test', 'T', 0, 0, 0, 100.0, 200.0)",
+            [],
+        )
+        .unwrap();
+
+        let filters = MapFilters {
+            is_insta: Some(true),
+            ..Default::default()
+        };
+        let mut args: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+        let sql = format!(
+            "SELECT g.id FROM grenades g WHERE g.import_id=1 AND g.map='de_test'{} ORDER BY g.id",
+            filter_sql(&filters, &mut args, "g")
+        );
+        let ids = conn
+            .prepare(&sql)
+            .unwrap()
+            .query_map(
+                rusqlite::params_from_iter(args.iter().map(|arg| &**arg)),
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+
+        assert_eq!(ids, vec![10]);
     }
 
     #[test]

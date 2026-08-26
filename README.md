@@ -14,7 +14,7 @@ Current application version: **0.4.1**.
 - Keeps multiple imports, lets the user switch between them, rename them, and
   delete them.
 - Groups grenade starts and landings on map radars.
-- Filters by grenade type, side, usage count, radar level, Core status, thrower,
+- Filters by grenade type, side, usage count, radar level, Core and insta status, thrower,
   thrower team, player, tournament, demo name, and coordinates.
 - Shows usage snapshots, trajectories, lineup metadata, similar grenades, spawn points, and
   recently viewed grenades when the source data supports them.

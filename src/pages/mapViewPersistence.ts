@@ -29,6 +29,7 @@ export const defaultMapFilters = (): MapFilters => ({
   tournament: '',
   min_usage: 0,
   is_core: false,
+  is_insta: false,
 });
 
 export function filtersMatchDefault(filters: MapFilters) {
@@ -41,7 +42,8 @@ export function filtersMatchDefault(filters: MapFilters) {
     (filters.thrower_steamid64 ?? '') === defaults.thrower_steamid64 &&
     (filters.tournament ?? '') === defaults.tournament &&
     (filters.min_usage ?? 0) === defaults.min_usage &&
-    Boolean(filters.is_core) === Boolean(defaults.is_core)
+    Boolean(filters.is_core) === Boolean(defaults.is_core) &&
+    Boolean(filters.is_insta) === Boolean(defaults.is_insta)
   );
 }
 
