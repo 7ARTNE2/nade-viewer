@@ -312,8 +312,10 @@ button:focus-visible,[role="button"]:focus-visible,[role="link"]:focus-visible{o
 
 .operation-error-chip{color:#ff9ca3;font-size:9px;white-space:nowrap}
 .panel-load-error{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px;border:1px solid rgba(255,113,133,.2);border-radius:8px;background:rgba(255,113,133,.06);color:#ff9ca3;font-size:10px}
-.demo-filename{display:flex;min-width:0;align-items:flex-start;justify-content:flex-end;gap:5px;overflow-wrap:anywhere;white-space:normal}
-.demo-filename svg{flex:none;margin-top:1px}
+.demo-filename{display:block;min-width:0;overflow-wrap:anywhere;color:var(--text);font-size:12px;font-weight:700;line-height:1.45;white-space:normal}
+.demo-metadata-label{display:flex;min-width:0;align-items:center;gap:5px;color:var(--dim);font-size:9px;font-weight:800;letter-spacing:.05em;text-transform:uppercase}
+.demo-metadata-label svg{flex:none;color:rgb(var(--detail-rgb,var(--acid-rgb)))}
+.demo-tick-value{color:var(--muted);font-variant-numeric:tabular-nums}
 html[lang="ru"] :not(code,code *){font-family:Inter,"Segoe UI",sans-serif}
 html[lang="ru"] .home-sidebar h1,
 html[lang="ru"] .import-copy h1,

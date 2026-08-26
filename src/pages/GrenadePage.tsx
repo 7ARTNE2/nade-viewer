@@ -686,23 +686,40 @@ export default function GrenadePage() {
               {copied ? tr('Copied', 'Скопировано') : tr('Copy', 'Копировать')}
             </button>
           </div>
-          <code>{grenade.coordinates || '-'}</code>
+          <div className="coordinate-command-panel">
+            <code>{grenade.coordinates || '-'}</code>
+          </div>
         </div>
 
-        <div className="info-block">
+        <div className="info-block demo-metadata-block">
           <div className="block-title">
             {tr('Demo metadata', 'Данные демо')}
           </div>
-          <div className="kv-list">
-            <span>{tr('Throw tick', 'Тик броска')}</span>
-            <strong>{grenade.throw_tick ?? '-'}</strong>
-            <span>{tr('Lineup tick', 'Тик подготовки')}</span>
-            <strong>{grenade.lineup_tick ?? '-'}</strong>
-            <span>{tr('Demo', 'Демо')}</span>
-            <strong className="demo-filename">
-              <FileText size={12} />
-              {grenade.demo_filename || '-'}
-            </strong>
+          <div className="demo-metadata-content">
+            <div className="demo-file-row">
+              <span className="demo-file-icon" aria-hidden="true">
+                <FileText size={15} />
+              </span>
+              <div className="demo-file-copy">
+                <span className="demo-metadata-label">
+                  {tr('Demo file', 'Файл демо')}
+                </span>
+                <strong
+                  className="demo-filename"
+                  title={grenade.demo_filename || undefined}
+                >
+                  {grenade.demo_filename || '-'}
+                </strong>
+              </div>
+            </div>
+            <div className="demo-tick-row">
+              <span className="demo-metadata-label">
+                {tr('Throw tick', 'Тик броска')}
+              </span>
+              <strong className="demo-tick-value">
+                {grenade.throw_tick ?? '-'}
+              </strong>
+            </div>
           </div>
         </div>
 
