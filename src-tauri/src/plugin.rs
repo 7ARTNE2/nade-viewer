@@ -60,11 +60,14 @@ pub(crate) fn get_nade_parser_status(app: AppHandle) -> ParserStatus {
     state(&app).lock().unwrap().clone()
 }
 #[tauri::command]
-pub(crate) fn select_demo_file() -> Option<String> {
+pub(crate) fn select_demo_files() -> Vec<String> {
     rfd::FileDialog::new()
         .add_filter("Demo", &["dem"])
-        .pick_file()
+        .pick_files()
+        .unwrap_or_default()
+        .into_iter()
         .map(|p| p.display().to_string())
+        .collect()
 }
 #[tauri::command]
 pub(crate) fn select_demo_folders() -> Vec<String> {
@@ -135,37 +138,26 @@ fn is_demo(p: &Path) -> bool {
         .is_some_and(|s| s.eq_ignore_ascii_case("dem"))
 }
 
-fn merge_output(
-    combined: &mut Option<serde_json::Value>,
-    mut next: serde_json::Value,
-) -> Result<(), String> {
-    let items = next
-        .get_mut("canonical_grenades")
-        .and_then(|v| v.as_array_mut())
-        .ok_or("Plugin output has no canonical_grenades array")?;
-    if items.iter().any(|item| !item.is_object()) {
-        return Err("Plugin output contains a non-object grenade".into());
+fn workspace_connection(app: &AppHandle) -> Result<rusqlite::Connection, String> {
+    let db = app
+        .path()
+        .app_local_data_dir()
+        .map_err(|e| e.to_string())?
+        .join("parser-workspace.sqlite");
+    parser_store::open(&db).map_err(|e| e.to_string())
+}
+
+fn ensure_dataset_ready(c: &rusqlite::Connection, canonical: bool) -> Result<(), String> {
+    let (raw, _) = parser_store::counts(c).map_err(|e| e.to_string())?;
+    if raw == 0 {
+        return Err("Parser workspace is empty. Parse demos first.".into());
     }
-    if let Some(root) = combined {
-        root["canonical_grenades"]
-            .as_array_mut()
-            .unwrap()
-            .append(items);
-        for (key, value) in next.as_object().unwrap() {
-            if key != "canonical_grenades" && root.get(key).is_some_and(|old| old != value) {
-                return Err(format!("Conflicting plugin metadata: {key}"));
-            }
-            if key != "canonical_grenades" {
-                root.as_object_mut()
-                    .unwrap()
-                    .insert(key.clone(), value.clone());
-            }
-        }
-    } else {
-        *combined = Some(next);
+    if canonical && parser_store::canonical_count(c).map_err(|e| e.to_string())? == 0 {
+        return Err("Canonical set is empty. Recompute deduplication first.".into());
     }
     Ok(())
 }
+
 #[tauri::command]
 pub(crate) fn run_nade_parser(
     app: AppHandle,
@@ -295,48 +287,34 @@ pub(crate) fn run_nade_parser_batch(
 }
 #[tauri::command]
 pub(crate) fn deduplicate_parser_workspace(app: AppHandle) -> Result<(), String> {
-    let p = app
-        .path()
-        .app_local_data_dir()
-        .map_err(|e| e.to_string())?
-        .join("parser-workspace.sqlite");
-    let mut c = parser_store::open(&p).map_err(|e| e.to_string())?;
+    let mut c = workspace_connection(&app)?;
     let out = crate::dedup::deduplicate(parser_store::all(&c).map_err(|e| e.to_string())?);
     parser_store::replace_canonical(&mut c, &out).map_err(|e| e.to_string())
 }
 #[tauri::command]
 pub(crate) fn get_parser_workspace_counts(app: AppHandle) -> Result<(i64, i64), String> {
-    let p = app
-        .path()
-        .app_local_data_dir()
-        .map_err(|e| e.to_string())?
-        .join("parser-workspace.sqlite");
-    parser_store::counts(&parser_store::open(&p).map_err(|e| e.to_string())?)
-        .map_err(|e| e.to_string())
+    parser_store::counts(&workspace_connection(&app)?).map_err(|e| e.to_string())
 }
 #[tauri::command]
 pub(crate) fn save_parser_output(
     app: AppHandle,
-    output: String,
+    source: String,
     format: String,
 ) -> Result<Option<String>, String> {
-    if output == "workspace" {
-        let db = app.path().app_local_data_dir().map_err(|e| e.to_string())?.join("parser-workspace.sqlite");
-        let c = parser_store::open(&db).map_err(|e| e.to_string())?;
-        let Some(path) = rfd::FileDialog::new().set_file_name("nade-parser.json").save_file() else { return Ok(None); };
-        parser_store::write_json(&c, format == "canonical", &path).map_err(|e| e.to_string())?;
-        return Ok(Some(path.display().to_string()));
-    }
-    // The workspace is the source of truth; materialized job files remain only
-    // a compatibility fallback for jobs created by older builds.
-    let source = if output == "workspace" {
-        let db = app.path().app_local_data_dir().map_err(|e| e.to_string())?.join("parser-workspace.sqlite");
-        let c = parser_store::open(&db).map_err(|e| e.to_string())?;
-        let rows = parser_store::all(&c).map_err(|e| e.to_string())?;
-        serde_json::to_vec(&serde_json::json!({"version":1,"canonical_grenades":rows})).map_err(|e| e.to_string())?
-    } else { std::fs::read(output).map_err(|e| e.to_string())? };
-    let Some(path) = rfd::FileDialog::new()
-        .set_file_name(if format == "msgpack" {
+    let canonical = source == "canonical";
+    let c = workspace_connection(&app)?;
+    ensure_dataset_ready(&c, canonical)?;
+    let is_msgpack = format == "msgpack";
+    let dialog = rfd::FileDialog::new().add_filter(
+        if is_msgpack {
+            "MessagePack library"
+        } else {
+            "JSON library"
+        },
+        &[if is_msgpack { "msgpack" } else { "json" }],
+    );
+    let Some(path) = dialog
+        .set_file_name(if is_msgpack {
             "nade-parser.msgpack"
         } else {
             "nade-parser.json"
@@ -345,15 +323,27 @@ pub(crate) fn save_parser_output(
     else {
         return Ok(None);
     };
-    let bytes = if format == "msgpack" {
-        let value: serde_json::Value =
-            serde_json::from_slice(&source).map_err(|e| e.to_string())?;
-        rmp_serde::to_vec_named(&value).map_err(|e| e.to_string())?
+    if is_msgpack {
+        parser_store::write_msgpack(&c, canonical, &path).map_err(|e| e.to_string())?;
     } else {
-        source
-    };
-    std::fs::write(&path, bytes).map_err(|e| e.to_string())?;
+        parser_store::write_json(&c, canonical, &path).map_err(|e| e.to_string())?;
+    }
     Ok(Some(path.display().to_string()))
+}
+#[tauri::command]
+pub(crate) fn prepare_parser_import(app: AppHandle, source: String) -> Result<String, String> {
+    let canonical = source == "canonical";
+    let c = workspace_connection(&app)?;
+    ensure_dataset_ready(&c, canonical)?;
+    let dir = app
+        .path()
+        .app_cache_dir()
+        .map_err(|e| e.to_string())?
+        .join("parser-import");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let path = dir.join("parser-import.json");
+    parser_store::write_json(&c, canonical, &path).map_err(|e| e.to_string())?;
+    Ok(path.display().to_string())
 }
 
 #[cfg(test)]
@@ -385,21 +375,5 @@ mod tests {
         assert!(discover_demos(&[dir.join("missing").display().to_string()]).is_err());
         assert!(discover_demos(&[]).is_err());
         std::fs::remove_dir_all(dir).unwrap();
-    }
-    #[test]
-    fn combines_without_losing_fields() {
-        let mut root = None;
-        for id in ["76561198000000001", "76561198000000002"] {
-            merge_output(&mut root,serde_json::json!({"version":1,"custom":"kept","canonical_grenades":[{"steamid":id,"trajectory":[1,2],"extra":{"x":true}}]})).unwrap();
-        }
-        let root = root.unwrap();
-        assert_eq!(root["custom"], "kept");
-        assert_eq!(root["canonical_grenades"].as_array().unwrap().len(), 2);
-        assert_eq!(
-            root["canonical_grenades"][1]["steamid"],
-            "76561198000000002"
-        );
-        assert_eq!(root["canonical_grenades"][0]["extra"]["x"], true);
-        assert!(merge_output(&mut None, serde_json::json!({"canonical_grenades":null})).is_err());
     }
 }

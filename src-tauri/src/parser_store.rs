@@ -74,31 +74,55 @@ pub(crate) fn replace_canonical(c: &mut Connection, items: &[Value]) -> rusqlite
     }
     tx.commit()
 }
-pub(crate) fn canonical(c: &Connection) -> rusqlite::Result<Vec<Value>> {
-    c.prepare("SELECT raw_json FROM dedup ORDER BY ordinal")?
-        .query_map([], |r| {
-            Ok(serde_json::from_str(&r.get::<_, String>(0)?).unwrap())
-        })?
-        .collect()
+pub(crate) fn canonical_count(c: &Connection) -> rusqlite::Result<i64> {
+    c.query_row("SELECT count(*) FROM dedup", [], |r| r.get(0))
 }
 
-pub(crate) fn write_json(c: &Connection, canonical: bool, path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+pub(crate) fn write_json(
+    c: &Connection,
+    canonical: bool,
+    path: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
     use std::io::{BufWriter, Write};
     let mut out = BufWriter::new(std::fs::File::create(path)?);
     out.write_all(br#"{"version":1,"canonical_grenades":["#)?;
-    let sql = if canonical { "SELECT raw_json FROM dedup ORDER BY ordinal" } else { "SELECT raw_json FROM throws ORDER BY id" };
+    let sql = if canonical {
+        "SELECT raw_json FROM dedup ORDER BY ordinal"
+    } else {
+        "SELECT raw_json FROM throws ORDER BY id"
+    };
     let mut first = true;
     let mut stmt = c.prepare(sql)?;
     let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
-    for row in rows { if !first { out.write_all(b",")?; } first=false; out.write_all(row?.as_bytes())?; }
-    out.write_all(b"]}")?; out.flush()?; Ok(())
+    for row in rows {
+        if !first {
+            out.write_all(b",")?;
+        }
+        first = false;
+        out.write_all(row?.as_bytes())?;
+    }
+    out.write_all(b"]}")?;
+    out.flush()?;
+    Ok(())
 }
 
-pub(crate) fn write_msgpack(c: &Connection, canonical: bool, path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+pub(crate) fn write_msgpack(
+    c: &Connection,
+    canonical: bool,
+    path: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
     use std::io::Write;
     let mut out = std::io::BufWriter::new(std::fs::File::create(path)?);
-    let sql = if canonical { "SELECT raw_json FROM dedup ORDER BY ordinal" } else { "SELECT raw_json FROM throws ORDER BY id" };
-    let count: u32 = if canonical { c.query_row("SELECT count(*) FROM dedup", [], |r| r.get(0))? } else { c.query_row("SELECT count(*) FROM throws", [], |r| r.get(0))? };
+    let sql = if canonical {
+        "SELECT raw_json FROM dedup ORDER BY ordinal"
+    } else {
+        "SELECT raw_json FROM throws ORDER BY id"
+    };
+    let count: u32 = if canonical {
+        c.query_row("SELECT count(*) FROM dedup", [], |r| r.get(0))?
+    } else {
+        c.query_row("SELECT count(*) FROM throws", [], |r| r.get(0))?
+    };
     rmp::encode::write_map_len(&mut out, 2)?;
     rmp_serde::encode::write_named(&mut out, &"version")?;
     rmp::encode::write_sint(&mut out, 1)?;
@@ -106,7 +130,10 @@ pub(crate) fn write_msgpack(c: &Connection, canonical: bool, path: &Path) -> Res
     rmp::encode::write_array_len(&mut out, count)?;
     let mut stmt = c.prepare(sql)?;
     let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
-    for row in rows { let value: Value = serde_json::from_str(&row?)?; rmp_serde::encode::write_named(&mut out, &value)?; }
+    for row in rows {
+        let value: Value = serde_json::from_str(&row?)?;
+        rmp_serde::encode::write_named(&mut out, &value)?;
+    }
     out.flush()?;
     Ok(())
 }
@@ -126,5 +153,67 @@ mod tests {
         )
         .unwrap();
         assert_eq!(all(&c).unwrap()[0]["trajectory"], serde_json::json!([1, 2]));
+    }
+
+    #[test]
+    fn json_and_msgpack_exports_round_trip() {
+        let dir = std::env::temp_dir().join(format!(
+            "nade-export-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut c = open(Path::new(":memory:")).unwrap();
+        import_demo(
+            &mut c,
+            "a",
+            1,
+            2,
+            &[
+                serde_json::json!({"map":"de_test","start_pos_x":1.5,"trajectory":[[1,2,3]]}),
+                serde_json::json!({"map":"de_dust2","start_pos_x":2.5,"extra":{"kept":true}}),
+            ],
+        )
+        .unwrap();
+        replace_canonical(
+            &mut c,
+            &[serde_json::json!({"map":"de_mirage","usage_count":3})],
+        )
+        .unwrap();
+
+        let json_path = dir.join("raw.json");
+        write_json(&c, false, &json_path).unwrap();
+        let json_value: Value =
+            serde_json::from_slice(&std::fs::read(&json_path).unwrap()).unwrap();
+        assert_eq!(json_value["version"], 1);
+        assert_eq!(
+            json_value["canonical_grenades"].as_array().unwrap().len(),
+            2
+        );
+        assert_eq!(json_value["canonical_grenades"][1]["extra"]["kept"], true);
+
+        let msgpack_path = dir.join("raw.msgpack");
+        write_msgpack(&c, false, &msgpack_path).unwrap();
+        let msgpack_value: Value =
+            rmp_serde::from_slice(&std::fs::read(&msgpack_path).unwrap()).unwrap();
+        assert_eq!(msgpack_value, json_value);
+
+        let canonical_path = dir.join("canonical.json");
+        write_json(&c, true, &canonical_path).unwrap();
+        let canonical_value: Value =
+            serde_json::from_slice(&std::fs::read(&canonical_path).unwrap()).unwrap();
+        assert_eq!(
+            canonical_value["canonical_grenades"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(canonical_value["canonical_grenades"][0]["usage_count"], 3);
+        assert_eq!(canonical_count(&c).unwrap(), 1);
+
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }
