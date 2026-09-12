@@ -1,0 +1,7 @@
+{
+  "name": "nade-parser",
+  "display_name": "Nade Parser",
+  "version": "0.1.0",
+  "protocol_version": 1,
+  "executable": "nade-parser.exe"
+}

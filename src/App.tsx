@@ -21,6 +21,7 @@ import {
   Trash2,
   GraduationCap,
   Upload,
+  Wrench,
   X,
 } from 'lucide-react';
 import { check, type Update } from '@tauri-apps/plugin-updater';
@@ -50,6 +51,7 @@ import HomePage from './pages/HomePage';
 import ImportPage from './pages/ImportPage';
 import MapPage from './pages/MapPage';
 import GrenadePage from './pages/GrenadePage';
+import ToolsPage from './pages/ToolsPage';
 import Tooltip from './components/Tooltip';
 import OnboardingModal from './components/OnboardingModal';
 import { useI18n } from './i18n';
@@ -423,6 +425,7 @@ function Shell() {
     location.pathname.startsWith('/map/') ||
     location.pathname.startsWith('/grenade/');
   const importRouteActive = location.pathname === '/import';
+  const toolsRouteActive = location.pathname.startsWith('/tools');
 
   if (loading) {
     return (
@@ -484,6 +487,13 @@ function Shell() {
             >
               <GraduationCap size={16} />
               <span>{tr('Tutorial', 'Обучение')}</span>
+            </button>
+            <button
+              className={`topbar-nav-link ${toolsRouteActive ? 'active' : ''}`}
+              onClick={() => navigate('/tools')}
+            >
+              <Wrench size={16} />
+              <span>{tr('Tools', 'Инструменты')}</span>
             </button>
             <div
               className="language-switch"
@@ -788,6 +798,7 @@ function Shell() {
                 />
               }
             />
+            <Route path="/tools" element={<ToolsPage refreshImports={refreshImports} />} />
             <Route
               path="/map/:mapName"
               element={

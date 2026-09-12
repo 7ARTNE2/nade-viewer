@@ -15,6 +15,9 @@ use std::{
 
 use tauri::{AppHandle, Manager};
 use thiserror::Error;
+mod dedup;
+mod parser_store;
+mod plugin;
 
 const WORLD: f64 = 1024.0;
 const SUPPORTED_IMPORT_VERSION: i64 = 1;
@@ -676,11 +679,30 @@ pub fn run() {
         .setup(|app| {
             let state = init_state(app.handle())?;
             app.manage(state);
+            app.manage(std::sync::Arc::new(std::sync::Mutex::new(
+                crate::plugin::ParserStatus {
+                    running: false,
+                    stage: "idle".into(),
+                    output: None,
+                    error: None,
+                    ..Default::default()
+                },
+            )));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             select_import_file,
             import_json,
+            plugin::install_nade_parser,
+            plugin::get_nade_parser_info,
+            plugin::get_nade_parser_status,
+            plugin::run_nade_parser,
+            plugin::save_parser_output,
+            plugin::select_demo_file,
+            plugin::select_demo_folders,
+            plugin::run_nade_parser_batch,
+            plugin::deduplicate_parser_workspace,
+            plugin::get_parser_workspace_counts,
             check_library_update,
             import_library_update,
             get_import_status,

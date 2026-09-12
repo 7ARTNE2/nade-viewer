@@ -1,0 +1,405 @@
+use crate::parser_store;
+use serde::Serialize;
+use std::{
+    collections::BTreeSet,
+    path::{Path, PathBuf},
+    process::Command,
+    sync::{Arc, Mutex},
+    time::{SystemTime, UNIX_EPOCH},
+};
+use tauri::{AppHandle, Manager};
+
+#[derive(Serialize, Clone)]
+pub(crate) struct PluginInfo {
+    pub installed: bool,
+    pub path: Option<String>,
+    pub version: Option<String>,
+}
+#[derive(Serialize, Clone, Default)]
+pub(crate) struct ParserStatus {
+    pub running: bool,
+    pub stage: String,
+    pub output: Option<String>,
+    pub error: Option<String>,
+    pub completed: usize,
+    pub total: usize,
+    pub current: Option<String>,
+}
+fn exe(app: &AppHandle) -> PathBuf {
+    app.path()
+        .app_local_data_dir()
+        .unwrap_or_default()
+        .join("plugins/nade-parser")
+        .join(if cfg!(windows) {
+            "nade-parser.exe"
+        } else {
+            "nade-parser"
+        })
+}
+fn state(app: &AppHandle) -> Arc<Mutex<ParserStatus>> {
+    app.state::<Arc<Mutex<ParserStatus>>>().inner().clone()
+}
+#[tauri::command]
+pub(crate) fn get_nade_parser_info(app: AppHandle) -> PluginInfo {
+    let p = exe(&app);
+    let version = Command::new(&p)
+        .arg("--plugin-info")
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .and_then(|o| serde_json::from_slice::<serde_json::Value>(&o.stdout).ok())
+        .and_then(|v| v.get("version")?.as_str().map(str::to_owned));
+    PluginInfo {
+        installed: p.is_file(),
+        path: p.is_file().then(|| p.display().to_string()),
+        version,
+    }
+}
+#[tauri::command]
+pub(crate) fn get_nade_parser_status(app: AppHandle) -> ParserStatus {
+    state(&app).lock().unwrap().clone()
+}
+#[tauri::command]
+pub(crate) fn select_demo_file() -> Option<String> {
+    rfd::FileDialog::new()
+        .add_filter("Demo", &["dem"])
+        .pick_file()
+        .map(|p| p.display().to_string())
+}
+#[tauri::command]
+pub(crate) fn select_demo_folders() -> Vec<String> {
+    rfd::FileDialog::new()
+        .pick_folders()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|p| p.display().to_string())
+        .collect()
+}
+#[tauri::command]
+pub(crate) fn install_nade_parser(app: AppHandle) -> Result<PluginInfo, String> {
+    if state(&app).lock().unwrap().running {
+        return Err("A parser job is already running".into());
+    }
+    let source = rfd::FileDialog::new()
+        .add_filter("Executable", &["exe"])
+        .pick_file()
+        .ok_or("Installation cancelled")?;
+    let p = exe(&app);
+    std::fs::create_dir_all(p.parent().unwrap()).map_err(|e| e.to_string())?;
+    std::fs::copy(source, p).map_err(|e| e.to_string())?;
+    let info = get_nade_parser_info(app);
+    if info.version.is_none() {
+        return Err("Selected executable is not a compatible Nade Parser plugin".into());
+    }
+    Ok(info)
+}
+
+fn discover_demos(paths: &[String]) -> Result<Vec<PathBuf>, String> {
+    if paths.is_empty() {
+        return Err("Select at least one demo or folder".into());
+    }
+    let mut pending = Vec::new();
+    for input in paths {
+        let p = std::fs::canonicalize(input).map_err(|e| format!("{input}: {e}"))?;
+        if !p.is_dir() && !is_demo(&p) {
+            return Err(format!("Not a .dem file or folder: {input}"));
+        }
+        pending.push(p);
+    }
+    let mut visited = BTreeSet::new();
+    let mut files = BTreeSet::new();
+    while let Some(p) = pending.pop() {
+        let p = p
+            .canonicalize()
+            .map_err(|e| format!("{}: {e}", p.display()))?;
+        if !visited.insert(p.clone()) {
+            continue;
+        }
+        if p.is_dir() {
+            for entry in std::fs::read_dir(&p).map_err(|e| format!("{}: {e}", p.display()))? {
+                let entry = entry.map_err(|e| format!("{}: {e}", p.display()))?;
+                pending.push(entry.path());
+            }
+        } else if p.is_file() && is_demo(&p) {
+            files.insert(p);
+        }
+    }
+    if files.is_empty() {
+        return Err("No .dem files found in the selected paths".into());
+    }
+    Ok(files.into_iter().collect())
+}
+fn is_demo(p: &Path) -> bool {
+    p.extension()
+        .and_then(|s| s.to_str())
+        .is_some_and(|s| s.eq_ignore_ascii_case("dem"))
+}
+
+fn merge_output(
+    combined: &mut Option<serde_json::Value>,
+    mut next: serde_json::Value,
+) -> Result<(), String> {
+    let items = next
+        .get_mut("canonical_grenades")
+        .and_then(|v| v.as_array_mut())
+        .ok_or("Plugin output has no canonical_grenades array")?;
+    if items.iter().any(|item| !item.is_object()) {
+        return Err("Plugin output contains a non-object grenade".into());
+    }
+    if let Some(root) = combined {
+        root["canonical_grenades"]
+            .as_array_mut()
+            .unwrap()
+            .append(items);
+        for (key, value) in next.as_object().unwrap() {
+            if key != "canonical_grenades" && root.get(key).is_some_and(|old| old != value) {
+                return Err(format!("Conflicting plugin metadata: {key}"));
+            }
+            if key != "canonical_grenades" {
+                root.as_object_mut()
+                    .unwrap()
+                    .insert(key.clone(), value.clone());
+            }
+        }
+    } else {
+        *combined = Some(next);
+    }
+    Ok(())
+}
+#[tauri::command]
+pub(crate) fn run_nade_parser(
+    app: AppHandle,
+    demo_path: String,
+    deduplicate: bool,
+) -> Result<(), String> {
+    run_nade_parser_batch(app, vec![demo_path], deduplicate)
+}
+#[tauri::command]
+pub(crate) fn run_nade_parser_batch(
+    app: AppHandle,
+    paths: Vec<String>,
+    deduplicate: bool,
+) -> Result<(), String> {
+    let executable = exe(&app);
+    if !executable.is_file() {
+        return Err("Nade Parser plugin is not installed".into());
+    }
+    let dir = app
+        .path()
+        .app_cache_dir()
+        .map_err(|e| e.to_string())?
+        .join(format!(
+            "nade-parser-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+    let s = state(&app);
+    {
+        let mut x = s.lock().unwrap();
+        if x.running {
+            return Err("A parser job is already running".into());
+        }
+        x.running = true;
+        x.stage = "scanning".into();
+        x.error = None;
+        x.completed = 0;
+        x.total = 0;
+        x.current = None;
+    }
+    let worker_state = s.clone();
+    let workspace_path = app
+        .path()
+        .app_local_data_dir()
+        .map_err(|e| e.to_string())?
+        .join("parser-workspace.sqlite");
+    let spawn = std::thread::Builder::new().spawn(move || {
+        let result = (|| -> Result<PathBuf, String> {
+            let files = discover_demos(&paths)?;
+            std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+            {
+                let mut x = worker_state.lock().unwrap();
+                x.total = files.len();
+                x.stage = "parsing".into();
+            }
+            let mut store = parser_store::open(&workspace_path).map_err(|e| e.to_string())?;
+            for file in files {
+                worker_state.lock().unwrap().current = Some(file.display().to_string());
+                let (size, modified) = parser_store::fingerprint(&file).map_err(|e| e.to_string())?;
+                if parser_store::unchanged(&store, &file.display().to_string(), size, modified).map_err(|e| e.to_string())? {
+                    worker_state.lock().unwrap().completed += 1;
+                    continue;
+                }
+                let part = dir.join("part.json");
+                let result = Command::new(&executable)
+                    .arg("--parse")
+                    .arg("--demo")
+                    .arg(&file)
+                    .arg("--output")
+                    .arg(&part)
+                    .output()
+                    .map_err(|e| format!("{}: {e}", file.display()))?;
+                if !result.status.success() {
+                    return Err(format!(
+                        "{}: {}\n{}",
+                        file.display(),
+                        result.status,
+                        String::from_utf8_lossy(&result.stderr).trim()
+                    ));
+                }
+                let bytes =
+                    std::fs::read(&part).map_err(|e| format!("{}: output: {e}", file.display()))?;
+                let next: serde_json::Value = serde_json::from_slice(&bytes)
+                    .map_err(|e| format!("{}: invalid output: {e}", file.display()))?;
+                let items = next.get("canonical_grenades").and_then(|v| v.as_array()).ok_or("Plugin output has no canonical_grenades array")?;
+                parser_store::import_demo(&mut store, &file.display().to_string(), size, modified, items).map_err(|e| e.to_string())?;
+                std::fs::remove_file(part).map_err(|e| e.to_string())?;
+                worker_state.lock().unwrap().completed += 1;
+            }
+            worker_state.lock().unwrap().stage = "finalizing".into();
+            let mut root = serde_json::json!({"version":1,"canonical_grenades": parser_store::all(&store).map_err(|e| e.to_string())?});
+            if deduplicate {
+                let items = root["canonical_grenades"].as_array_mut().unwrap();
+                *items = crate::dedup::deduplicate(std::mem::take(items));
+                parser_store::replace_canonical(&mut store, items).map_err(|e|e.to_string())?;
+            }
+            let out = dir.join("result.json");
+            let bytes = serde_json::to_vec(&root).map_err(|e| e.to_string())?;
+            std::fs::write(&out, bytes).map_err(|e| e.to_string())?;
+            Ok(out)
+        })();
+        let mut x = worker_state.lock().unwrap();
+        x.running = false;
+        x.current = None;
+        match result {
+            Ok(out) => {
+                x.stage = "complete".into();
+                x.output = Some(out.display().to_string());
+            }
+            Err(e) => {
+                x.stage = "failed".into();
+                x.error = Some(e);
+                let _ = std::fs::remove_dir_all(&dir);
+            }
+        }
+    });
+    if let Err(e) = spawn {
+        let mut x = s.lock().unwrap();
+        x.running = false;
+        x.stage = "failed".into();
+        x.error = Some(e.to_string());
+        return Err(e.to_string());
+    }
+    Ok(())
+}
+#[tauri::command]
+pub(crate) fn deduplicate_parser_workspace(app: AppHandle) -> Result<(), String> {
+    let p = app
+        .path()
+        .app_local_data_dir()
+        .map_err(|e| e.to_string())?
+        .join("parser-workspace.sqlite");
+    let mut c = parser_store::open(&p).map_err(|e| e.to_string())?;
+    let out = crate::dedup::deduplicate(parser_store::all(&c).map_err(|e| e.to_string())?);
+    parser_store::replace_canonical(&mut c, &out).map_err(|e| e.to_string())
+}
+#[tauri::command]
+pub(crate) fn get_parser_workspace_counts(app: AppHandle) -> Result<(i64, i64), String> {
+    let p = app
+        .path()
+        .app_local_data_dir()
+        .map_err(|e| e.to_string())?
+        .join("parser-workspace.sqlite");
+    parser_store::counts(&parser_store::open(&p).map_err(|e| e.to_string())?)
+        .map_err(|e| e.to_string())
+}
+#[tauri::command]
+pub(crate) fn save_parser_output(
+    app: AppHandle,
+    output: String,
+    format: String,
+) -> Result<Option<String>, String> {
+    if output == "workspace" {
+        let db = app.path().app_local_data_dir().map_err(|e| e.to_string())?.join("parser-workspace.sqlite");
+        let c = parser_store::open(&db).map_err(|e| e.to_string())?;
+        let Some(path) = rfd::FileDialog::new().set_file_name("nade-parser.json").save_file() else { return Ok(None); };
+        parser_store::write_json(&c, format == "canonical", &path).map_err(|e| e.to_string())?;
+        return Ok(Some(path.display().to_string()));
+    }
+    // The workspace is the source of truth; materialized job files remain only
+    // a compatibility fallback for jobs created by older builds.
+    let source = if output == "workspace" {
+        let db = app.path().app_local_data_dir().map_err(|e| e.to_string())?.join("parser-workspace.sqlite");
+        let c = parser_store::open(&db).map_err(|e| e.to_string())?;
+        let rows = parser_store::all(&c).map_err(|e| e.to_string())?;
+        serde_json::to_vec(&serde_json::json!({"version":1,"canonical_grenades":rows})).map_err(|e| e.to_string())?
+    } else { std::fs::read(output).map_err(|e| e.to_string())? };
+    let Some(path) = rfd::FileDialog::new()
+        .set_file_name(if format == "msgpack" {
+            "nade-parser.msgpack"
+        } else {
+            "nade-parser.json"
+        })
+        .save_file()
+    else {
+        return Ok(None);
+    };
+    let bytes = if format == "msgpack" {
+        let value: serde_json::Value =
+            serde_json::from_slice(&source).map_err(|e| e.to_string())?;
+        rmp_serde::to_vec_named(&value).map_err(|e| e.to_string())?
+    } else {
+        source
+    };
+    std::fs::write(&path, bytes).map_err(|e| e.to_string())?;
+    Ok(Some(path.display().to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn discovery_nested_overlap_and_validation() {
+        let dir = std::env::temp_dir().join(format!(
+            "nade-discovery-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(dir.join("nested/empty")).unwrap();
+        for file in ["a.dem", "nested/b.DEM", "nested/notes.txt"] {
+            std::fs::write(dir.join(file), b"").unwrap();
+        }
+        let paths = vec![
+            dir.display().to_string(),
+            dir.join("nested").display().to_string(),
+            dir.join("a.dem").display().to_string(),
+        ];
+        let files = discover_demos(&paths).unwrap();
+        assert_eq!(files.len(), 2);
+        assert!(files[0] < files[1]);
+        assert!(discover_demos(&[dir.join("nested/empty").display().to_string()]).is_err());
+        assert!(discover_demos(&[dir.join("nested/notes.txt").display().to_string()]).is_err());
+        assert!(discover_demos(&[dir.join("missing").display().to_string()]).is_err());
+        assert!(discover_demos(&[]).is_err());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+    #[test]
+    fn combines_without_losing_fields() {
+        let mut root = None;
+        for id in ["76561198000000001", "76561198000000002"] {
+            merge_output(&mut root,serde_json::json!({"version":1,"custom":"kept","canonical_grenades":[{"steamid":id,"trajectory":[1,2],"extra":{"x":true}}]})).unwrap();
+        }
+        let root = root.unwrap();
+        assert_eq!(root["custom"], "kept");
+        assert_eq!(root["canonical_grenades"].as_array().unwrap().len(), 2);
+        assert_eq!(
+            root["canonical_grenades"][1]["steamid"],
+            "76561198000000002"
+        );
+        assert_eq!(root["canonical_grenades"][0]["extra"]["x"], true);
+        assert!(merge_output(&mut None, serde_json::json!({"canonical_grenades":null})).is_err());
+    }
+}
