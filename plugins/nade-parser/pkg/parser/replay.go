@@ -72,8 +72,8 @@ func ParseReplayFile(path string, options ReplayOptions) (*models.ReplayFile, er
 	frames := make([]models.ReplayFrame, 0, 4096)
 	replayEvents := make([]models.ReplayEvent, 0, 2048)
 	roster := make(map[string]models.ReplayPlayerRoster)
-	playerAttackHistory := make(map[int][]uint64)
-	playerPositionHistory := make(map[int][]PositionSnapshot)
+	playerAttackHistory := make(map[int]*historyRing[uint64])
+	playerPositionHistory := make(map[int]*historyRing[PositionSnapshot])
 	nadeTrajectories := make(map[int64]*models.NadeTrajectory)
 	airTrackers := make(map[int64]*AirTrack)
 	projectileTags := make(map[int64][]string)
@@ -368,14 +368,13 @@ func ParseReplayFile(path string, options ReplayOptions) (*models.ReplayFile, er
 		tick := currentTick()
 		updateTickRate()
 
-		attackHistory := appendCurrentButtons(playerAttackHistory[thrower.EntityID], thrower.ButtonsPressedState)
-		posHistory := appendCurrentPosition(
-			playerPositionHistory[thrower.EntityID],
-			tick,
-			replaySafe(r3.Vector{}, func() r3.Vector { return thrower.Position() }),
-			float64(replaySafe(float32(0), func() float32 { return thrower.ViewDirectionY() })),
-			float64(replaySafe(float32(0), func() float32 { return thrower.ViewDirectionX() })),
-		)
+		attackHistory := historyFor(playerAttackHistory, thrower.EntityID).snapshotWith(thrower.ButtonsPressedState)
+		posHistory := historyFor(playerPositionHistory, thrower.EntityID).snapshotWith(PositionSnapshot{
+			Tick:     tick,
+			Position: replaySafe(r3.Vector{}, func() r3.Vector { return thrower.Position() }),
+			Pitch:    float64(replaySafe(float32(0), func() float32 { return thrower.ViewDirectionY() })),
+			Yaw:      float64(replaySafe(float32(0), func() float32 { return thrower.ViewDirectionX() })),
+		})
 
 		rawThrowDesc := getThrowKeys(thrower, attackHistory)
 		// Броски в движении больше НЕ помечаются "fail": новый алгоритм
@@ -432,8 +431,13 @@ func ParseReplayFile(path string, options ReplayOptions) (*models.ReplayFile, er
 		x, y, z := replayOptionalCoords(pos)
 
 		if thrower != nil && thrower.Entity != nil {
-			playerAttackHistory[thrower.EntityID] = attackHistory
-			playerPositionHistory[thrower.EntityID] = posHistory
+			historyFor(playerAttackHistory, thrower.EntityID).push(thrower.ButtonsPressedState)
+			historyFor(playerPositionHistory, thrower.EntityID).push(PositionSnapshot{
+				Tick:     tick,
+				Position: replaySafe(r3.Vector{}, func() r3.Vector { return thrower.Position() }),
+				Pitch:    float64(replaySafe(float32(0), func() float32 { return thrower.ViewDirectionY() })),
+				Yaw:      float64(replaySafe(float32(0), func() float32 { return thrower.ViewDirectionX() })),
+			})
 		}
 
 		coordinates := ""
@@ -653,14 +657,13 @@ func ParseReplayFile(path string, options ReplayOptions) (*models.ReplayFile, er
 			if player == nil || player.Entity == nil {
 				continue
 			}
-			playerAttackHistory[player.EntityID] = appendCurrentButtons(playerAttackHistory[player.EntityID], player.ButtonsPressedState)
-			playerPositionHistory[player.EntityID] = appendCurrentPosition(
-				playerPositionHistory[player.EntityID],
-				tick,
-				replaySafe(r3.Vector{}, func() r3.Vector { return player.Position() }),
-				float64(replaySafe(float32(0), func() float32 { return player.ViewDirectionY() })),
-				float64(replaySafe(float32(0), func() float32 { return player.ViewDirectionX() })),
-			)
+			historyFor(playerAttackHistory, player.EntityID).push(player.ButtonsPressedState)
+			historyFor(playerPositionHistory, player.EntityID).push(PositionSnapshot{
+				Tick:     tick,
+				Position: replaySafe(r3.Vector{}, func() r3.Vector { return player.Position() }),
+				Pitch:    float64(replaySafe(float32(0), func() float32 { return player.ViewDirectionY() })),
+				Yaw:      float64(replaySafe(float32(0), func() float32 { return player.ViewDirectionX() })),
+			})
 		}
 		if lastSampleTick != replayNoTick && tick-lastSampleTick < sampleInterval {
 			return
@@ -872,8 +875,8 @@ func ParseReplayFileStreaming(path string, options ReplayOptions, out io.Writer)
 	pendingEvents := make([]models.ReplayEvent, 0, 64)
 	var currentRound *models.ReplayRound
 	roster := make(map[string]models.ReplayPlayerRoster)
-	playerAttackHistory := make(map[int][]uint64)
-	playerPositionHistory := make(map[int][]PositionSnapshot)
+	playerAttackHistory := make(map[int]*historyRing[uint64])
+	playerPositionHistory := make(map[int]*historyRing[PositionSnapshot])
 	nadeTrajectories := make(map[int64]*models.NadeTrajectory)
 	airTrackers := make(map[int64]*AirTrack)
 	projectileTags := make(map[int64][]string)
@@ -1233,14 +1236,13 @@ func ParseReplayFileStreaming(path string, options ReplayOptions, out io.Writer)
 		tick := currentTick()
 		updateTickRate()
 
-		attackHistory := appendCurrentButtons(playerAttackHistory[thrower.EntityID], thrower.ButtonsPressedState)
-		posHistory := appendCurrentPosition(
-			playerPositionHistory[thrower.EntityID],
-			tick,
-			replaySafe(r3.Vector{}, func() r3.Vector { return thrower.Position() }),
-			float64(replaySafe(float32(0), func() float32 { return thrower.ViewDirectionY() })),
-			float64(replaySafe(float32(0), func() float32 { return thrower.ViewDirectionX() })),
-		)
+		attackHistory := historyFor(playerAttackHistory, thrower.EntityID).snapshotWith(thrower.ButtonsPressedState)
+		posHistory := historyFor(playerPositionHistory, thrower.EntityID).snapshotWith(PositionSnapshot{
+			Tick:     tick,
+			Position: replaySafe(r3.Vector{}, func() r3.Vector { return thrower.Position() }),
+			Pitch:    float64(replaySafe(float32(0), func() float32 { return thrower.ViewDirectionY() })),
+			Yaw:      float64(replaySafe(float32(0), func() float32 { return thrower.ViewDirectionX() })),
+		})
 
 		rawThrowDesc := getThrowKeys(thrower, attackHistory)
 		// Броски в движении больше НЕ помечаются "fail": новый алгоритм
@@ -1297,8 +1299,13 @@ func ParseReplayFileStreaming(path string, options ReplayOptions, out io.Writer)
 		x, y, z := replayOptionalCoords(pos)
 
 		if thrower != nil && thrower.Entity != nil {
-			playerAttackHistory[thrower.EntityID] = attackHistory
-			playerPositionHistory[thrower.EntityID] = posHistory
+			historyFor(playerAttackHistory, thrower.EntityID).push(thrower.ButtonsPressedState)
+			historyFor(playerPositionHistory, thrower.EntityID).push(PositionSnapshot{
+				Tick:     tick,
+				Position: replaySafe(r3.Vector{}, func() r3.Vector { return thrower.Position() }),
+				Pitch:    float64(replaySafe(float32(0), func() float32 { return thrower.ViewDirectionY() })),
+				Yaw:      float64(replaySafe(float32(0), func() float32 { return thrower.ViewDirectionX() })),
+			})
 		}
 
 		coordinates := ""
@@ -1518,14 +1525,13 @@ func ParseReplayFileStreaming(path string, options ReplayOptions, out io.Writer)
 			if player == nil || player.Entity == nil {
 				continue
 			}
-			playerAttackHistory[player.EntityID] = appendCurrentButtons(playerAttackHistory[player.EntityID], player.ButtonsPressedState)
-			playerPositionHistory[player.EntityID] = appendCurrentPosition(
-				playerPositionHistory[player.EntityID],
-				tick,
-				replaySafe(r3.Vector{}, func() r3.Vector { return player.Position() }),
-				float64(replaySafe(float32(0), func() float32 { return player.ViewDirectionY() })),
-				float64(replaySafe(float32(0), func() float32 { return player.ViewDirectionX() })),
-			)
+			historyFor(playerAttackHistory, player.EntityID).push(player.ButtonsPressedState)
+			historyFor(playerPositionHistory, player.EntityID).push(PositionSnapshot{
+				Tick:     tick,
+				Position: replaySafe(r3.Vector{}, func() r3.Vector { return player.Position() }),
+				Pitch:    float64(replaySafe(float32(0), func() float32 { return player.ViewDirectionY() })),
+				Yaw:      float64(replaySafe(float32(0), func() float32 { return player.ViewDirectionX() })),
+			})
 		}
 		if lastSampleTick != replayNoTick && tick-lastSampleTick < sampleInterval {
 			return

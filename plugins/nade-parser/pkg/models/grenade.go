@@ -19,10 +19,10 @@ type GrenadeData struct {
 	ThrowerEntityID    *int     `json:"thrower_entity_id,omitempty" msgpack:"thrower_entity_id,omitempty"`
 	ProjectileEntityID *int     `json:"projectile_entity_id,omitempty" msgpack:"projectile_entity_id,omitempty"`
 
-	// Игровые координаты начала полёта. Z нужен дедупликации, но Viewer его не читает.
+	// Игровые координаты начала полёта. Z нужен дедупликации, хотя Viewer его не отображает.
 	StartPosX float64 `json:"start_pos_x,omitempty" msgpack:"start_pos_x,omitempty"`
 	StartPosY float64 `json:"start_pos_y,omitempty" msgpack:"start_pos_y,omitempty"`
-	StartPosZ float64 `json:"-" msgpack:"-"`
+	StartPosZ float64 `json:"start_pos_z,omitempty" msgpack:"start_pos_z,omitempty"`
 
 	// Игровые координаты взрыва/приземления
 	ExplodePosX float64 `json:"explode_pos_x,omitempty" msgpack:"explode_pos_x,omitempty"`

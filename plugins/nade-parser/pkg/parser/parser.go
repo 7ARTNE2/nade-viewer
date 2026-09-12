@@ -30,11 +30,10 @@ type DemoParser struct {
 	// Для отслеживания остановки смоков
 	airTrackers map[int64]*AirTrack
 
-	// Для отслеживания кнопок атаки (LMB/RMB) - история за 128 тиков
-	playerAttackHistory map[int][]uint64 // UserID -> история кнопок
-
-	// Для отслеживания позиций игроков - история за 128 тиков
-	playerPositionHistory map[int][]PositionSnapshot // UserID -> история позиций
+	// Для отслеживания кнопок и позиций игроков. Кольцевой буфер исключает
+	// копирование полной 700-тиковой истории на каждом кадре.
+	playerAttackHistory   map[int]*historyRing[uint64]
+	playerPositionHistory map[int]*historyRing[PositionSnapshot]
 }
 
 type OutputOptions struct {
@@ -70,6 +69,64 @@ type PositionSnapshot struct {
 	Yaw      float64
 }
 
+// historyRing stores a fixed number of recent values without reallocating or
+// copying the entire history for every parsed frame.
+type historyRing[T any] struct {
+	values []T
+	start  int
+	len    int
+}
+
+func newHistoryRing[T any]() *historyRing[T] {
+	return &historyRing[T]{values: make([]T, attackHistorySize)}
+}
+
+func (h *historyRing[T]) push(value T) {
+	if h.len < attackHistorySize {
+		h.values[(h.start+h.len)%attackHistorySize] = value
+		h.len++
+		return
+	}
+
+	h.values[h.start] = value
+	h.start = (h.start + 1) % attackHistorySize
+}
+
+func (h *historyRing[T]) snapshotWith(value T) []T {
+	length := h.len + 1
+	if length > attackHistorySize {
+		length = attackHistorySize
+	}
+
+	out := make([]T, length)
+	if h.len == 0 {
+		out[0] = value
+		return out
+	}
+
+	if h.len < attackHistorySize {
+		copy(out, h.values[:h.len])
+	} else {
+		// snapshotWith is an append operation: retain the newest 699 stored
+		// values and reserve the last slot for the current event/frame value.
+		for i := 0; i < attackHistorySize-1; i++ {
+			out[i] = h.values[(h.start+1+i)%attackHistorySize]
+		}
+	}
+	out[length-1] = value
+	return out
+}
+
+func historyFor[T any](histories map[int]*historyRing[T], id int) *historyRing[T] {
+	if history := histories[id]; history != nil {
+		return history
+	}
+
+	history := newHistoryRing[T]()
+	histories[id] = history
+	return history
+}
+
 type LineupOrigin struct {
 	Position models.TrajectoryPoint
 }
@@ -95,8 +152,8 @@ func NewDemoParserWithOptions(filePath string, options OutputOptions) *DemoParse
 		options:               options,
 		grenades:              make([]*models.ParsedGrenade, 0),
 		airTrackers:           make(map[int64]*AirTrack),
-		playerAttackHistory:   make(map[int][]uint64),
-		playerPositionHistory: make(map[int][]PositionSnapshot),
+		playerAttackHistory:   make(map[int]*historyRing[uint64]),
+		playerPositionHistory: make(map[int]*historyRing[PositionSnapshot]),
 		roundActionStartTick:  -1,
 	}
 }
@@ -278,31 +335,6 @@ func stripMovementModifiers(throwDesc string) string {
 	}
 
 	return strings.Join(filtered, "+")
-}
-
-func appendCurrentButtons(history []uint64, current uint64) []uint64 {
-	if len(history) >= attackHistorySize {
-		history = history[len(history)-attackHistorySize+1:]
-	}
-	out := make([]uint64, len(history)+1)
-	copy(out, history)
-	out[len(history)] = current
-	return out
-}
-
-func appendCurrentPosition(history []PositionSnapshot, tick int, current r3.Vector, pitch float64, yaw float64) []PositionSnapshot {
-	if len(history) >= attackHistorySize {
-		history = history[len(history)-attackHistorySize+1:]
-	}
-	out := make([]PositionSnapshot, len(history)+1)
-	copy(out, history)
-	out[len(history)] = PositionSnapshot{
-		Tick:     tick,
-		Position: current,
-		Pitch:    pitch,
-		Yaw:      yaw,
-	}
-	return out
 }
 
 func distanceBetween(a, b r3.Vector) float64 {

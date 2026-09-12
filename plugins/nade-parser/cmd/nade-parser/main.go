@@ -15,7 +15,7 @@ func main() {
 	output := flag.String("output", "", "Result path")
 	flag.Parse()
 	if *info {
-		fmt.Println(`{"name":"nade-parser","version":"0.1.0","protocol_version":1}`)
+		fmt.Println(`{"name":"nade-parser","version":"0.1.0","protocol_version":2}`)
 		return
 	}
 	if !*parse || *demo == "" || *output == "" {
@@ -24,10 +24,15 @@ func main() {
 	}
 	items, err := parser.ParseAndConvertWithOptions(*demo, parser.DefaultOutputOptions())
 	if err == nil {
-		var data []byte
-		data, err = json.Marshal(map[string]any{"version": 1, "canonical_grenades": items})
-		if err == nil {
-			err = os.WriteFile(*output, data, 0600)
+		result := map[string]any{"version": 1, "canonical_grenades": items}
+		if *output == "-" {
+			err = json.NewEncoder(os.Stdout).Encode(result)
+		} else {
+			var data []byte
+			data, err = json.Marshal(result)
+			if err == nil {
+				err = os.WriteFile(*output, data, 0600)
+			}
 		}
 	}
 	if err != nil {

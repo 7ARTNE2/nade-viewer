@@ -5,7 +5,6 @@ use std::{
     path::{Path, PathBuf},
     process::Command,
     sync::{Arc, Mutex},
-    time::{SystemTime, UNIX_EPOCH},
 };
 use tauri::{AppHandle, Manager};
 
@@ -38,6 +37,17 @@ fn exe(app: &AppHandle) -> PathBuf {
 }
 fn state(app: &AppHandle) -> Arc<Mutex<ParserStatus>> {
     app.state::<Arc<Mutex<ParserStatus>>>().inner().clone()
+}
+
+fn parser_supports_stdout(executable: &Path) -> bool {
+    Command::new(executable)
+        .arg("--plugin-info")
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .and_then(|output| serde_json::from_slice::<serde_json::Value>(&output.stdout).ok())
+        .and_then(|info| info.get("protocol_version")?.as_u64())
+        .is_some_and(|version| version >= 2)
 }
 #[tauri::command]
 pub(crate) fn get_nade_parser_info(app: AppHandle) -> PluginInfo {
@@ -176,17 +186,6 @@ pub(crate) fn run_nade_parser_batch(
     if !executable.is_file() {
         return Err("Nade Parser plugin is not installed".into());
     }
-    let dir = app
-        .path()
-        .app_cache_dir()
-        .map_err(|e| e.to_string())?
-        .join(format!(
-            "nade-parser-{}",
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
     let s = state(&app);
     {
         let mut x = s.lock().unwrap();
@@ -201,6 +200,7 @@ pub(crate) fn run_nade_parser_batch(
         x.current = None;
     }
     let worker_state = s.clone();
+    let stdout_protocol = parser_supports_stdout(&executable);
     let workspace_path = app
         .path()
         .app_local_data_dir()
@@ -209,27 +209,37 @@ pub(crate) fn run_nade_parser_batch(
     let spawn = std::thread::Builder::new().spawn(move || {
         let result = (|| -> Result<PathBuf, String> {
             let files = discover_demos(&paths)?;
-            std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
             {
                 let mut x = worker_state.lock().unwrap();
                 x.total = files.len();
                 x.stage = "parsing".into();
             }
             let mut store = parser_store::open(&workspace_path).map_err(|e| e.to_string())?;
+            let legacy_output = workspace_path.with_file_name("nade-parser-output.json");
+            if !stdout_protocol {
+                let _ = std::fs::remove_file(&legacy_output);
+            }
             for file in files {
                 worker_state.lock().unwrap().current = Some(file.display().to_string());
-                let (size, modified) = parser_store::fingerprint(&file).map_err(|e| e.to_string())?;
-                if parser_store::unchanged(&store, &file.display().to_string(), size, modified).map_err(|e| e.to_string())? {
+                let (size, modified) =
+                    parser_store::fingerprint(&file).map_err(|e| e.to_string())?;
+                if parser_store::unchanged(&store, &file.display().to_string(), size, modified)
+                    .map_err(|e| e.to_string())?
+                {
                     worker_state.lock().unwrap().completed += 1;
                     continue;
                 }
-                let part = dir.join("part.json");
+                let output_target = if stdout_protocol {
+                    Path::new("-")
+                } else {
+                    legacy_output.as_path()
+                };
                 let result = Command::new(&executable)
                     .arg("--parse")
                     .arg("--demo")
                     .arg(&file)
                     .arg("--output")
-                    .arg(&part)
+                    .arg(output_target)
                     .output()
                     .map_err(|e| format!("{}: {e}", file.display()))?;
                 if !result.status.success() {
@@ -240,26 +250,38 @@ pub(crate) fn run_nade_parser_batch(
                         String::from_utf8_lossy(&result.stderr).trim()
                     ));
                 }
-                let bytes =
-                    std::fs::read(&part).map_err(|e| format!("{}: output: {e}", file.display()))?;
-                let next: serde_json::Value = serde_json::from_slice(&bytes)
+                let output = if stdout_protocol {
+                    result.stdout
+                } else {
+                    let bytes = std::fs::read(&legacy_output)
+                        .map_err(|e| format!("{}: output: {e}", file.display()))?;
+                    std::fs::remove_file(&legacy_output).map_err(|e| e.to_string())?;
+                    bytes
+                };
+                let next: serde_json::Value = serde_json::from_slice(&output)
                     .map_err(|e| format!("{}: invalid output: {e}", file.display()))?;
-                let items = next.get("canonical_grenades").and_then(|v| v.as_array()).ok_or("Plugin output has no canonical_grenades array")?;
-                parser_store::import_demo(&mut store, &file.display().to_string(), size, modified, items).map_err(|e| e.to_string())?;
-                std::fs::remove_file(part).map_err(|e| e.to_string())?;
+                let items = next
+                    .get("canonical_grenades")
+                    .and_then(|v| v.as_array())
+                    .ok_or("Plugin output has no canonical_grenades array")?;
+                parser_store::import_demo(
+                    &mut store,
+                    &file.display().to_string(),
+                    size,
+                    modified,
+                    items,
+                )
+                .map_err(|e| e.to_string())?;
                 worker_state.lock().unwrap().completed += 1;
             }
             worker_state.lock().unwrap().stage = "finalizing".into();
-            let mut root = serde_json::json!({"version":1,"canonical_grenades": parser_store::all(&store).map_err(|e| e.to_string())?});
             if deduplicate {
-                let items = root["canonical_grenades"].as_array_mut().unwrap();
-                *items = crate::dedup::deduplicate(std::mem::take(items));
-                parser_store::replace_canonical(&mut store, items).map_err(|e|e.to_string())?;
+                let items = parser_store::all(&store).map_err(|e| e.to_string())?;
+                let canonical = crate::dedup::deduplicate(items);
+                parser_store::replace_canonical(&mut store, &canonical)
+                    .map_err(|e| e.to_string())?;
             }
-            let out = dir.join("result.json");
-            let bytes = serde_json::to_vec(&root).map_err(|e| e.to_string())?;
-            std::fs::write(&out, bytes).map_err(|e| e.to_string())?;
-            Ok(out)
+            Ok(workspace_path.clone())
         })();
         let mut x = worker_state.lock().unwrap();
         x.running = false;
@@ -272,7 +294,6 @@ pub(crate) fn run_nade_parser_batch(
             Err(e) => {
                 x.stage = "failed".into();
                 x.error = Some(e);
-                let _ = std::fs::remove_dir_all(&dir);
             }
         }
     });
@@ -294,6 +315,16 @@ pub(crate) fn deduplicate_parser_workspace(app: AppHandle) -> Result<(), String>
 #[tauri::command]
 pub(crate) fn get_parser_workspace_counts(app: AppHandle) -> Result<(i64, i64), String> {
     parser_store::counts(&workspace_connection(&app)?).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub(crate) fn clear_parser_workspace(app: AppHandle) -> Result<(), String> {
+    if state(&app).lock().unwrap().running {
+        return Err("Cannot clear the parser workspace while parsing is running".into());
+    }
+
+    let mut connection = workspace_connection(&app)?;
+    parser_store::clear(&mut connection).map_err(|e| e.to_string())
 }
 #[tauri::command]
 pub(crate) fn save_parser_output(
@@ -353,8 +384,8 @@ mod tests {
     fn discovery_nested_overlap_and_validation() {
         let dir = std::env::temp_dir().join(format!(
             "nade-discovery-{}",
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
                 .as_nanos()
         ));

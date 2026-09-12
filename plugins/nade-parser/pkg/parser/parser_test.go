@@ -11,13 +11,13 @@ import (
 	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/common"
 )
 
-func TestAppendCurrentButtons_AppendsAndTrimsHistory(t *testing.T) {
-	history := make([]uint64, attackHistorySize)
-	for i := range history {
-		history[i] = uint64(i + 1)
+func TestHistoryRing_OrdersAndTrimsHistory(t *testing.T) {
+	history := newHistoryRing[uint64]()
+	for i := 0; i < attackHistorySize; i++ {
+		history.push(uint64(i + 1))
 	}
 
-	got := appendCurrentButtons(history, 999)
+	got := history.snapshotWith(999)
 	if len(got) != attackHistorySize {
 		t.Fatalf("expected history size %d, got %d", attackHistorySize, len(got))
 	}
@@ -154,7 +154,7 @@ func TestGetThrowKeys_UsesCurrentTickButtonsAtThrow(t *testing.T) {
 	currentButtons := uint64(common.ButtonAttack | common.ButtonAttack2 | common.ButtonForward | common.ButtonJump | common.ButtonSpeed)
 	player := &common.Player{ButtonsPressedState: currentButtons}
 
-	desc := getThrowKeys(player, appendCurrentButtons(nil, currentButtons))
+	desc := getThrowKeys(player, []uint64{currentButtons})
 	parts := strings.Split(desc, "+")
 	got := map[string]bool{}
 	for _, part := range parts {
@@ -502,8 +502,8 @@ func TestConvertToGrenadeData_ExportsOnlyViewerFields(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal grenade data: %v", err)
 	}
-	if strings.Contains(string(encoded), "start_pos_z") {
-		t.Fatalf("viewer-unused start_pos_z must not be serialized: %s", encoded)
+	if !strings.Contains(string(encoded), "start_pos_z") {
+		t.Fatalf("start_pos_z must be serialized for Viewer-side deduplication: %s", encoded)
 	}
 }
 

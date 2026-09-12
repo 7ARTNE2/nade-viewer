@@ -703,6 +703,7 @@ pub fn run() {
             plugin::run_nade_parser_batch,
             plugin::deduplicate_parser_workspace,
             plugin::get_parser_workspace_counts,
+            plugin::clear_parser_workspace,
             plugin::prepare_parser_import,
             check_library_update,
             import_library_update,

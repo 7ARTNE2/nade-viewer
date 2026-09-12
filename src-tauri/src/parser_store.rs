@@ -41,6 +41,15 @@ pub(crate) fn counts(c: &Connection) -> rusqlite::Result<(i64, i64)> {
         })?,
     ))
 }
+
+/// Clears every parser-workspace record while keeping the database schema.
+/// VACUUM returns released pages to the filesystem after the transaction commits.
+pub(crate) fn clear(c: &mut Connection) -> rusqlite::Result<()> {
+    let tx = c.transaction()?;
+    tx.execute_batch("DELETE FROM dedup; DELETE FROM throws; DELETE FROM demos;")?;
+    tx.commit()?;
+    c.execute_batch("PRAGMA wal_checkpoint(TRUNCATE); VACUUM; PRAGMA wal_checkpoint(TRUNCATE);")
+}
 pub(crate) fn fingerprint(path: &Path) -> std::io::Result<(u64, i64)> {
     let m = std::fs::metadata(path)?;
     let t = m
@@ -153,6 +162,25 @@ mod tests {
         )
         .unwrap();
         assert_eq!(all(&c).unwrap()[0]["trajectory"], serde_json::json!([1, 2]));
+    }
+
+    #[test]
+    fn clear_removes_raw_and_canonical_workspace_data() {
+        let mut c = open(Path::new(":memory:")).unwrap();
+        import_demo(
+            &mut c,
+            "a",
+            1,
+            2,
+            &[serde_json::json!({"map":"de_test","start_pos_x":1.5})],
+        )
+        .unwrap();
+        replace_canonical(&mut c, &[serde_json::json!({"map":"de_test"})]).unwrap();
+
+        clear(&mut c).unwrap();
+
+        assert_eq!(counts(&c).unwrap(), (0, 0));
+        assert_eq!(canonical_count(&c).unwrap(), 0);
     }
 
     #[test]

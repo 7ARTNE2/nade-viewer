@@ -148,14 +148,13 @@ func (p *DemoParser) Parse() ([]*models.ParsedGrenade, error) {
 		roundTimeSeconds := p.currentRoundTimeSeconds(currentTick)
 
 		// История кнопок/позиций для throw description и lineup (общие helper-ы).
-		attackHistory := appendCurrentButtons(p.playerAttackHistory[thrower.EntityID], thrower.ButtonsPressedState)
-		posHistory := appendCurrentPosition(
-			p.playerPositionHistory[thrower.EntityID],
-			currentTick,
-			thrower.Position(),
-			float64(thrower.ViewDirectionY()),
-			float64(thrower.ViewDirectionX()),
-		)
+		attackHistory := historyFor(p.playerAttackHistory, thrower.EntityID).snapshotWith(thrower.ButtonsPressedState)
+		posHistory := historyFor(p.playerPositionHistory, thrower.EntityID).snapshotWith(PositionSnapshot{
+			Tick:     currentTick,
+			Position: thrower.Position(),
+			Pitch:    float64(thrower.ViewDirectionY()),
+			Yaw:      float64(thrower.ViewDirectionX()),
+		})
 
 		rawThrowDesc := getThrowKeys(thrower, attackHistory)
 		// Броски в движении больше НЕ отбрасываются: новый алгоритм
@@ -253,10 +252,12 @@ func (p *DemoParser) Parse() ([]*models.ParsedGrenade, error) {
 			return
 		}
 
-		for _, entry := range e.Projectile.Trajectory {
-			pn.traj.Trajectory = append(pn.traj.Trajectory, models.TrajectoryPoint{
+		trajectory := e.Projectile.Trajectory
+		pn.traj.Trajectory = make([]models.TrajectoryPoint, len(trajectory))
+		for i, entry := range trajectory {
+			pn.traj.Trajectory[i] = models.TrajectoryPoint{
 				X: entry.Position.X, Y: entry.Position.Y, Z: entry.Position.Z,
-			})
+			}
 		}
 		pn.traj.EndTick = parser.GameState().IngameTick()
 
@@ -274,20 +275,13 @@ func (p *DemoParser) Parse() ([]*models.ParsedGrenade, error) {
 			if player == nil || player.Entity == nil {
 				continue
 			}
-			history := p.playerAttackHistory[player.EntityID]
-			history = append(history, player.ButtonsPressedState)
-			if len(history) > attackHistorySize {
-				history = history[len(history)-attackHistorySize:]
-			}
-			p.playerAttackHistory[player.EntityID] = history
-
-			p.playerPositionHistory[player.EntityID] = appendCurrentPosition(
-				p.playerPositionHistory[player.EntityID],
-				tick,
-				player.Position(),
-				float64(player.ViewDirectionY()),
-				float64(player.ViewDirectionX()),
-			)
+			historyFor(p.playerAttackHistory, player.EntityID).push(player.ButtonsPressedState)
+			historyFor(p.playerPositionHistory, player.EntityID).push(PositionSnapshot{
+				Tick:     tick,
+				Position: player.Position(),
+				Pitch:    float64(player.ViewDirectionY()),
+				Yaw:      float64(player.ViewDirectionX()),
+			})
 		}
 
 		// Трекер остановки смока/молотова (как в legacy): когда снаряд перестаёт
