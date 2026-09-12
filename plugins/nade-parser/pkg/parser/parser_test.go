@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -230,16 +231,13 @@ func TestResolveLineupStart_MovementUsesStableSetposTick(t *testing.T) {
 		{Tick: 105, Position: r3.Vector{X: 20, Y: 20, Z: 30}},
 	}
 
-	pos, snapshot, lineupTick := resolveLineupStart(attackHistory, posHistory, "LMB+W", 105)
+	pos, snapshot := resolveLineupStart(attackHistory, posHistory, "LMB+W", 105)
 
 	if pos == nil {
 		t.Fatal("expected lineup position override")
 	}
 	if snapshot != nil {
 		t.Fatalf("expected no lineup snapshot override, got %+v", *snapshot)
-	}
-	if lineupTick == nil || *lineupTick != 103 {
-		t.Fatalf("expected lineup tick 103, got %v", lineupTick)
 	}
 	if pos.X != 10 || pos.Y != 20 || pos.Z != 30 {
 		t.Fatalf("unexpected lineup position: %+v", *pos)
@@ -264,16 +262,13 @@ func TestResolveLineupStart_JumpWithoutMovementUsesStablePreJumpTick(t *testing.
 		{Tick: 205, Position: r3.Vector{X: 5, Y: 6, Z: 12}},
 	}
 
-	pos, snapshot, lineupTick := resolveLineupStart(attackHistory, posHistory, "LMB+JUMP", 205)
+	pos, snapshot := resolveLineupStart(attackHistory, posHistory, "LMB+JUMP", 205)
 
 	if pos == nil {
 		t.Fatal("expected lineup position override")
 	}
 	if snapshot != nil {
 		t.Fatalf("expected no lineup snapshot override, got %+v", *snapshot)
-	}
-	if lineupTick == nil || *lineupTick != 203 {
-		t.Fatalf("expected lineup tick 203, got %v", lineupTick)
 	}
 	if pos.X != 5 || pos.Y != 6 || pos.Z != 7 {
 		t.Fatalf("unexpected lineup position: %+v", *pos)
@@ -288,7 +283,7 @@ func TestResolveLineupStart_DefaultThrowUsesTwoTicksBackSnapshot(t *testing.T) {
 		{Tick: 302, Position: r3.Vector{X: 3, Y: 2, Z: 3}, Pitch: 0, Yaw: 100},
 	}
 
-	pos, snapshot, lineupTick := resolveLineupStart(attackHistory, posHistory, "LMB", 302)
+	pos, snapshot := resolveLineupStart(attackHistory, posHistory, "LMB", 302)
 
 	if pos != nil {
 		t.Fatalf("expected no override position, got %+v", *pos)
@@ -299,9 +294,6 @@ func TestResolveLineupStart_DefaultThrowUsesTwoTicksBackSnapshot(t *testing.T) {
 	if snapshot.Tick != 300 {
 		t.Fatalf("expected snapshot tick 300, got %d", snapshot.Tick)
 	}
-	if lineupTick == nil || *lineupTick != 300 {
-		t.Fatalf("expected lineup tick 300, got %v", lineupTick)
-	}
 }
 
 func TestAlignJumpLineupToStartTick_UsesStartTickSnapshotForCoordinates(t *testing.T) {
@@ -311,10 +303,9 @@ func TestAlignJumpLineupToStartTick_UsesStartTickSnapshotForCoordinates(t *testi
 		{Tick: 502, Position: r3.Vector{X: 7, Y: 8, Z: 9}, Pitch: -14, Yaw: 110},
 	}
 
-	gotPos, gotSnapshot, gotTick := alignJumpLineupToStartTick(
+	gotPos, gotSnapshot := alignJumpLineupToStartTick(
 		nil,
 		nil,
-		intPtr(503),
 		posHistory,
 		"LMB+JUMP",
 		501,
@@ -329,9 +320,6 @@ func TestAlignJumpLineupToStartTick_UsesStartTickSnapshotForCoordinates(t *testi
 	if gotSnapshot.Tick != 501 {
 		t.Fatalf("expected snapshot tick 501, got %d", gotSnapshot.Tick)
 	}
-	if gotTick == nil || *gotTick != 501 {
-		t.Fatalf("expected lineup tick 501, got %v", gotTick)
-	}
 }
 
 func TestAlignJumpLineupToStartTick_KeepsResolvedOriginForMovingJumpThrow(t *testing.T) {
@@ -341,10 +329,9 @@ func TestAlignJumpLineupToStartTick_KeepsResolvedOriginForMovingJumpThrow(t *tes
 		{Tick: 501, Position: r3.Vector{X: 4, Y: 5, Z: 6}, Pitch: -12.5, Yaw: 101.25},
 	}
 
-	gotPos, gotSnapshot, gotTick := alignJumpLineupToStartTick(
+	gotPos, gotSnapshot := alignJumpLineupToStartTick(
 		startPosOverride,
 		nil,
-		intPtr(480),
 		posHistory,
 		"LMB+W+JUMP",
 		501,
@@ -358,9 +345,6 @@ func TestAlignJumpLineupToStartTick_KeepsResolvedOriginForMovingJumpThrow(t *tes
 	}
 	if gotSnapshot != nil {
 		t.Fatalf("expected no snapshot replacement, got %+v", *gotSnapshot)
-	}
-	if gotTick == nil || *gotTick != 480 {
-		t.Fatalf("expected original lineup tick 480, got %v", gotTick)
 	}
 }
 
@@ -490,46 +474,22 @@ func TestGetPlayerState_UsesSnapshotAnglesForDefaultThrow(t *testing.T) {
 	}
 }
 
-func TestConvertToGrenadeData_PreservesLineupTick(t *testing.T) {
-	lineupTick := 144
-
-	data := ConvertToGrenadeData(&models.ParsedGrenade{
-		MapName:     "Mirage",
-		Side:        "T",
-		GrenadeType: "smoke",
-		ThrowTick:   160,
-		LineupTick:  &lineupTick,
-		ThrowerTeam: "PARIVISION",
-	})
-
-	if data.LineupTick == nil || *data.LineupTick != 144 {
-		t.Fatalf("expected lineup tick 144, got %v", data.LineupTick)
-	}
-	if data.ThrowerTeam != "PARIVISION" {
-		t.Fatalf("expected thrower team to be preserved, got %q", data.ThrowerTeam)
-	}
-}
-
-func TestConvertToGrenadeData_DefaultOmitsDenseAndKeepsIDs(t *testing.T) {
+func TestConvertToGrenadeData_ExportsOnlyViewerFields(t *testing.T) {
 	throwerEntityID := 7
 	projectileEntityID := 42
-
 	data := ConvertToGrenadeData(&models.ParsedGrenade{
-		MapName:              "Mirage",
-		Side:                 "T",
-		GrenadeType:          "smoke",
-		ThrowerSteamID64:     76561198000000001,
-		ThrowerEntityID:      &throwerEntityID,
-		ProjectileEntityID:   &projectileEntityID,
-		TrajectoryDense:      []models.TrajectoryPoint{{X: 1, Y: 2, Z: 3}},
-		TrajectoryDenseTicks: []int{128},
+		MapName:            "Mirage",
+		Side:               "T",
+		GrenadeType:        "smoke",
+		ThrowerSteamID64:   76561198000000001,
+		ThrowerEntityID:    &throwerEntityID,
+		ProjectileEntityID: &projectileEntityID,
+		ThrowerTeam:        "PARIVISION",
+		StartPos:           &models.TrajectoryPoint{X: 1, Y: 2, Z: 3},
 	})
 
-	if len(data.TrajectoryDense) != 0 || len(data.TrajectoryDenseTicks) != 0 {
-		t.Fatalf("expected dense trajectory to be omitted by default")
-	}
-	if data.ThrowerSteamID64 == 0 || data.ThrowerAccountID == 0 {
-		t.Fatalf("expected thrower steam/account IDs to be included by default")
+	if data.ThrowerTeam != "PARIVISION" {
+		t.Fatalf("expected thrower team to be preserved, got %q", data.ThrowerTeam)
 	}
 	if data.ThrowerEntityID == nil || *data.ThrowerEntityID != throwerEntityID {
 		t.Fatalf("expected thrower entity id to be included")
@@ -537,33 +497,34 @@ func TestConvertToGrenadeData_DefaultOmitsDenseAndKeepsIDs(t *testing.T) {
 	if data.ProjectileEntityID == nil || *data.ProjectileEntityID != projectileEntityID {
 		t.Fatalf("expected projectile entity id to be included")
 	}
+
+	encoded, err := json.Marshal(data)
+	if err != nil {
+		t.Fatalf("marshal grenade data: %v", err)
+	}
+	if strings.Contains(string(encoded), "start_pos_z") {
+		t.Fatalf("viewer-unused start_pos_z must not be serialized: %s", encoded)
+	}
 }
 
-func TestConvertToGrenadeDataWithOptions_ControlsDenseAndIDs(t *testing.T) {
+func TestConvertToGrenadeDataWithOptions_ControlsSupportedIDs(t *testing.T) {
 	throwerEntityID := 7
 	projectileEntityID := 42
 
 	data := ConvertToGrenadeDataWithOptions(&models.ParsedGrenade{
-		MapName:              "Mirage",
-		Side:                 "T",
-		GrenadeType:          "smoke",
-		ThrowerSteamID64:     76561198000000001,
-		ThrowerEntityID:      &throwerEntityID,
-		ProjectileEntityID:   &projectileEntityID,
-		TrajectoryDense:      []models.TrajectoryPoint{{X: 1, Y: 2, Z: 3}},
-		TrajectoryDenseTicks: []int{128},
+		MapName:            "Mirage",
+		Side:               "T",
+		GrenadeType:        "smoke",
+		ThrowerSteamID64:   76561198000000001,
+		ThrowerEntityID:    &throwerEntityID,
+		ProjectileEntityID: &projectileEntityID,
 	}, OutputOptions{
-		IncludeTrajectoryDense:    true,
 		IncludeThrowerSteamID64:   false,
-		IncludeThrowerAccountID:   false,
 		IncludeThrowerEntityID:    false,
 		IncludeProjectileEntityID: false,
 	})
 
-	if len(data.TrajectoryDense) != 1 || len(data.TrajectoryDenseTicks) != 1 {
-		t.Fatalf("expected dense trajectory to be included")
-	}
-	if data.ThrowerSteamID64 != 0 || data.ThrowerAccountID != 0 || data.ThrowerEntityID != nil || data.ProjectileEntityID != nil {
-		t.Fatalf("expected all ID fields to be omitted, got %+v", data)
+	if data.ThrowerSteamID64 != 0 || data.ThrowerEntityID != nil || data.ProjectileEntityID != nil {
+		t.Fatalf("expected all configurable ID fields to be omitted, got %+v", data)
 	}
 }

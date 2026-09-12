@@ -1,7 +1,7 @@
 package models
 
-// GrenadeData представляет данные о гранате для отправки в Django API
-// Соответствует полям в grenades/serializers.py
+// GrenadeData представляет данные о гранате для отправки в Django API.
+// Поля соответствуют данным, которые использует Nade Viewer.
 type GrenadeData struct {
 	Map                string   `json:"map" msgpack:"map"`
 	Side               string   `json:"side" msgpack:"side"`
@@ -13,18 +13,16 @@ type GrenadeData struct {
 	Author             string   `json:"author,omitempty" msgpack:"author,omitempty"`
 	DemoFilename       string   `json:"demo_filename,omitempty" msgpack:"demo_filename,omitempty"`
 	ThrowTick          int      `json:"throw_tick,omitempty" msgpack:"throw_tick,omitempty"`
-	LineupTick         *int     `json:"lineup_tick,omitempty" msgpack:"lineup_tick,omitempty"`
 	Tickrate           float64  `json:"tickrate,omitempty" msgpack:"tickrate,omitempty"`
 	RoundTimeSeconds   *float64 `json:"round_time_seconds,omitempty" msgpack:"round_time_seconds,omitempty"`
 	ThrowerSteamID64   int64    `json:"thrower_steamid64,omitempty" msgpack:"thrower_steamid64,omitempty"`
-	ThrowerAccountID   int64    `json:"thrower_accountid,omitempty" msgpack:"thrower_accountid,omitempty"`
 	ThrowerEntityID    *int     `json:"thrower_entity_id,omitempty" msgpack:"thrower_entity_id,omitempty"`
 	ProjectileEntityID *int     `json:"projectile_entity_id,omitempty" msgpack:"projectile_entity_id,omitempty"`
 
-	// Игровые координаты начала полёта
+	// Игровые координаты начала полёта. Z нужен дедупликации, но Viewer его не читает.
 	StartPosX float64 `json:"start_pos_x,omitempty" msgpack:"start_pos_x,omitempty"`
 	StartPosY float64 `json:"start_pos_y,omitempty" msgpack:"start_pos_y,omitempty"`
-	StartPosZ float64 `json:"start_pos_z,omitempty" msgpack:"start_pos_z,omitempty"`
+	StartPosZ float64 `json:"-" msgpack:"-"`
 
 	// Игровые координаты взрыва/приземления
 	ExplodePosX float64 `json:"explode_pos_x,omitempty" msgpack:"explode_pos_x,omitempty"`
@@ -32,10 +30,7 @@ type GrenadeData struct {
 	ExplodePosZ float64 `json:"explode_pos_z,omitempty" msgpack:"explode_pos_z,omitempty"`
 
 	// Траектория полёта (список точек [x, y, z])
-	Trajectory           [][]float64 `json:"trajectory,omitempty" msgpack:"trajectory,omitempty"`
-	TrajectoryTicks      []int       `json:"trajectory_ticks,omitempty" msgpack:"trajectory_ticks,omitempty"`
-	TrajectoryDense      [][]float64 `json:"trajectory_dense,omitempty" msgpack:"trajectory_dense,omitempty"`
-	TrajectoryDenseTicks []int       `json:"trajectory_dense_ticks,omitempty" msgpack:"trajectory_dense_ticks,omitempty"`
+	Trajectory [][]float64 `json:"trajectory,omitempty" msgpack:"trajectory,omitempty"`
 
 	// Дополнительные данные
 	Thrower     string  `json:"thrower,omitempty" msgpack:"thrower,omitempty"`
@@ -61,23 +56,19 @@ type PlayerState struct {
 	Buttons  []string // Нажатые кнопки
 }
 
-// NadeTrajectory хранит информацию о траектории гранаты
+// NadeTrajectory хранит информацию о траектории гранаты.
 type NadeTrajectory struct {
-	UniqueID             int64
-	WeaponType           string
-	ThrowerSteamID       int64
-	ThrowerName          string
-	ThrowerTeam          string
-	ThrowerEntityID      *int
-	Team                 string
-	Trajectory           []TrajectoryPoint
-	TrajectoryTicks      []int
-	TrajectoryDense      []TrajectoryPoint
-	TrajectoryDenseTicks []int
-	StartTick            int
-	LineupTick           *int
-	EndTick              int
-	RoundTimeSeconds     *float64
+	UniqueID         int64
+	WeaponType       string
+	ThrowerSteamID   int64
+	ThrowerName      string
+	ThrowerTeam      string
+	ThrowerEntityID  *int
+	Team             string
+	Trajectory       []TrajectoryPoint
+	StartTick        int
+	EndTick          int
+	RoundTimeSeconds *float64
 
 	// Состояние игрока в момент броска
 	PlayerState *PlayerState
@@ -96,11 +87,9 @@ type ParsedGrenade struct {
 	GrenadeType      string
 	DemoFilename     string
 	ThrowTick        int
-	LineupTick       *int
 	Tickrate         float64
 	RoundTimeSeconds *float64
 	ThrowerSteamID64 int64
-	ThrowerAccountID int64
 	ThrowerEntityID  *int
 	ThrowerName      string
 	ThrowerTeam      string
@@ -112,10 +101,7 @@ type ParsedGrenade struct {
 	EndPos   *TrajectoryPoint
 
 	// Траектория
-	Trajectory           []TrajectoryPoint
-	TrajectoryTicks      []int
-	TrajectoryDense      []TrajectoryPoint
-	TrajectoryDenseTicks []int
+	Trajectory []TrajectoryPoint
 
 	// Entity ID гранаты
 	ProjectileEntityID *int

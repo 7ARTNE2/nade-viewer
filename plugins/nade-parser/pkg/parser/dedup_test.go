@@ -5,10 +5,6 @@ import (
 	"testing"
 )
 
-func testIntPtr(value int) *int {
-	return &value
-}
-
 func TestDeduplicateGrenades_MergesCloseLineupsAndKeepsMostRepeatedDescription(t *testing.T) {
 	input := []models.GrenadeData{
 		{
@@ -91,47 +87,6 @@ func TestDeduplicateGrenades_MergesCloseLineupsAndKeepsMostRepeatedDescription(t
 
 	if len(first.UsageThrowers) != 0 {
 		t.Fatalf("expected empty usage throwers when throwers are absent, got %v", first.UsageThrowers)
-	}
-}
-
-func TestDeduplicateGrenades_PreservesLineupTickFromCluster(t *testing.T) {
-	input := []models.GrenadeData{
-		{
-			Map:         "Mirage",
-			Side:        "T",
-			GrenadeType: "smoke",
-			StartPosX:   100,
-			StartPosY:   100,
-			StartPosZ:   10,
-			ExplodePosX: 200,
-			ExplodePosY: 200,
-			ExplodePosZ: 30,
-			ThrowKeys:   "LMB+W+JUMP",
-			UsageCount:  5,
-		},
-		{
-			Map:         "Mirage",
-			Side:        "T",
-			GrenadeType: "smoke",
-			StartPosX:   103,
-			StartPosY:   100,
-			StartPosZ:   10,
-			ExplodePosX: 205,
-			ExplodePosY: 200,
-			ExplodePosZ: 30,
-			ThrowKeys:   "LMB+W+JUMP",
-			UsageCount:  1,
-			LineupTick:  testIntPtr(144),
-		},
-	}
-
-	result, _ := DeduplicateGrenades(input)
-	if len(result) != 1 {
-		t.Fatalf("expected 1 merged grenade, got %d", len(result))
-	}
-
-	if result[0].LineupTick == nil || *result[0].LineupTick != 144 {
-		t.Fatalf("expected representative lineup tick 144, got %v", result[0].LineupTick)
 	}
 }
 

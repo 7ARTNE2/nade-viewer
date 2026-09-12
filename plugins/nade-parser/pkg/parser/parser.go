@@ -38,18 +38,14 @@ type DemoParser struct {
 }
 
 type OutputOptions struct {
-	IncludeTrajectoryDense    bool
 	IncludeThrowerSteamID64   bool
-	IncludeThrowerAccountID   bool
 	IncludeThrowerEntityID    bool
 	IncludeProjectileEntityID bool
 }
 
 func DefaultOutputOptions() OutputOptions {
 	return OutputOptions{
-		IncludeTrajectoryDense:    false,
 		IncludeThrowerSteamID64:   true,
-		IncludeThrowerAccountID:   true,
 		IncludeThrowerEntityID:    true,
 		IncludeProjectileEntityID: true,
 	}
@@ -76,7 +72,6 @@ type PositionSnapshot struct {
 
 type LineupOrigin struct {
 	Position models.TrajectoryPoint
-	Tick     int
 }
 
 // Константы для определения остановки
@@ -85,10 +80,7 @@ const (
 	stableNeed  = 32
 	epsDist     = 0.5
 
-	denseDuplicateDistanceEps = 0.01
-	denseSimplifyEpsilon      = 0.25
-	denseSimplifyMaxTickGap   = 8
-	duckRecentWindowTicks     = 5
+	duckRecentWindowTicks = 5
 )
 
 // NewDemoParser создаёт новый парсер для демофайла
@@ -313,177 +305,11 @@ func appendCurrentPosition(history []PositionSnapshot, tick int, current r3.Vect
 	return out
 }
 
-func intPtr(value int) *int {
-	return &value
-}
-
 func distanceBetween(a, b r3.Vector) float64 {
 	dx := a.X - b.X
 	dy := a.Y - b.Y
 	dz := a.Z - b.Z
 	return math.Sqrt(dx*dx + dy*dy + dz*dz)
-}
-
-func trajectoryPointDistance(a, b models.TrajectoryPoint) float64 {
-	dx := a.X - b.X
-	dy := a.Y - b.Y
-	dz := a.Z - b.Z
-	return math.Sqrt(dx*dx + dy*dy + dz*dz)
-}
-
-func sameTrajectoryPoint(a, b models.TrajectoryPoint) bool {
-	return trajectoryPointDistance(a, b) <= denseDuplicateDistanceEps
-}
-
-func pointToSegmentDistance(p, a, b models.TrajectoryPoint) float64 {
-	abx := b.X - a.X
-	aby := b.Y - a.Y
-	abz := b.Z - a.Z
-	apx := p.X - a.X
-	apy := p.Y - a.Y
-	apz := p.Z - a.Z
-
-	abLenSq := abx*abx + aby*aby + abz*abz
-	if abLenSq <= 1e-12 {
-		return trajectoryPointDistance(p, a)
-	}
-
-	t := (apx*abx + apy*aby + apz*abz) / abLenSq
-	if t < 0 {
-		t = 0
-	} else if t > 1 {
-		t = 1
-	}
-
-	closest := models.TrajectoryPoint{
-		X: a.X + abx*t,
-		Y: a.Y + aby*t,
-		Z: a.Z + abz*t,
-	}
-	return trajectoryPointDistance(p, closest)
-}
-
-func simplifyDenseKeepIndices(points []models.TrajectoryPoint, epsilon float64) []int {
-	if len(points) <= 2 {
-		indices := make([]int, len(points))
-		for i := range points {
-			indices[i] = i
-		}
-		return indices
-	}
-
-	keep := map[int]struct{}{
-		0:               {},
-		len(points) - 1: {},
-	}
-	stack := [][2]int{{0, len(points) - 1}}
-
-	for len(stack) > 0 {
-		last := len(stack) - 1
-		segment := stack[last]
-		stack = stack[:last]
-
-		start, end := segment[0], segment[1]
-		bestIdx := -1
-		bestDist := -1.0
-
-		for i := start + 1; i < end; i++ {
-			dist := pointToSegmentDistance(points[i], points[start], points[end])
-			if dist > bestDist {
-				bestDist = dist
-				bestIdx = i
-			}
-		}
-
-		if bestIdx != -1 && bestDist > epsilon {
-			keep[bestIdx] = struct{}{}
-			stack = append(stack, [2]int{start, bestIdx}, [2]int{bestIdx, end})
-		}
-	}
-
-	indices := make([]int, 0, len(keep))
-	for idx := range keep {
-		indices = append(indices, idx)
-	}
-
-	for i := 0; i < len(indices)-1; i++ {
-		for j := i + 1; j < len(indices); j++ {
-			if indices[j] < indices[i] {
-				indices[i], indices[j] = indices[j], indices[i]
-			}
-		}
-	}
-
-	return indices
-}
-
-func enforceDenseMaxTickGap(indices []int, ticks []int, maxTickGap int) []int {
-	if len(indices) <= 1 || maxTickGap <= 0 {
-		return indices
-	}
-
-	out := make([]int, 0, len(indices))
-	out = append(out, indices[0])
-
-	for _, idx := range indices[1:] {
-		for j := out[len(out)-1] + 1; j < idx; j++ {
-			if ticks[j]-ticks[out[len(out)-1]] >= maxTickGap {
-				out = append(out, j)
-			}
-		}
-		if idx != out[len(out)-1] {
-			out = append(out, idx)
-		}
-	}
-
-	return out
-}
-
-func simplifyDenseTrajectory(points []models.TrajectoryPoint, ticks []int) ([]models.TrajectoryPoint, []int) {
-	if len(points) == 0 || len(points) != len(ticks) {
-		return points, ticks
-	}
-
-	collapsedPoints := make([]models.TrajectoryPoint, 0, len(points))
-	collapsedTicks := make([]int, 0, len(ticks))
-
-	for i, point := range points {
-		tick := ticks[i]
-		if len(collapsedPoints) == 0 {
-			collapsedPoints = append(collapsedPoints, point)
-			collapsedTicks = append(collapsedTicks, tick)
-			continue
-		}
-
-		last := len(collapsedPoints) - 1
-		if collapsedTicks[last] == tick {
-			collapsedPoints[last] = point
-			continue
-		}
-
-		if sameTrajectoryPoint(collapsedPoints[last], point) {
-			continue
-		}
-
-		collapsedPoints = append(collapsedPoints, point)
-		collapsedTicks = append(collapsedTicks, tick)
-	}
-
-	if len(collapsedPoints) <= 2 {
-		return collapsedPoints, collapsedTicks
-	}
-
-	keep := simplifyDenseKeepIndices(collapsedPoints, denseSimplifyEpsilon)
-	keep = enforceDenseMaxTickGap(keep, collapsedTicks, denseSimplifyMaxTickGap)
-
-	outPoints := make([]models.TrajectoryPoint, 0, len(keep))
-	outTicks := make([]int, 0, len(keep))
-	for _, idx := range keep {
-		outPoints = append(outPoints, collapsedPoints[idx])
-		outTicks = append(outTicks, collapsedTicks[idx])
-	}
-
-	return outPoints, outTicks
 }
 
 func (p *DemoParser) updateRoundDurationSeconds(parser demoinfocs.Parser) {
@@ -576,7 +402,6 @@ func findStablePosBeforeIndex(posHistory []PositionSnapshot, idx int) *LineupOri
 			Y: pos.Position.Y,
 			Z: pos.Position.Z,
 		},
-		Tick: pos.Tick,
 	}
 }
 
@@ -622,7 +447,6 @@ func findStablePosInRange(posHistory []PositionSnapshot, startIdx int, endIdx in
 					Y: pos.Position.Y,
 					Z: pos.Position.Z,
 				},
-				Tick: pos.Tick,
 			}
 		}
 	}
@@ -811,9 +635,7 @@ func findSnapshotAtOrBeforeTick(posHistory []PositionSnapshot, targetTick int) *
 	return nil
 }
 
-func resolveLineupStart(attackHistory []uint64, posHistory []PositionSnapshot, throwDesc string, currentTick int) (*models.TrajectoryPoint, *PositionSnapshot, *int) {
-	lineupTick := intPtr(currentTick)
-
+func resolveLineupStart(attackHistory []uint64, posHistory []PositionSnapshot, throwDesc string, currentTick int) (*models.TrajectoryPoint, *PositionSnapshot) {
 	var origin *LineupOrigin
 	if hasAnyMovementModifier(throwDesc) {
 		origin = findStartPosBeforeMovement(attackHistory, posHistory)
@@ -822,46 +644,43 @@ func resolveLineupStart(attackHistory []uint64, posHistory []PositionSnapshot, t
 	} else {
 		// Для обычного throw без override берем setpos и setang с небольшим упреждением
 		// относительно тика броска, чтобы команда координат попадала в реальный lineup.
-		snapshot := findSnapshotAtOrBeforeTick(posHistory, currentTick-2)
-		if snapshot != nil {
-			return nil, snapshot, intPtr(snapshot.Tick)
+		if snapshot := findSnapshotAtOrBeforeTick(posHistory, currentTick-2); snapshot != nil {
+			return nil, snapshot
 		}
 	}
 
 	if origin == nil {
-		return nil, nil, lineupTick
+		return nil, nil
 	}
 
 	position := origin.Position
-	return &position, nil, intPtr(origin.Tick)
+	return &position, nil
 }
 
-// formatCoordinates формирует консольную команду для установки позиции
+// alignJumpLineupToStartTick подменяет fallback-позицию прыжкового броска на startTick.
 func alignJumpLineupToStartTick(
 	startPosOverride *models.TrajectoryPoint,
 	lineupSnapshot *PositionSnapshot,
-	lineupTick *int,
 	posHistory []PositionSnapshot,
 	throwDesc string,
 	startTick int,
-) (*models.TrajectoryPoint, *PositionSnapshot, *int) {
+) (*models.TrajectoryPoint, *PositionSnapshot) {
 	if !hasThrowModifier(throwDesc, "JUMP") {
-		return startPosOverride, lineupSnapshot, lineupTick
+		return startPosOverride, lineupSnapshot
 	}
 
 	// Only rewrite jump lineup to startTick when the parser fell back to
 	// event-state coordinates. If we already found a movement/jump origin,
-	// keep that origin so real moving throws preserve their lineup tick.
+	// keep that origin so real moving throws preserve their resolved position.
 	if startPosOverride != nil || lineupSnapshot != nil {
-		return startPosOverride, lineupSnapshot, lineupTick
+		return startPosOverride, lineupSnapshot
 	}
 
-	lineupTick = intPtr(startTick)
 	if snapshot := findSnapshotAtOrBeforeTick(posHistory, startTick); snapshot != nil {
-		return nil, snapshot, lineupTick
+		return nil, snapshot
 	}
 
-	return startPosOverride, lineupSnapshot, lineupTick
+	return startPosOverride, lineupSnapshot
 }
 
 func formatCoordinates(pos models.TrajectoryPoint, pitch, yaw float64) string {
@@ -976,7 +795,6 @@ func ConvertToGrenadeDataWithOptions(parsed *models.ParsedGrenade, options Outpu
 		GrenadeType:      parsed.GrenadeType,
 		DemoFilename:     parsed.DemoFilename,
 		ThrowTick:        parsed.ThrowTick,
-		LineupTick:       parsed.LineupTick,
 		Tickrate:         parsed.Tickrate,
 		RoundTimeSeconds: parsed.RoundTimeSeconds,
 		Thrower:          parsed.ThrowerName,
@@ -1010,19 +828,6 @@ func ConvertToGrenadeDataWithOptions(parsed *models.ParsedGrenade, options Outpu
 			data.Trajectory[i] = []float64{point.X, point.Y, point.Z}
 		}
 	}
-	if len(parsed.TrajectoryTicks) > 0 {
-		data.TrajectoryTicks = append([]int(nil), parsed.TrajectoryTicks...)
-	}
-	if options.IncludeTrajectoryDense && len(parsed.TrajectoryDense) > 0 {
-		data.TrajectoryDense = make([][]float64, len(parsed.TrajectoryDense))
-		for i, point := range parsed.TrajectoryDense {
-			data.TrajectoryDense[i] = []float64{point.X, point.Y, point.Z}
-		}
-	}
-	if options.IncludeTrajectoryDense && len(parsed.TrajectoryDenseTicks) > 0 {
-		data.TrajectoryDenseTicks = append([]int(nil), parsed.TrajectoryDenseTicks...)
-	}
-
 	// Entity ID
 	if options.IncludeThrowerSteamID64 {
 		data.ThrowerSteamID64 = parsed.ThrowerSteamID64
@@ -1034,12 +839,6 @@ func ConvertToGrenadeDataWithOptions(parsed *models.ParsedGrenade, options Outpu
 
 	if options.IncludeProjectileEntityID && parsed.ProjectileEntityID != nil {
 		data.ProjectileEntityID = parsed.ProjectileEntityID
-	}
-
-	// Thrower AccountID (из SteamID64)
-	// SteamID64 = 76561198000000000 + AccountID
-	if options.IncludeThrowerAccountID && parsed.ThrowerSteamID64 > 76561197960265728 {
-		data.ThrowerAccountID = parsed.ThrowerSteamID64 - 76561197960265728
 	}
 
 	return data

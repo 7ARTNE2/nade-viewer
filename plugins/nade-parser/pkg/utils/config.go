@@ -18,9 +18,7 @@ type Config struct {
 	IndexPath                 string   `json:"index_path"`
 	DemoChunkSize             int      `json:"demo_chunk_size"`
 	ParseWorkers              int      `json:"parse_workers"`
-	IncludeTrajectoryDense    bool     `json:"include_trajectory_dense"`
 	IncludeThrowerSteamID64   bool     `json:"include_thrower_steamid64"`
-	IncludeThrowerAccountID   bool     `json:"include_thrower_accountid"`
 	IncludeThrowerEntityID    bool     `json:"include_thrower_entity_id"`
 	IncludeProjectileEntityID bool     `json:"include_projectile_entity_id"`
 	ProgressJSON              bool     `json:"progress_json"`
@@ -43,9 +41,7 @@ func DefaultConfig() *Config {
 		IndexPath:                 "./grenade_index.json",
 		DemoChunkSize:             25,
 		ParseWorkers:              workers,
-		IncludeTrajectoryDense:    false,
 		IncludeThrowerSteamID64:   true,
-		IncludeThrowerAccountID:   true,
 		IncludeThrowerEntityID:    true,
 		IncludeProjectileEntityID: true,
 		ProgressJSON:              false,

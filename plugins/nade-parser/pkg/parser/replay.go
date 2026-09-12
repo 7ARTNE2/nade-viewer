@@ -392,13 +392,10 @@ func ParseReplayFile(path string, options ReplayOptions) (*models.ReplayFile, er
 
 		var startPosOverride *models.TrajectoryPoint
 		var lineupSnapshot *PositionSnapshot
-		var lineupTick *int
-
 		if len(tags) > 0 {
 			lineupSnapshot = findThrowReleaseSnapshot(attackHistory, posHistory, tick)
-			lineupTick = &tick
 		} else {
-			startPosOverride, lineupSnapshot, lineupTick = resolveGrenadeLineupV2(attackHistory, posHistory, throwDesc, tick, startTick)
+			startPosOverride, lineupSnapshot = resolveGrenadeLineupV2(attackHistory, posHistory, throwDesc, tick, startTick)
 		}
 
 		playerState := getPlayerState(thrower, throwDesc, startPosOverride, lineupSnapshot)
@@ -418,9 +415,7 @@ func ParseReplayFile(path string, options ReplayOptions) (*models.ReplayFile, er
 			ThrowerEntityID: throwerEntityID,
 			Team:            utils.GetDjangoSide(int(thrower.Team)),
 			Trajectory:      make([]models.TrajectoryPoint, 0),
-			TrajectoryTicks: make([]int, 0),
 			StartTick:       startTick,
-			LineupTick:      lineupTick,
 			PlayerState:     playerState,
 			Tags:            tags,
 		}
@@ -451,7 +446,6 @@ func ParseReplayFile(path string, options ReplayOptions) (*models.ReplayFile, er
 			"grenade_entity_id": replayProjectileEntityID(projectile),
 			"grenade_type":      grenadeType,
 			"throw_tick":        tick,
-			"lineup_tick":       lineupTick,
 			"throw_keys":        throwDesc,
 			"coordinates":       coordinates,
 			"thrower_name":      replaySafe("", func() string { return thrower.Name }),
@@ -494,7 +488,6 @@ func ParseReplayFile(path string, options ReplayOptions) (*models.ReplayFile, er
 					Y: entry.Position.Y,
 					Z: entry.Position.Z,
 				})
-				trajectory.TrajectoryTicks = append(trajectory.TrajectoryTicks, entry.Tick)
 			}
 		}
 
@@ -708,11 +701,9 @@ func ParseReplayFile(path string, options ReplayOptions) (*models.ReplayFile, er
 					last := trajectory.Trajectory[n-1]
 					if !(last.X == point.X && last.Y == point.Y && last.Z == point.Z) {
 						trajectory.Trajectory = append(trajectory.Trajectory, point)
-						trajectory.TrajectoryTicks = append(trajectory.TrajectoryTicks, tick)
 					}
 				} else {
 					trajectory.Trajectory = append(trajectory.Trajectory, point)
-					trajectory.TrajectoryTicks = append(trajectory.TrajectoryTicks, tick)
 				}
 			}
 
@@ -1266,13 +1257,10 @@ func ParseReplayFileStreaming(path string, options ReplayOptions, out io.Writer)
 
 		var startPosOverride *models.TrajectoryPoint
 		var lineupSnapshot *PositionSnapshot
-		var lineupTick *int
-
 		if len(tags) > 0 {
 			lineupSnapshot = findThrowReleaseSnapshot(attackHistory, posHistory, tick)
-			lineupTick = &tick
 		} else {
-			startPosOverride, lineupSnapshot, lineupTick = resolveGrenadeLineupV2(attackHistory, posHistory, throwDesc, tick, startTick)
+			startPosOverride, lineupSnapshot = resolveGrenadeLineupV2(attackHistory, posHistory, throwDesc, tick, startTick)
 		}
 
 		playerState := getPlayerState(thrower, throwDesc, startPosOverride, lineupSnapshot)
@@ -1292,9 +1280,7 @@ func ParseReplayFileStreaming(path string, options ReplayOptions, out io.Writer)
 			ThrowerEntityID: throwerEntityID,
 			Team:            utils.GetDjangoSide(int(thrower.Team)),
 			Trajectory:      make([]models.TrajectoryPoint, 0),
-			TrajectoryTicks: make([]int, 0),
 			StartTick:       startTick,
-			LineupTick:      lineupTick,
 			PlayerState:     playerState,
 			Tags:            tags,
 		}
@@ -1325,7 +1311,6 @@ func ParseReplayFileStreaming(path string, options ReplayOptions, out io.Writer)
 			"grenade_entity_id": replayProjectileEntityID(projectile),
 			"grenade_type":      grenadeType,
 			"throw_tick":        tick,
-			"lineup_tick":       lineupTick,
 			"throw_keys":        throwDesc,
 			"coordinates":       coordinates,
 			"thrower_name":      replaySafe("", func() string { return thrower.Name }),
@@ -1368,7 +1353,6 @@ func ParseReplayFileStreaming(path string, options ReplayOptions, out io.Writer)
 					Y: entry.Position.Y,
 					Z: entry.Position.Z,
 				})
-				trajectory.TrajectoryTicks = append(trajectory.TrajectoryTicks, entry.Tick)
 			}
 		}
 
@@ -1582,11 +1566,9 @@ func ParseReplayFileStreaming(path string, options ReplayOptions, out io.Writer)
 					last := trajectory.Trajectory[n-1]
 					if !(last.X == point.X && last.Y == point.Y && last.Z == point.Z) {
 						trajectory.Trajectory = append(trajectory.Trajectory, point)
-						trajectory.TrajectoryTicks = append(trajectory.TrajectoryTicks, tick)
 					}
 				} else {
 					trajectory.Trajectory = append(trajectory.Trajectory, point)
-					trajectory.TrajectoryTicks = append(trajectory.TrajectoryTicks, tick)
 				}
 			}
 

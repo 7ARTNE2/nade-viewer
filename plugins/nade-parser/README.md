@@ -17,7 +17,7 @@ nade-parser.exe --plugin-info
 nade-parser.exe --parse --demo match.dem --output result.json
 ```
 
-The output contains version 1 canonical_grenades, including dense trajectories.
+The output contains version 1 canonical_grenades with the trajectory data used by Nade Viewer.
 The CLI does not deduplicate throws. Tools optionally applies Viewer Rust
 deduplication to the combined output before publishing it.
 

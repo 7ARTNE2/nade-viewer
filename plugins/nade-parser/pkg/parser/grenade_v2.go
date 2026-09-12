@@ -177,7 +177,7 @@ func (p *DemoParser) Parse() ([]*models.ParsedGrenade, error) {
 			startTick = currentTick - 15
 		}
 
-		startPosOverride, lineupSnapshot, lineupTick := resolveGrenadeLineupV2(attackHistory, posHistory, throwDesc, currentTick, startTick)
+		startPosOverride, lineupSnapshot := resolveGrenadeLineupV2(attackHistory, posHistory, throwDesc, currentTick, startTick)
 
 		playerState := getPlayerState(thrower, throwDesc, startPosOverride, lineupSnapshot)
 
@@ -194,21 +194,17 @@ func (p *DemoParser) Parse() ([]*models.ParsedGrenade, error) {
 		}
 
 		traj := &models.NadeTrajectory{
-			UniqueID:             e.Projectile.UniqueID(),
-			WeaponType:           grenadeType,
-			ThrowerSteamID:       int64(thrower.SteamID64),
-			ThrowerName:          thrower.Name,
-			ThrowerTeam:          thrower.TeamState.ClanName(),
-			ThrowerEntityID:      throwerEntityID,
-			Team:                 utils.GetDjangoSide(int(thrower.Team)),
-			Trajectory:           make([]models.TrajectoryPoint, 0),
-			TrajectoryTicks:      make([]int, 0),
-			TrajectoryDense:      make([]models.TrajectoryPoint, 0),
-			TrajectoryDenseTicks: make([]int, 0),
-			StartTick:            startTick,
-			LineupTick:           lineupTick,
-			RoundTimeSeconds:     roundTimeSeconds,
-			PlayerState:          playerState,
+			UniqueID:         e.Projectile.UniqueID(),
+			WeaponType:       grenadeType,
+			ThrowerSteamID:   int64(thrower.SteamID64),
+			ThrowerName:      thrower.Name,
+			ThrowerTeam:      thrower.TeamState.ClanName(),
+			ThrowerEntityID:  throwerEntityID,
+			Team:             utils.GetDjangoSide(int(thrower.Team)),
+			Trajectory:       make([]models.TrajectoryPoint, 0),
+			StartTick:        startTick,
+			RoundTimeSeconds: roundTimeSeconds,
+			PlayerState:      playerState,
 		}
 
 		pending[traj.UniqueID] = &pendingNade{
@@ -261,7 +257,6 @@ func (p *DemoParser) Parse() ([]*models.ParsedGrenade, error) {
 			pn.traj.Trajectory = append(pn.traj.Trajectory, models.TrajectoryPoint{
 				X: entry.Position.X, Y: entry.Position.Y, Z: entry.Position.Z,
 			})
-			pn.traj.TrajectoryTicks = append(pn.traj.TrajectoryTicks, entry.Tick)
 		}
 		pn.traj.EndTick = parser.GameState().IngameTick()
 
@@ -293,34 +288,6 @@ func (p *DemoParser) Parse() ([]*models.ParsedGrenade, error) {
 				float64(player.ViewDirectionY()),
 				float64(player.ViewDirectionX()),
 			)
-		}
-
-		// Плотная траектория (опция -trajectory-dense): сэмплируем позиции
-		// активных гранат на каждом кадре.
-		if p.options.IncludeTrajectoryDense {
-			for _, proj := range parser.GameState().GrenadeProjectiles() {
-				if proj == nil {
-					continue
-				}
-				pn, ok := pending[proj.UniqueID()]
-				if !ok {
-					continue
-				}
-				pp := proj.Position()
-				point := models.TrajectoryPoint{X: pp.X, Y: pp.Y, Z: pp.Z}
-				if n := len(pn.traj.TrajectoryDense); n > 0 {
-					last := n - 1
-					if pn.traj.TrajectoryDenseTicks[last] == tick {
-						pn.traj.TrajectoryDense[last] = point
-						continue
-					}
-					if sameTrajectoryPoint(pn.traj.TrajectoryDense[last], point) {
-						continue
-					}
-				}
-				pn.traj.TrajectoryDense = append(pn.traj.TrajectoryDense, point)
-				pn.traj.TrajectoryDenseTicks = append(pn.traj.TrajectoryDenseTicks, tick)
-			}
 		}
 
 		// Трекер остановки смока/молотова (как в legacy): когда снаряд перестаёт
@@ -450,16 +417,6 @@ func (p *DemoParser) finalizeNadeV2(pn *pendingNade, tickRate float64) *models.P
 		tickRate = 64.0
 	}
 
-	// Плотная траектория: упрощаем или очищаем в зависимости от опции.
-	if p.options.IncludeTrajectoryDense {
-		traj.TrajectoryDense, traj.TrajectoryDenseTicks = simplifyDenseTrajectory(
-			traj.TrajectoryDense, traj.TrajectoryDenseTicks,
-		)
-	} else {
-		traj.TrajectoryDense = nil
-		traj.TrajectoryDenseTicks = nil
-	}
-
 	// startPos: точка lineup игрока, иначе первая точка траектории.
 	var startPos models.TrajectoryPoint
 	if traj.PlayerState != nil && (traj.PlayerState.Position.X != 0 || traj.PlayerState.Position.Y != 0 || traj.PlayerState.Position.Z != 0) {
@@ -514,30 +471,26 @@ func (p *DemoParser) finalizeNadeV2(pn *pendingNade, tickRate float64) *models.P
 	endCopy := endPos
 
 	return &models.ParsedGrenade{
-		MapName:              p.mapName,
-		Side:                 traj.Team,
-		GrenadeType:          traj.WeaponType,
-		DemoFilename:         p.fileName,
-		ThrowTick:            traj.StartTick,
-		LineupTick:           traj.LineupTick,
-		Tickrate:             tickRate,
-		RoundTimeSeconds:     traj.RoundTimeSeconds,
-		ThrowerSteamID64:     traj.ThrowerSteamID,
-		ThrowerEntityID:      traj.ThrowerEntityID,
-		ThrowerName:          traj.ThrowerName,
-		ThrowerTeam:          traj.ThrowerTeam,
-		Team1:                p.team1,
-		Team2:                p.team2,
-		StartPos:             &startCopy,
-		EndPos:               &endCopy,
-		Trajectory:           traj.Trajectory,
-		TrajectoryTicks:      traj.TrajectoryTicks,
-		TrajectoryDense:      traj.TrajectoryDense,
-		TrajectoryDenseTicks: traj.TrajectoryDenseTicks,
-		ProjectileEntityID:   pn.projectileEntityID,
-		Airtime:              airtime,
-		ThrowKeys:            throwDescription,
-		Coordinates:          coordinates,
+		MapName:            p.mapName,
+		Side:               traj.Team,
+		GrenadeType:        traj.WeaponType,
+		DemoFilename:       p.fileName,
+		ThrowTick:          traj.StartTick,
+		Tickrate:           tickRate,
+		RoundTimeSeconds:   traj.RoundTimeSeconds,
+		ThrowerSteamID64:   traj.ThrowerSteamID,
+		ThrowerEntityID:    traj.ThrowerEntityID,
+		ThrowerName:        traj.ThrowerName,
+		ThrowerTeam:        traj.ThrowerTeam,
+		Team1:              p.team1,
+		Team2:              p.team2,
+		StartPos:           &startCopy,
+		EndPos:             &endCopy,
+		Trajectory:         traj.Trajectory,
+		ProjectileEntityID: pn.projectileEntityID,
+		Airtime:            airtime,
+		ThrowKeys:          throwDescription,
+		Coordinates:        coordinates,
 	}
 }
 
@@ -594,10 +547,9 @@ func newlyPressedMoveKey(attackHistory []uint64, finalIdx int) uint64 {
 //   - ПРЫЖКОВЫЙ бросок с места (JUMP без WASD): resolveStandingJumpLineup —
 //     позиция перед отрывом от земли;
 //   - СТАЦИОНАРНЫЙ бросок: прежняя логика resolveLineupStart.
-func resolveGrenadeLineupV2(attackHistory []uint64, posHistory []PositionSnapshot, throwDesc string, currentTick, startTick int) (*models.TrajectoryPoint, *PositionSnapshot, *int) {
+func resolveGrenadeLineupV2(attackHistory []uint64, posHistory []PositionSnapshot, throwDesc string, currentTick, startTick int) (*models.TrajectoryPoint, *PositionSnapshot) {
 	var startPosOverride *models.TrajectoryPoint
 	var lineupSnapshot *PositionSnapshot
-	var lineupTick *int
 
 	if hasAnyMovementModifier(throwDesc) {
 		var snapshot *PositionSnapshot
@@ -612,28 +564,23 @@ func resolveGrenadeLineupV2(attackHistory []uint64, posHistory []PositionSnapsho
 		}
 		if snapshot != nil {
 			lineupSnapshot = snapshot
-			lineupTick = intPtr(snapshot.Tick)
-		} else if s := findSnapshotAtOrBeforeTick(posHistory, currentTick-2); s != nil {
-			lineupSnapshot = s
-			lineupTick = intPtr(s.Tick)
+		} else {
+			lineupSnapshot = findSnapshotAtOrBeforeTick(posHistory, currentTick-2)
 		}
 	} else if hasThrowModifier(throwDesc, "JUMP") {
-		snapshot := resolveStandingJumpLineup(posHistory)
-		if snapshot != nil {
+		if snapshot := resolveStandingJumpLineup(posHistory); snapshot != nil {
 			lineupSnapshot = snapshot
-			lineupTick = intPtr(snapshot.Tick)
-		} else if s := findSnapshotAtOrBeforeTick(posHistory, currentTick-2); s != nil {
-			lineupSnapshot = s
-			lineupTick = intPtr(s.Tick)
+		} else {
+			lineupSnapshot = findSnapshotAtOrBeforeTick(posHistory, currentTick-2)
 		}
 	} else {
-		startPosOverride, lineupSnapshot, lineupTick = resolveLineupStart(attackHistory, posHistory, throwDesc, currentTick)
-		startPosOverride, lineupSnapshot, lineupTick = alignJumpLineupToStartTick(
-			startPosOverride, lineupSnapshot, lineupTick, posHistory, throwDesc, startTick,
+		startPosOverride, lineupSnapshot = resolveLineupStart(attackHistory, posHistory, throwDesc, currentTick)
+		startPosOverride, lineupSnapshot = alignJumpLineupToStartTick(
+			startPosOverride, lineupSnapshot, posHistory, throwDesc, startTick,
 		)
 	}
 
-	return startPosOverride, lineupSnapshot, lineupTick
+	return startPosOverride, lineupSnapshot
 }
 
 // resolveForwardJumpRunup returns the first stable-aim tick of the final W

@@ -22,9 +22,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, "Use --parse --demo <path> --output <path>")
 		os.Exit(2)
 	}
-	options := parser.DefaultOutputOptions()
-	options.IncludeTrajectoryDense = true
-	items, err := parser.ParseAndConvertWithOptions(*demo, options)
+	items, err := parser.ParseAndConvertWithOptions(*demo, parser.DefaultOutputOptions())
 	if err == nil {
 		var data []byte
 		data, err = json.Marshal(map[string]any{"version": 1, "canonical_grenades": items})

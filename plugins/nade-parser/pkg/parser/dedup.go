@@ -67,10 +67,6 @@ func DeduplicateGrenades(grenades []models.GrenadeData) ([]models.GrenadeData, D
 			if representative.ThrowKeys == "" {
 				representative.ThrowKeys = dominantThrowKeys(clusterItems)
 			}
-			if representative.LineupTick == nil {
-				representative.LineupTick = firstNonNilLineupTick(clusterItems)
-			}
-
 			result = append(result, representative)
 			stats.MergedUsageGain += clusterUsage - normalizedUsage(representative)
 		}
@@ -262,19 +258,6 @@ func totalUsage(items []models.GrenadeData) int {
 		total += normalizedUsage(item)
 	}
 	return total
-}
-
-func firstNonNilLineupTick(items []models.GrenadeData) *int {
-	for _, item := range items {
-		if item.LineupTick == nil {
-			continue
-		}
-
-		value := *item.LineupTick
-		return &value
-	}
-
-	return nil
 }
 
 func uniqueThrowers(items []models.GrenadeData) []string {
