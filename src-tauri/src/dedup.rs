@@ -151,10 +151,9 @@ fn merge_cluster(cluster: Cluster) -> Value {
     }
 
     let total: i64 = cluster.items.iter().map(usage).sum();
-    representative
-        .as_object_mut()
-        .unwrap()
-        .insert("usage_count".into(), total.into());
+    if let Some(output) = representative.as_object_mut() {
+        output.insert("usage_count".into(), total.into());
+    }
 
     let mut names = Vec::new();
     let mut seen_names = HashSet::new();
@@ -168,10 +167,9 @@ fn merge_cluster(cluster: Cluster) -> Value {
         }
     }
     if !names.is_empty() {
-        representative
-            .as_object_mut()
-            .unwrap()
-            .insert("usage_throwers".into(), serde_json::json!(names));
+        if let Some(output) = representative.as_object_mut() {
+            output.insert("usage_throwers".into(), serde_json::json!(names));
+        }
     }
 
     representative
@@ -210,6 +208,12 @@ mod tests {
         assert_eq!(result.len(), 1);
         assert_eq!(result[0]["usage_count"], 5);
         assert_eq!(result[0]["usage_throwers"], json!(["Alice", "Bob"]));
+    }
+
+    #[test]
+    fn preserves_non_object_values_without_panicking() {
+        let input = json!("invalid grenade");
+        assert_eq!(deduplicate(vec![input.clone()]), vec![input]);
     }
 
     #[test]

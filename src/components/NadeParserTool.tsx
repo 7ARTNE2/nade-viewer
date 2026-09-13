@@ -14,6 +14,7 @@ import {
   Play,
   RefreshCw,
   ShieldCheck,
+  Timer,
   Trash2,
   XCircle,
 } from 'lucide-react';
@@ -30,7 +31,21 @@ type Status = {
   completed: number;
   total: number;
   current?: string;
+  elapsed_ms: number;
 };
+
+function formatDuration(milliseconds: number) {
+  if (milliseconds < 10_000) return `${(milliseconds / 1000).toFixed(1)} s`;
+  const totalSeconds = Math.floor(milliseconds / 1000);
+  const seconds = totalSeconds % 60;
+  const totalMinutes = Math.floor(totalSeconds / 60);
+  const minutes = totalMinutes % 60;
+  const hours = Math.floor(totalMinutes / 60);
+  return hours
+    ? `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+    : `${minutes}:${String(seconds).padStart(2, '0')}`;
+}
+
 export default function NadeParserTool({ refreshImports }: Props) {
   const { tr } = useI18n();
   const [installed, setInstalled] = useState(false);
@@ -39,6 +54,7 @@ export default function NadeParserTool({ refreshImports }: Props) {
     stage: 'idle',
     completed: 0,
     total: 0,
+    elapsed_ms: 0,
   });
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -76,18 +92,34 @@ export default function NadeParserTool({ refreshImports }: Props) {
   useEffect(() => {
     if (!status.running) return;
     let active = true;
-    const id = window.setInterval(() => {
-      invoke<Status>('get_nade_parser_status')
-        .then((s) => {
-          if (active) setStatus(s);
-        })
-        .catch((e) => {
+    let timer: number | undefined;
+    const poll = async () => {
+      try {
+        const nextStatus = await invoke<Status>('get_nade_parser_status');
+        if (!active) return;
+        setStatus(nextStatus);
+        if (nextStatus.running) {
+          timer = window.setTimeout(poll, 500);
+          return;
+        }
+        try {
+          const nextCounts = await invoke<[number, number]>(
+            'get_parser_workspace_counts',
+          );
+          if (active) setCounts(nextCounts);
+        } catch (e) {
           if (active) setError(String(e));
-        });
-    }, 500);
+        }
+      } catch (e) {
+        if (!active) return;
+        setError(String(e));
+        timer = window.setTimeout(poll, 1000);
+      }
+    };
+    timer = window.setTimeout(poll, 500);
     return () => {
       active = false;
-      window.clearInterval(id);
+      if (timer !== undefined) window.clearTimeout(timer);
     };
   }, [status.running]);
   const action = async (fn: () => Promise<void>) => {
@@ -146,6 +178,7 @@ export default function NadeParserTool({ refreshImports }: Props) {
     idle: tr('Ready', 'Готово'),
     scanning: tr('Scanning folders...', 'Поиск демо в папках...'),
     parsing: tr('Parsing demos', 'Разбор демо'),
+    deduplicating: tr('Deduplicating throws...', 'Дедупликация бросков...'),
     finalizing: tr(
       'Writing combined result...',
       'Сохранение общего результата...',
@@ -329,7 +362,17 @@ export default function NadeParserTool({ refreshImports }: Props) {
                     paths,
                     deduplicate: dedup,
                   });
-                  setStatus(await invoke<Status>('get_nade_parser_status'));
+                  const nextStatus = await invoke<Status>(
+                    'get_nade_parser_status',
+                  );
+                  setStatus(nextStatus);
+                  if (!nextStatus.running) {
+                    setCounts(
+                      await invoke<[number, number]>(
+                        'get_parser_workspace_counts',
+                      ),
+                    );
+                  }
                 })
               }
             >
@@ -351,7 +394,9 @@ export default function NadeParserTool({ refreshImports }: Props) {
                 <span>
                   {status.total
                     ? `${status.completed} / ${status.total} ${tr('demos', 'демо')}`
-                    : tr('Waiting for a run', 'Ожидание запуска')}
+                    : status.running
+                      ? tr('Processing workspace', 'Обработка рабочей базы')
+                      : tr('Waiting for a run', 'Ожидание запуска')}
                 </span>
               </div>
               <div className="progress-shell">
@@ -361,6 +406,19 @@ export default function NadeParserTool({ refreshImports }: Props) {
                 />
               </div>
             </div>
+            {status.stage !== 'idle' && (
+              <div className="tools-runtime" aria-live="polite">
+                <Timer size={16} aria-hidden="true" />
+                <span>
+                  {status.running
+                    ? tr('Elapsed', 'Прошло')
+                    : status.stage === 'failed'
+                      ? tr('Failed after', 'Ошибка через')
+                      : tr('Completed in', 'Выполнено за')}
+                </span>
+                <strong>{formatDuration(status.elapsed_ms)}</strong>
+              </div>
+            )}
             <div className="tools-current" role="status">
               <span>
                 {status.current
@@ -450,7 +508,13 @@ export default function NadeParserTool({ refreshImports }: Props) {
                 onClick={() =>
                   void action(async () => {
                     await invoke('deduplicate_parser_workspace');
-                    await refresh();
+                    const nextStatus = await invoke<Status>('get_nade_parser_status');
+                    setStatus(nextStatus);
+                    if (!nextStatus.running) {
+                      setCounts(
+                        await invoke<[number, number]>('get_parser_workspace_counts'),
+                      );
+                    }
                   })
                 }
               >

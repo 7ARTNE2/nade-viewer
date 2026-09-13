@@ -679,15 +679,9 @@ pub fn run() {
         .setup(|app| {
             let state = init_state(app.handle())?;
             app.manage(state);
-            app.manage(std::sync::Arc::new(std::sync::Mutex::new(
-                crate::plugin::ParserStatus {
-                    running: false,
-                    stage: "idle".into(),
-                    output: None,
-                    error: None,
-                    ..Default::default()
-                },
-            )));
+            let mut parser_status = crate::plugin::ParserStatus::default();
+            parser_status.stage = "idle".into();
+            app.manage(std::sync::Arc::new(std::sync::Mutex::new(parser_status)));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

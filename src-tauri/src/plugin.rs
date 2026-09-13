@@ -5,6 +5,7 @@ use std::{
     path::{Path, PathBuf},
     process::Command,
     sync::{Arc, Mutex},
+    time::Instant,
 };
 use tauri::{AppHandle, Manager};
 
@@ -23,6 +24,46 @@ pub(crate) struct ParserStatus {
     pub completed: usize,
     pub total: usize,
     pub current: Option<String>,
+    pub elapsed_ms: u64,
+    #[serde(skip)]
+    started_at: Option<Instant>,
+}
+
+impl ParserStatus {
+    fn start(&mut self, stage: &str) {
+        self.running = true;
+        self.stage = stage.into();
+        self.output = None;
+        self.error = None;
+        self.completed = 0;
+        self.total = 0;
+        self.current = None;
+        self.elapsed_ms = 0;
+        self.started_at = Some(Instant::now());
+    }
+
+    fn update_elapsed(&mut self) {
+        if let Some(started_at) = self.started_at.as_ref() {
+            self.elapsed_ms = started_at.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
+        }
+    }
+
+    fn finish(&mut self, result: Result<Option<PathBuf>, String>) {
+        self.update_elapsed();
+        self.started_at = None;
+        self.running = false;
+        self.current = None;
+        match result {
+            Ok(output) => {
+                self.stage = "complete".into();
+                self.output = output.map(|path| path.display().to_string());
+            }
+            Err(error) => {
+                self.stage = "failed".into();
+                self.error = Some(error);
+            }
+        }
+    }
 }
 fn exe(app: &AppHandle) -> PathBuf {
     app.path()
@@ -67,7 +108,11 @@ pub(crate) fn get_nade_parser_info(app: AppHandle) -> PluginInfo {
 }
 #[tauri::command]
 pub(crate) fn get_nade_parser_status(app: AppHandle) -> ParserStatus {
-    state(&app).lock().unwrap().clone()
+    let mut snapshot = state(&app).lock().unwrap().clone();
+    if snapshot.running {
+        snapshot.update_elapsed();
+    }
+    snapshot
 }
 #[tauri::command]
 pub(crate) fn select_demo_files() -> Vec<String> {
@@ -177,13 +222,16 @@ fn is_demo(p: &Path) -> bool {
         .is_some_and(|s| s.eq_ignore_ascii_case("dem"))
 }
 
-fn workspace_connection(app: &AppHandle) -> Result<rusqlite::Connection, String> {
-    let db = app
+fn workspace_path(app: &AppHandle) -> Result<PathBuf, String> {
+    Ok(app
         .path()
         .app_local_data_dir()
         .map_err(|e| e.to_string())?
-        .join("parser-workspace.sqlite");
-    parser_store::open(&db).map_err(|e| e.to_string())
+        .join("parser-workspace.sqlite"))
+}
+
+fn workspace_connection(app: &AppHandle) -> Result<rusqlite::Connection, String> {
+    parser_store::open(&workspace_path(app)?).map_err(|e| e.to_string())
 }
 
 fn ensure_dataset_ready(c: &rusqlite::Connection, canonical: bool) -> Result<(), String> {
@@ -215,26 +263,17 @@ pub(crate) fn run_nade_parser_batch(
     if !executable.is_file() {
         return Err("Nade Parser plugin is not installed".into());
     }
+    let stdout_protocol = parser_supports_stdout(&executable);
+    let workspace_path = workspace_path(&app)?;
     let s = state(&app);
     {
-        let mut x = s.lock().unwrap();
-        if x.running {
+        let mut status = s.lock().unwrap();
+        if status.running {
             return Err("A parser job is already running".into());
         }
-        x.running = true;
-        x.stage = "scanning".into();
-        x.error = None;
-        x.completed = 0;
-        x.total = 0;
-        x.current = None;
+        status.start("scanning");
     }
     let worker_state = s.clone();
-    let stdout_protocol = parser_supports_stdout(&executable);
-    let workspace_path = app
-        .path()
-        .app_local_data_dir()
-        .map_err(|e| e.to_string())?
-        .join("parser-workspace.sqlite");
     let spawn = std::thread::Builder::new().spawn(move || {
         let result = (|| -> Result<PathBuf, String> {
             let files = discover_demos(&paths)?;
@@ -303,43 +342,60 @@ pub(crate) fn run_nade_parser_batch(
                 .map_err(|e| e.to_string())?;
                 worker_state.lock().unwrap().completed += 1;
             }
-            worker_state.lock().unwrap().stage = "finalizing".into();
             if deduplicate {
+                {
+                    let mut status = worker_state.lock().unwrap();
+                    status.stage = "deduplicating".into();
+                    status.current = None;
+                }
                 let items = parser_store::all(&store).map_err(|e| e.to_string())?;
                 let canonical = crate::dedup::deduplicate(items);
+                worker_state.lock().unwrap().stage = "finalizing".into();
                 parser_store::replace_canonical(&mut store, &canonical)
                     .map_err(|e| e.to_string())?;
+            } else {
+                worker_state.lock().unwrap().stage = "finalizing".into();
             }
             Ok(workspace_path.clone())
         })();
-        let mut x = worker_state.lock().unwrap();
-        x.running = false;
-        x.current = None;
-        match result {
-            Ok(out) => {
-                x.stage = "complete".into();
-                x.output = Some(out.display().to_string());
-            }
-            Err(e) => {
-                x.stage = "failed".into();
-                x.error = Some(e);
-            }
-        }
+        worker_state.lock().unwrap().finish(result.map(Some));
     });
-    if let Err(e) = spawn {
-        let mut x = s.lock().unwrap();
-        x.running = false;
-        x.stage = "failed".into();
-        x.error = Some(e.to_string());
-        return Err(e.to_string());
+    if let Err(error) = spawn {
+        let message = error.to_string();
+        s.lock().unwrap().finish(Err(message.clone()));
+        return Err(message);
     }
     Ok(())
 }
 #[tauri::command]
 pub(crate) fn deduplicate_parser_workspace(app: AppHandle) -> Result<(), String> {
-    let mut c = workspace_connection(&app)?;
-    let out = crate::dedup::deduplicate(parser_store::all(&c).map_err(|e| e.to_string())?);
-    parser_store::replace_canonical(&mut c, &out).map_err(|e| e.to_string())
+    let workspace_path = workspace_path(&app)?;
+    let s = state(&app);
+    {
+        let mut status = s.lock().unwrap();
+        if status.running {
+            return Err("A parser job is already running".into());
+        }
+        status.start("deduplicating");
+    }
+
+    let worker_state = s.clone();
+    let spawn = std::thread::Builder::new().spawn(move || {
+        let result = (|| -> Result<(), String> {
+            let mut connection = parser_store::open(&workspace_path).map_err(|e| e.to_string())?;
+            let items = parser_store::all(&connection).map_err(|e| e.to_string())?;
+            let canonical = crate::dedup::deduplicate(items);
+            worker_state.lock().unwrap().stage = "finalizing".into();
+            parser_store::replace_canonical(&mut connection, &canonical).map_err(|e| e.to_string())
+        })();
+        worker_state.lock().unwrap().finish(result.map(|_| None));
+    });
+    if let Err(error) = spawn {
+        let message = error.to_string();
+        s.lock().unwrap().finish(Err(message.clone()));
+        return Err(message);
+    }
+    Ok(())
 }
 #[tauri::command]
 pub(crate) fn get_parser_workspace_counts(app: AppHandle) -> Result<(i64, i64), String> {
@@ -409,6 +465,27 @@ pub(crate) fn prepare_parser_import(app: AppHandle, source: String) -> Result<St
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Duration;
+
+    #[test]
+    fn parser_status_tracks_and_freezes_elapsed_time() {
+        let mut status = ParserStatus::default();
+        status.start("parsing");
+        status.started_at = Instant::now().checked_sub(Duration::from_millis(25));
+        status.update_elapsed();
+        assert!(status.elapsed_ms >= 20);
+
+        status.finish(Ok(None));
+        let completed_elapsed = status.elapsed_ms;
+        assert!(!status.running);
+        assert_eq!(status.stage, "complete");
+        assert!(status.started_at.is_none());
+
+        std::thread::sleep(Duration::from_millis(2));
+        status.update_elapsed();
+        assert_eq!(status.elapsed_ms, completed_elapsed);
+    }
+
     #[test]
     fn remove_nade_parser_removes_only_the_selected_executable() {
         let dir = std::env::temp_dir().join(format!(
