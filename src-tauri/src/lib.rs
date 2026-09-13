@@ -694,6 +694,7 @@ pub fn run() {
             select_import_file,
             import_json,
             plugin::install_nade_parser,
+            plugin::uninstall_nade_parser,
             plugin::get_nade_parser_info,
             plugin::get_nade_parser_status,
             plugin::run_nade_parser,

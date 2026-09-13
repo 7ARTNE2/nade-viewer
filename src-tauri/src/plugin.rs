@@ -107,6 +107,35 @@ pub(crate) fn install_nade_parser(app: AppHandle) -> Result<PluginInfo, String> 
     Ok(info)
 }
 
+fn remove_nade_parser(path: &Path) -> Result<(), String> {
+    if !path.is_file() {
+        return Err("Nade Parser plugin is not installed".into());
+    }
+    std::fs::remove_file(path).map_err(|e| format!("Could not remove Nade Parser plugin: {e}"))?;
+
+    if let Some(directory) = path.parent() {
+        if let Err(error) = std::fs::remove_dir(directory) {
+            if error.kind() != std::io::ErrorKind::NotFound
+                && error.kind() != std::io::ErrorKind::DirectoryNotEmpty
+            {
+                return Err(format!(
+                    "Plugin was removed, but its directory could not be cleaned up: {error}"
+                ));
+            }
+        }
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub(crate) fn uninstall_nade_parser(app: AppHandle) -> Result<(), String> {
+    if state(&app).lock().unwrap().running {
+        return Err("Cannot remove the plugin while parsing is running".into());
+    }
+    remove_nade_parser(&exe(&app))
+}
+
 fn discover_demos(paths: &[String]) -> Result<Vec<PathBuf>, String> {
     if paths.is_empty() {
         return Err("Select at least one demo or folder".into());
@@ -380,6 +409,29 @@ pub(crate) fn prepare_parser_import(app: AppHandle, source: String) -> Result<St
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn remove_nade_parser_removes_only_the_selected_executable() {
+        let dir = std::env::temp_dir().join(format!(
+            "nade-plugin-remove-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let plugin = dir.join("nade-parser.exe");
+        let sibling = dir.join("keep.txt");
+        std::fs::write(&plugin, b"plugin").unwrap();
+        std::fs::write(&sibling, b"keep").unwrap();
+
+        remove_nade_parser(&plugin).unwrap();
+
+        assert!(!plugin.exists());
+        assert!(sibling.exists());
+        assert!(remove_nade_parser(&plugin).is_err());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
     #[test]
     fn discovery_nested_overlap_and_validation() {
         let dir = std::env::temp_dir().join(format!(

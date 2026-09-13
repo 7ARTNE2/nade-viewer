@@ -799,6 +799,7 @@ function Shell() {
               }
             />
             <Route path="/tools" element={<ToolsPage refreshImports={refreshImports} />} />
+            <Route path="/tools/:pluginId" element={<ToolsPage refreshImports={refreshImports} />} />
             <Route
               path="/map/:mapName"
               element={
