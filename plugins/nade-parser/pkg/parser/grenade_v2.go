@@ -25,6 +25,7 @@ package parser
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -358,7 +359,7 @@ func (p *DemoParser) Parse() ([]*models.ParsedGrenade, error) {
 		p.roundActionStartTick = parser.GameState().IngameTick()
 	})
 
-	if err := parser.ParseToEnd(); err != nil && err != demoinfocs.ErrUnexpectedEndOfDemo {
+	if err := parser.ParseToEnd(); err != nil && !errors.Is(err, demoinfocs.ErrUnexpectedEndOfDemo) {
 		return nil, fmt.Errorf("ошибка парсинга демо: %w", err)
 	}
 
