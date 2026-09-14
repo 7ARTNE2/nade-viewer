@@ -2,10 +2,11 @@ use crate::parser_store;
 use serde::Serialize;
 use std::{
     collections::BTreeSet,
+    fs::File,
     path::{Path, PathBuf},
-    process::Command,
+    process::{Command, Stdio},
     sync::{Arc, Mutex},
-    time::Instant,
+    time::{Duration, Instant, SystemTime},
 };
 use tauri::{AppHandle, Manager};
 
@@ -222,6 +223,155 @@ fn is_demo(p: &Path) -> bool {
         .is_some_and(|s| s.eq_ignore_ascii_case("dem"))
 }
 
+const DEFAULT_PARSER_WORKERS: usize = 4;
+const MAX_PARSER_WORKERS: usize = 8;
+
+#[derive(Clone)]
+struct ParseJob {
+    ordinal: usize,
+    file: PathBuf,
+    size: u64,
+    modified: i64,
+}
+
+struct ParseJobResult {
+    job: ParseJob,
+    output_path: PathBuf,
+    stderr_path: PathBuf,
+    result: Result<(), String>,
+}
+
+fn bounded_worker_count(configured: usize, available: usize, job_count: usize) -> usize {
+    configured
+        .clamp(1, MAX_PARSER_WORKERS)
+        .min(available.max(1))
+        .min(job_count.max(1))
+}
+
+fn parser_worker_count(job_count: usize) -> usize {
+    let configured = std::env::var("NADE_PARSER_MAX_WORKERS")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(DEFAULT_PARSER_WORKERS);
+    let available = std::thread::available_parallelism()
+        .map(usize::from)
+        .unwrap_or(1);
+    bounded_worker_count(configured, available, job_count)
+}
+
+fn spool_path(workspace_path: &Path, ordinal: usize, suffix: &str) -> PathBuf {
+    workspace_path.with_file_name(format!(
+        ".nade-parser-{}-{ordinal}.{suffix}",
+        std::process::id()
+    ))
+}
+
+fn remove_spool_file(path: &Path) {
+    if let Err(error) = std::fs::remove_file(path) {
+        if error.kind() != std::io::ErrorKind::NotFound {
+            eprintln!(
+                "Could not remove parser spool file '{}': {error}",
+                path.display()
+            );
+        }
+    }
+}
+
+fn run_parser_job(
+    executable: &Path,
+    workspace_path: &Path,
+    stdout_protocol: bool,
+    job: ParseJob,
+) -> ParseJobResult {
+    let output_path = spool_path(workspace_path, job.ordinal, "json");
+    let stderr_path = spool_path(workspace_path, job.ordinal, "stderr");
+    remove_spool_file(&output_path);
+    remove_spool_file(&stderr_path);
+
+    let result = (|| -> Result<(), String> {
+        let stderr = File::create(&stderr_path)
+            .map_err(|error| format!("{}: stderr: {error}", job.file.display()))?;
+        let mut command = Command::new(executable);
+        command
+            .arg("--parse")
+            .arg("--demo")
+            .arg(&job.file)
+            .arg("--output")
+            .arg(if stdout_protocol {
+                Path::new("-")
+            } else {
+                output_path.as_path()
+            })
+            .stderr(Stdio::from(stderr));
+
+        if stdout_protocol {
+            let stdout = File::create(&output_path)
+                .map_err(|error| format!("{}: output: {error}", job.file.display()))?;
+            command.stdout(Stdio::from(stdout));
+        } else {
+            command.stdout(Stdio::null());
+        }
+
+        let status = command
+            .status()
+            .map_err(|error| format!("{}: {error}", job.file.display()))?;
+        if status.success() {
+            return Ok(());
+        }
+
+        let stderr = std::fs::read_to_string(&stderr_path).unwrap_or_default();
+        Err(format!(
+            "{}: {}\n{}",
+            job.file.display(),
+            status,
+            stderr.trim()
+        ))
+    })();
+
+    ParseJobResult {
+        job,
+        output_path,
+        stderr_path,
+        result,
+    }
+}
+
+fn cleanup_parse_result(result: &ParseJobResult) {
+    remove_spool_file(&result.output_path);
+    remove_spool_file(&result.stderr_path);
+}
+
+fn cleanup_stale_spool_files(workspace_path: &Path) {
+    let Some(directory) = workspace_path.parent() else {
+        return;
+    };
+    let Ok(entries) = std::fs::read_dir(directory) else {
+        return;
+    };
+    let cutoff = SystemTime::now()
+        .checked_sub(Duration::from_secs(24 * 60 * 60))
+        .unwrap_or(SystemTime::UNIX_EPOCH);
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        if !name.starts_with(".nade-parser-")
+            || !(name.ends_with(".json") || name.ends_with(".stderr"))
+        {
+            continue;
+        }
+        let is_stale = entry
+            .metadata()
+            .and_then(|metadata| metadata.modified())
+            .map(|modified| modified < cutoff)
+            .unwrap_or(false);
+        if is_stale {
+            remove_spool_file(&path);
+        }
+    }
+}
+
 fn workspace_path(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(app
         .path()
@@ -282,66 +432,152 @@ pub(crate) fn run_nade_parser_batch(
                 x.total = files.len();
                 x.stage = "parsing".into();
             }
+            cleanup_stale_spool_files(&workspace_path);
             let mut store = parser_store::open(&workspace_path).map_err(|e| e.to_string())?;
-            let legacy_output = workspace_path.with_file_name("nade-parser-output.json");
-            if !stdout_protocol {
-                let _ = std::fs::remove_file(&legacy_output);
-            }
-            for file in files {
-                worker_state.lock().unwrap().current = Some(file.display().to_string());
+            let mut jobs = Vec::new();
+            let mut cached_ordinals = BTreeSet::new();
+            for (ordinal, file) in files.into_iter().enumerate() {
                 let (size, modified) =
                     parser_store::fingerprint(&file).map_err(|e| e.to_string())?;
                 if parser_store::unchanged(&store, &file.display().to_string(), size, modified)
                     .map_err(|e| e.to_string())?
                 {
-                    worker_state.lock().unwrap().completed += 1;
+                    cached_ordinals.insert(ordinal);
+                } else {
+                    jobs.push(ParseJob {
+                        ordinal,
+                        file,
+                        size,
+                        modified,
+                    });
+                }
+            }
+
+            let worker_count = parser_worker_count(jobs.len());
+            let changed_ordinals = jobs.iter().map(|job| job.ordinal).collect::<BTreeSet<_>>();
+            let (job_sender, job_receiver) = std::sync::mpsc::sync_channel(worker_count);
+            let job_receiver = Arc::new(Mutex::new(job_receiver));
+            let (result_sender, result_receiver) = std::sync::mpsc::sync_channel(worker_count);
+            let mut next_job = 0usize;
+            let mut next_commit = 0usize;
+            let mut in_flight = 0usize;
+            let mut reorder = std::collections::BTreeMap::new();
+
+            std::thread::scope(|scope| -> Result<(), String> {
+                for _ in 0..worker_count {
+                    let executable = executable.as_path();
+                    let workspace_path = workspace_path.as_path();
+                    let job_receiver = job_receiver.clone();
+                    let result_sender = result_sender.clone();
+                    scope.spawn(move || loop {
+                        let job = {
+                            let receiver = job_receiver.lock().unwrap();
+                            receiver.recv()
+                        };
+                        let Ok(job) = job else {
+                            break;
+                        };
+                        if result_sender
+                            .send(run_parser_job(
+                                executable,
+                                workspace_path,
+                                stdout_protocol,
+                                job,
+                            ))
+                            .is_err()
+                        {
+                            break;
+                        }
+                    });
+                }
+                drop(result_sender);
+
+                let mut failure = None;
+                'coordinator: while next_job < jobs.len() || in_flight > 0 {
+                    while next_job < jobs.len() && in_flight + reorder.len() < worker_count {
+                        if let Err(error) = job_sender.send(jobs[next_job].clone()) {
+                            failure = Some(error.to_string());
+                            break 'coordinator;
+                        }
+                        next_job += 1;
+                        in_flight += 1;
+                    }
+
+                    let result = match result_receiver.recv() {
+                        Ok(result) => result,
+                        Err(error) => {
+                            failure = Some(error.to_string());
+                            break;
+                        }
+                    };
+                    in_flight -= 1;
+                    reorder.insert(result.job.ordinal, result);
+
+                    loop {
+                        while next_commit < worker_state.lock().unwrap().total
+                            && cached_ordinals.contains(&next_commit)
+                        {
+                            cached_ordinals.remove(&next_commit);
+                            next_commit += 1;
+                            worker_state.lock().unwrap().completed = next_commit;
+                        }
+
+                        let Some(result) = reorder.remove(&next_commit) else {
+                            break;
+                        };
+                        worker_state.lock().unwrap().current =
+                            Some(result.job.file.display().to_string());
+                        if let Err(error) = &result.result {
+                            failure = Some(error.clone());
+                            cleanup_parse_result(&result);
+                            break 'coordinator;
+                        }
+
+                        let import_result = parser_store::import_demo_file(
+                            &mut store,
+                            &result.job.file.display().to_string(),
+                            result.job.size,
+                            result.job.modified,
+                            &result.output_path,
+                        )
+                        .map_err(|error| {
+                            format!("{}: invalid output: {error}", result.job.file.display())
+                        });
+                        cleanup_parse_result(&result);
+                        if let Err(error) = import_result {
+                            failure = Some(error);
+                            break 'coordinator;
+                        }
+                        next_commit += 1;
+                        worker_state.lock().unwrap().completed = next_commit;
+                    }
+                }
+
+                drop(job_sender);
+                for result in result_receiver {
+                    cleanup_parse_result(&result);
+                }
+                for pending in reorder.values() {
+                    cleanup_parse_result(pending);
+                }
+                if let Some(error) = failure {
+                    Err(error)
+                } else {
+                    Ok(())
+                }
+            })?;
+
+            while next_commit < worker_state.lock().unwrap().total {
+                if cached_ordinals.remove(&next_commit) {
+                    next_commit += 1;
                     continue;
                 }
-                let output_target = if stdout_protocol {
-                    Path::new("-")
-                } else {
-                    legacy_output.as_path()
-                };
-                let result = Command::new(&executable)
-                    .arg("--parse")
-                    .arg("--demo")
-                    .arg(&file)
-                    .arg("--output")
-                    .arg(output_target)
-                    .output()
-                    .map_err(|e| format!("{}: {e}", file.display()))?;
-                if !result.status.success() {
-                    return Err(format!(
-                        "{}: {}\n{}",
-                        file.display(),
-                        result.status,
-                        String::from_utf8_lossy(&result.stderr).trim()
-                    ));
+                if changed_ordinals.contains(&next_commit) {
+                    return Err("Parser results ended before every demo was committed".into());
                 }
-                let output = if stdout_protocol {
-                    result.stdout
-                } else {
-                    let bytes = std::fs::read(&legacy_output)
-                        .map_err(|e| format!("{}: output: {e}", file.display()))?;
-                    std::fs::remove_file(&legacy_output).map_err(|e| e.to_string())?;
-                    bytes
-                };
-                let next: serde_json::Value = serde_json::from_slice(&output)
-                    .map_err(|e| format!("{}: invalid output: {e}", file.display()))?;
-                let items = next
-                    .get("canonical_grenades")
-                    .and_then(|v| v.as_array())
-                    .ok_or("Plugin output has no canonical_grenades array")?;
-                parser_store::import_demo(
-                    &mut store,
-                    &file.display().to_string(),
-                    size,
-                    modified,
-                    items,
-                )
-                .map_err(|e| e.to_string())?;
-                worker_state.lock().unwrap().completed += 1;
+                next_commit += 1;
             }
+            worker_state.lock().unwrap().completed = next_commit;
             if deduplicate {
                 {
                     let mut status = worker_state.lock().unwrap();
@@ -466,6 +702,16 @@ pub(crate) fn prepare_parser_import(app: AppHandle, source: String) -> Result<St
 mod tests {
     use super::*;
     use std::time::Duration;
+
+    #[test]
+    fn worker_count_defaults_to_four_and_stays_bounded() {
+        assert_eq!(bounded_worker_count(4, 16, 100), 4);
+        assert_eq!(bounded_worker_count(4, 2, 100), 2);
+        assert_eq!(bounded_worker_count(4, 16, 3), 3);
+        assert_eq!(bounded_worker_count(0, 16, 100), 1);
+        assert_eq!(bounded_worker_count(99, 16, 100), MAX_PARSER_WORKERS);
+        assert_eq!(bounded_worker_count(4, 16, 0), 1);
+    }
 
     #[test]
     fn parser_status_tracks_and_freezes_elapsed_time() {

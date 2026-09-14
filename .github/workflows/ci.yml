@@ -38,6 +38,34 @@ jobs:
       - name: Build frontend
         run: npm run build
 
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: plugins/nade-parser/go.mod
+          cache-dependency-path: plugins/nade-parser/go.sum
+
+      - name: Check Go formatting
+        shell: pwsh
+        run: |
+          $files = Get-ChildItem plugins/nade-parser -Recurse -Filter *.go | ForEach-Object FullName
+          $diff = gofmt -d @files
+          if ($diff) {
+            $diff
+            exit 1
+          }
+
+      - name: Vet Go parser
+        working-directory: plugins/nade-parser
+        run: go vet ./...
+
+      - name: Test Go parser
+        working-directory: plugins/nade-parser
+        run: go test ./...
+
+      - name: Build Go parser
+        working-directory: plugins/nade-parser
+        run: go build ./cmd/nade-parser
+
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
         with:

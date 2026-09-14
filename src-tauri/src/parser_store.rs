@@ -1,6 +1,12 @@
 use rusqlite::{params, Connection};
+use serde::Deserialize;
 use serde_json::Value;
-use std::path::Path;
+use std::{io::BufReader, path::Path};
+
+#[derive(Deserialize)]
+struct ParserEnvelope {
+    canonical_grenades: Vec<Value>,
+}
 
 pub(crate) fn open(path: &Path) -> rusqlite::Result<Connection> {
     let c = Connection::open(path)?;
@@ -17,16 +23,48 @@ pub(crate) fn import_demo(
 ) -> rusqlite::Result<()> {
     let tx = c.transaction()?;
     tx.execute("DELETE FROM throws WHERE demo_path=?", [path])?;
+    // Any raw-data change makes the previously computed canonical set stale.
+    tx.execute("DELETE FROM dedup", [])?;
     tx.execute("INSERT INTO demos(path,size,modified,status,error) VALUES(?,?,?,'ok',NULL) ON CONFLICT(path) DO UPDATE SET size=excluded.size,modified=excluded.modified,status='ok',error=NULL", params![path,size as i64,modified])?;
-    for (ordinal, v) in items.iter().enumerate() {
-        let p = |n: &str| v.get(n).and_then(Value::as_f64);
-        tx.execute("INSERT INTO throws(demo_path,ordinal,raw_json,map,side,grenade_type,throw_keys,start_x,start_y,start_z,explode_x,explode_y,explode_z) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)", params![path,ordinal as i64,serde_json::to_string(v).unwrap(),v.get("map").and_then(Value::as_str),v.get("side").and_then(Value::as_str),v.get("grenade_type").and_then(Value::as_str),v.get("throw_keys").and_then(Value::as_str),p("start_pos_x"),p("start_pos_y"),p("start_pos_z"),p("explode_pos_x"),p("explode_pos_y"),p("explode_pos_z")])?;
+    {
+        let mut insert = tx.prepare_cached("INSERT INTO throws(demo_path,ordinal,raw_json,map,side,grenade_type,throw_keys,start_x,start_y,start_z,explode_x,explode_y,explode_z) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)")?;
+        for (ordinal, v) in items.iter().enumerate() {
+            let p = |n: &str| v.get(n).and_then(Value::as_f64);
+            insert.execute(params![
+                path,
+                ordinal as i64,
+                serde_json::to_string(v).unwrap(),
+                v.get("map").and_then(Value::as_str),
+                v.get("side").and_then(Value::as_str),
+                v.get("grenade_type").and_then(Value::as_str),
+                v.get("throw_keys").and_then(Value::as_str),
+                p("start_pos_x"),
+                p("start_pos_y"),
+                p("start_pos_z"),
+                p("explode_pos_x"),
+                p("explode_pos_y"),
+                p("explode_pos_z")
+            ])?;
+        }
     }
     tx.commit()
 }
 
+pub(crate) fn import_demo_file(
+    c: &mut Connection,
+    path: &str,
+    size: u64,
+    modified: i64,
+    output_path: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let file = std::fs::File::open(output_path)?;
+    let envelope: ParserEnvelope = serde_json::from_reader(BufReader::new(file))?;
+    import_demo(c, path, size, modified, &envelope.canonical_grenades)?;
+    Ok(())
+}
+
 pub(crate) fn all(c: &Connection) -> rusqlite::Result<Vec<Value>> {
-    c.prepare("SELECT raw_json FROM throws ORDER BY id")?
+    c.prepare("SELECT raw_json FROM throws ORDER BY demo_path, ordinal")?
         .query_map([], |r| {
             Ok(serde_json::from_str(r.get::<_, String>(0)?.as_str()).unwrap())
         })?
@@ -65,21 +103,22 @@ pub(crate) fn unchanged(
     size: u64,
     modified: i64,
 ) -> rusqlite::Result<bool> {
-    Ok(c.query_row(
+    c.query_row(
         "SELECT count(*) FROM demos WHERE path=? AND size=? AND modified=? AND status='ok'",
         params![path, size as i64, modified],
         |r| r.get::<_, i64>(0),
     )
-    .map(|n| n > 0)?)
+    .map(|n| n > 0)
 }
 pub(crate) fn replace_canonical(c: &mut Connection, items: &[Value]) -> rusqlite::Result<()> {
-    c.execute("DELETE FROM dedup", [])?;
     let tx = c.transaction()?;
-    for (i, v) in items.iter().enumerate() {
-        tx.execute(
-            "INSERT INTO dedup(run,ordinal,raw_json) VALUES(1,?,?)",
-            params![i as i64, serde_json::to_string(v).unwrap()],
-        )?;
+    tx.execute("DELETE FROM dedup", [])?;
+    {
+        let mut insert =
+            tx.prepare_cached("INSERT INTO dedup(run,ordinal,raw_json) VALUES(1,?,?)")?;
+        for (i, v) in items.iter().enumerate() {
+            insert.execute(params![i as i64, serde_json::to_string(v).unwrap()])?;
+        }
     }
     tx.commit()
 }
@@ -98,7 +137,7 @@ pub(crate) fn write_json(
     let sql = if canonical {
         "SELECT raw_json FROM dedup ORDER BY ordinal"
     } else {
-        "SELECT raw_json FROM throws ORDER BY id"
+        "SELECT raw_json FROM throws ORDER BY demo_path, ordinal"
     };
     let mut first = true;
     let mut stmt = c.prepare(sql)?;
@@ -125,7 +164,7 @@ pub(crate) fn write_msgpack(
     let sql = if canonical {
         "SELECT raw_json FROM dedup ORDER BY ordinal"
     } else {
-        "SELECT raw_json FROM throws ORDER BY id"
+        "SELECT raw_json FROM throws ORDER BY demo_path, ordinal"
     };
     let count: u32 = if canonical {
         c.query_row("SELECT count(*) FROM dedup", [], |r| r.get(0))?
@@ -151,6 +190,54 @@ pub(crate) fn write_msgpack(
 mod tests {
     use super::*;
     #[test]
+    fn imports_parser_output_from_file() {
+        let dir = std::env::temp_dir().join(format!(
+            "nade-parser-output-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let output = dir.join("output.json");
+        std::fs::write(
+            &output,
+            b"{\"version\":1,\"canonical_grenades\":[{\"map\":\"de_test\",\"trajectory\":[[1,2,3]]}]}\n",
+        )
+        .unwrap();
+        let mut c = open(Path::new(":memory:")).unwrap();
+
+        import_demo_file(&mut c, "a.dem", 10, 20, &output).unwrap();
+
+        assert_eq!(counts(&c).unwrap(), (1, 1));
+        assert_eq!(
+            all(&c).unwrap()[0]["trajectory"],
+            serde_json::json!([[1, 2, 3]])
+        );
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn invalid_parser_output_does_not_replace_existing_demo() {
+        let dir = std::env::temp_dir().join(format!(
+            "nade-parser-invalid-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let output = dir.join("output.json");
+        std::fs::write(&output, br#"{"version":1,"canonical_grenades":["#).unwrap();
+        let mut c = open(Path::new(":memory:")).unwrap();
+        import_demo(&mut c, "a.dem", 1, 2, &[serde_json::json!({"id":"old"})]).unwrap();
+
+        assert!(import_demo_file(&mut c, "a.dem", 10, 20, &output).is_err());
+        assert_eq!(all(&c).unwrap()[0]["id"], "old");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
     fn rollback_preserves_raw() {
         let mut c = open(Path::new(":memory:")).unwrap();
         import_demo(
@@ -162,6 +249,37 @@ mod tests {
         )
         .unwrap();
         assert_eq!(all(&c).unwrap()[0]["trajectory"], serde_json::json!([1, 2]));
+    }
+
+    #[test]
+    fn importing_changed_raw_data_invalidates_canonical_rows() {
+        let mut c = open(Path::new(":memory:")).unwrap();
+        import_demo(&mut c, "a", 1, 2, &[serde_json::json!({"map":"de_test"})]).unwrap();
+        replace_canonical(&mut c, &[serde_json::json!({"map":"de_test"})]).unwrap();
+        assert_eq!(canonical_count(&c).unwrap(), 1);
+
+        import_demo(
+            &mut c,
+            "a",
+            2,
+            3,
+            &[serde_json::json!({"map":"de_changed"})],
+        )
+        .unwrap();
+
+        assert_eq!(canonical_count(&c).unwrap(), 0);
+    }
+
+    #[test]
+    fn raw_order_is_stable_after_incremental_reimport() {
+        let mut c = open(Path::new(":memory:")).unwrap();
+        import_demo(&mut c, "b.dem", 1, 1, &[serde_json::json!({"id":"b"})]).unwrap();
+        import_demo(&mut c, "a.dem", 1, 1, &[serde_json::json!({"id":"a-old"})]).unwrap();
+        import_demo(&mut c, "a.dem", 2, 2, &[serde_json::json!({"id":"a"})]).unwrap();
+
+        let values = all(&c).unwrap();
+        assert_eq!(values[0]["id"], "a");
+        assert_eq!(values[1]["id"], "b");
     }
 
     #[test]

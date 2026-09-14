@@ -14,7 +14,7 @@ The executable must support `--plugin-info`, returning JSON with `name`,
 `version`, and `protocol_version` fields. Parsing is invoked with:
 
 ```text
-nade-parser.exe --parse <demo> --output <result.json>
+nade-parser.exe --parse --demo <demo> --output <result.json>
 ```
 
 The result uses the existing Nade Viewer grenade-index import format.

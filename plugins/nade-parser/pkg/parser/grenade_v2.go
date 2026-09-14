@@ -23,9 +23,12 @@ package parser
 // helper-ы из parser.go (getThrowKeys, resolveLineupStart, getPlayerState).
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"math"
 	"os"
+	"sort"
 	"strconv"
 
 	"nadesoulpars/pkg/models"
@@ -360,12 +363,49 @@ func (p *DemoParser) Parse() ([]*models.ParsedGrenade, error) {
 	}
 
 	// Финализируем гранаты, для которых не пришёл Destroy (конец демки и т.п.).
-	for id, pn := range pending {
+	// Порядок обхода map в Go случаен и раньше делал последние записи
+	// недетерминированными, особенно при параллельном запуске нескольких demo.
+	remaining := make([]*pendingNade, 0, len(pending))
+	for _, pn := range pending {
+		remaining = append(remaining, pn)
+	}
+	sort.Slice(remaining, func(i, j int) bool {
+		if remaining[i].throwTick != remaining[j].throwTick {
+			return remaining[i].throwTick < remaining[j].throwTick
+		}
+		return remaining[i].traj.UniqueID < remaining[j].traj.UniqueID
+	})
+	for _, pn := range remaining {
 		if g := p.finalizeNadeV2(pn, tickRate); g != nil {
 			p.grenades = append(p.grenades, g)
 		}
-		delete(pending, id)
+		delete(pending, pn.traj.UniqueID)
 	}
+
+	// demoinfocs may emit same-frame projectile destroy callbacks in varying
+	// order. A stable domain sort makes the serialized plugin contract
+	// deterministic without changing the parsed grenade set. The serialized
+	// fallback fully orders rare collisions and missing entity IDs.
+	sortKeys := make(map[*models.ParsedGrenade][]byte, len(p.grenades))
+	for _, grenade := range p.grenades {
+		sortKeys[grenade], _ = json.Marshal(grenade)
+	}
+	sort.SliceStable(p.grenades, func(i, j int) bool {
+		if p.grenades[i].ThrowTick != p.grenades[j].ThrowTick {
+			return p.grenades[i].ThrowTick < p.grenades[j].ThrowTick
+		}
+		left, right := 0, 0
+		if p.grenades[i].ProjectileEntityID != nil {
+			left = *p.grenades[i].ProjectileEntityID
+		}
+		if p.grenades[j].ProjectileEntityID != nil {
+			right = *p.grenades[j].ProjectileEntityID
+		}
+		if left != right {
+			return left < right
+		}
+		return bytes.Compare(sortKeys[p.grenades[i]], sortKeys[p.grenades[j]]) < 0
+	})
 
 	ensureTickRate()
 	return p.grenades, nil

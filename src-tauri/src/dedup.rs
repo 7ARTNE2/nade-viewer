@@ -7,6 +7,7 @@ const S_SQUARED: f64 = S * S;
 const E_SQUARED: f64 = E * E;
 
 type Position = [f64; 3];
+type Cell = [i64; 3];
 
 #[derive(Clone, Copy)]
 struct Positions {
@@ -43,6 +44,20 @@ fn squared_distance(a: Position, b: Position) -> f64 {
     let y = a[1] - b[1];
     let z = a[2] - b[2];
     x * x + y * y + z * z
+}
+
+fn start_cell(position: Position) -> Cell {
+    [
+        (position[0] / S).floor() as i64,
+        (position[1] / S).floor() as i64,
+        (position[2] / S).floor() as i64,
+    ]
+}
+
+fn neighboring_cells(cell: Cell) -> impl Iterator<Item = Cell> {
+    (-1..=1).flat_map(move |x| {
+        (-1..=1).flat_map(move |y| (-1..=1).map(move |z| [cell[0] + x, cell[1] + y, cell[2] + z]))
+    })
 }
 
 fn usage(v: &Value) -> i64 {
@@ -87,7 +102,7 @@ fn cluster_score(cluster: &Cluster, candidate: Positions) -> f64 {
 /// a new item must be within the configured tolerance of every cluster member.
 pub(crate) fn deduplicate(items: Vec<Value>) -> Vec<Value> {
     let mut clusters: Vec<Cluster> = Vec::new();
-    let mut clusters_by_key: HashMap<String, Vec<usize>> = HashMap::new();
+    let mut clusters_by_key: HashMap<String, HashMap<Cell, Vec<usize>>> = HashMap::new();
 
     for item in items {
         let item_key = key(&item);
@@ -96,8 +111,15 @@ pub(crate) fn deduplicate(items: Vec<Value>) -> Vec<Value> {
         let mut score = f64::INFINITY;
 
         if let Some(candidate) = item_positions {
-            if let Some(indices) = clusters_by_key.get(&item_key) {
-                for &index in indices {
+            if let Some(cells) = clusters_by_key.get(&item_key) {
+                let mut indices = neighboring_cells(start_cell(candidate.start))
+                    .filter_map(|cell| cells.get(&cell))
+                    .flatten()
+                    .copied()
+                    .collect::<Vec<_>>();
+                // Hash-map iteration order must not affect representative selection.
+                indices.sort_unstable();
+                for index in indices {
                     let cluster = &clusters[index];
                     if fits_cluster(cluster, candidate) {
                         let candidate_score = cluster_score(cluster, candidate);
@@ -127,9 +149,14 @@ pub(crate) fn deduplicate(items: Vec<Value>) -> Vec<Value> {
         cluster.items.push(item);
         if let Some(candidate) = item_positions {
             cluster.positions.push(candidate);
+            clusters_by_key
+                .entry(item_key)
+                .or_default()
+                .entry(start_cell(candidate.start))
+                .or_default()
+                .push(index);
         }
         clusters.push(cluster);
-        clusters_by_key.entry(item_key).or_default().push(index);
     }
 
     clusters.into_iter().map(merge_cluster).collect()
@@ -195,6 +222,49 @@ mod tests {
         })
     }
 
+    fn reference_deduplicate(items: Vec<Value>) -> Vec<Value> {
+        let mut clusters: Vec<Cluster> = Vec::new();
+        let mut clusters_by_key: HashMap<String, Vec<usize>> = HashMap::new();
+        for item in items {
+            let item_key = key(&item);
+            let item_positions = positions(&item);
+            let mut target = None;
+            let mut score = f64::INFINITY;
+            if let Some(candidate) = item_positions {
+                if let Some(indices) = clusters_by_key.get(&item_key) {
+                    for &index in indices {
+                        let cluster = &clusters[index];
+                        if fits_cluster(cluster, candidate) {
+                            let candidate_score = cluster_score(cluster, candidate);
+                            if candidate_score < score {
+                                score = candidate_score;
+                                target = Some(index);
+                            }
+                        }
+                    }
+                }
+            }
+            if let Some(index) = target {
+                clusters[index].items.push(item);
+                clusters[index]
+                    .positions
+                    .push(item_positions.expect("matched item has positions"));
+                continue;
+            }
+            let index = clusters.len();
+            let mut cluster = Cluster {
+                items: vec![item],
+                positions: Vec::with_capacity(1),
+            };
+            if let Some(candidate) = item_positions {
+                cluster.positions.push(candidate);
+            }
+            clusters.push(cluster);
+            clusters_by_key.entry(item_key).or_default().push(index);
+        }
+        clusters.into_iter().map(merge_cluster).collect()
+    }
+
     #[test]
     fn merges_matching_nearby_throws() {
         let mut first = grenade("de_mirage", [0.0, 0.0, 0.0], [100.0, 0.0, 0.0]);
@@ -230,6 +300,53 @@ mod tests {
         assert_eq!(
             deduplicate(vec![first, different_map, missing_positions]).len(),
             3
+        );
+    }
+
+    #[test]
+    fn spatial_index_is_byte_identical_to_reference() {
+        let mut seed = 0x9e37_79b9_u64;
+        let mut next = || {
+            seed = seed.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1);
+            ((seed >> 16) % 20_000) as f64 / 10.0 - 1_000.0
+        };
+        let mut items = Vec::new();
+        for index in 0..2_000 {
+            let start = [next(), next(), next() / 10.0];
+            let explode = [next(), next(), next() / 10.0];
+            let mut item = grenade(
+                if index % 3 == 0 {
+                    "de_mirage"
+                } else {
+                    "de_nuke"
+                },
+                start,
+                explode,
+            );
+            item["usage_count"] = ((index % 5) + 1).into();
+            if index % 7 == 0 {
+                item["thrower"] = format!("player-{}", index % 13).into();
+            }
+            items.push(item);
+        }
+        items.push(json!({"map":"de_mirage","throw_keys":"LMB"}));
+
+        let expected = serde_json::to_vec(&reference_deduplicate(items.clone())).unwrap();
+        let actual = serde_json::to_vec(&deduplicate(items)).unwrap();
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn spatial_index_matches_reference_across_negative_cell_boundaries() {
+        let items = vec![
+            grenade("de_mirage", [-10.0, 0.0, 0.0], [0.0, 0.0, 0.0]),
+            grenade("de_mirage", [-0.01, 0.0, 0.0], [19.99, 0.0, 0.0]),
+            grenade("de_mirage", [0.0, 0.0, 0.0], [20.0, 0.0, 0.0]),
+            grenade("de_mirage", [10.0, 0.0, 0.0], [40.0, 0.0, 0.0]),
+        ];
+        assert_eq!(
+            serde_json::to_vec(&deduplicate(items.clone())).unwrap(),
+            serde_json::to_vec(&reference_deduplicate(items)).unwrap()
         );
     }
 }

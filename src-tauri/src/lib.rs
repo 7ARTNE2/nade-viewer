@@ -1170,6 +1170,7 @@ fn try_begin_import(status: &Mutex<ImportStatus>) -> AppResult<()> {
     Ok(())
 }
 
+#[cfg(test)]
 fn parse_import(reader: impl Read) -> AppResult<TypedImportFile> {
     let value: Value = serde_json::from_reader(reader).map_err(|error| AppError::Import {
         code: "invalid_json",
@@ -1178,6 +1179,7 @@ fn parse_import(reader: impl Read) -> AppResult<TypedImportFile> {
     parse_import_value(value)
 }
 
+#[cfg(test)]
 fn parse_import_bytes(bytes: &[u8], messagepack: bool) -> AppResult<TypedImportFile> {
     if !messagepack {
         return parse_import(bytes);
@@ -1390,12 +1392,7 @@ fn import_typed_path_blocking(state: &AppState, path: &str) -> AppResult<JsonImp
         // both a 600+ MB byte buffer and an intermediate JSON value in memory.
         parse_messagepack_file(&source_path)?
     } else {
-        let file = fs::File::open(&source_path).map_err(|error| AppError::Import {
-            code: "file_unavailable",
-            message: format!("Cannot open import file '{path}': {error}"),
-        })?;
-        let bytes = read_import_bytes(file)?;
-        parse_import_bytes(&bytes, false)?
+        parse_json_file(&source_path)?
     };
     match imported {
         TypedImportFile::GrenadeIndex(index) => {
@@ -1408,16 +1405,7 @@ fn import_typed_path_blocking(state: &AppState, path: &str) -> AppResult<JsonImp
     }
 }
 
-fn parse_messagepack_file(path: &Path) -> AppResult<TypedImportFile> {
-    let shape_file = fs::File::open(path).map_err(|error| AppError::Import {
-        code: "file_unavailable",
-        message: format!("Cannot open downloaded library: {error}"),
-    })?;
-    let shape: ImportEnvelopeShape =
-        rmp_serde::from_read(BufReader::new(shape_file)).map_err(|error| AppError::Import {
-            code: "invalid_messagepack",
-            message: format!("Invalid MessagePack: {error}"),
-        })?;
+fn validate_import_shape(shape: &ImportEnvelopeShape) -> AppResult<()> {
     if shape.canonical_grenades && shape.grenades {
         return Err(AppError::Import {
             code: "ambiguous_format",
@@ -1455,6 +1443,53 @@ fn parse_messagepack_file(path: &Path) -> AppResult<TypedImportFile> {
             });
         }
     }
+    Ok(())
+}
+
+fn parse_json_file(path: &Path) -> AppResult<TypedImportFile> {
+    let shape_file = fs::File::open(path).map_err(|error| AppError::Import {
+        code: "file_unavailable",
+        message: format!("Cannot open import file '{}': {error}", path.display()),
+    })?;
+    let shape: ImportEnvelopeShape =
+        serde_json::from_reader(BufReader::new(shape_file)).map_err(|error| AppError::Import {
+            code: "invalid_json",
+            message: format!("Invalid JSON: {error}"),
+        })?;
+    validate_import_shape(&shape)?;
+
+    let file = fs::File::open(path).map_err(|error| AppError::Import {
+        code: "file_unavailable",
+        message: format!("Cannot open import file '{}': {error}", path.display()),
+    })?;
+    if shape.canonical_grenades {
+        serde_json::from_reader(BufReader::new(file))
+            .map(TypedImportFile::GrenadeIndex)
+            .map_err(|error| AppError::Import {
+                code: "invalid_canonical_format",
+                message: format!("Invalid grenade_index import: {error}"),
+            })
+    } else {
+        serde_json::from_reader(BufReader::new(file))
+            .map(TypedImportFile::CoreNades)
+            .map_err(|error| AppError::Import {
+                code: "invalid_core_format",
+                message: format!("Invalid Core Nades import: {error}"),
+            })
+    }
+}
+
+fn parse_messagepack_file(path: &Path) -> AppResult<TypedImportFile> {
+    let shape_file = fs::File::open(path).map_err(|error| AppError::Import {
+        code: "file_unavailable",
+        message: format!("Cannot open downloaded library: {error}"),
+    })?;
+    let shape: ImportEnvelopeShape =
+        rmp_serde::from_read(BufReader::new(shape_file)).map_err(|error| AppError::Import {
+            code: "invalid_messagepack",
+            message: format!("Invalid MessagePack: {error}"),
+        })?;
+    validate_import_shape(&shape)?;
 
     let file = fs::File::open(path)?;
     if shape.canonical_grenades {
@@ -1474,6 +1509,7 @@ fn parse_messagepack_file(path: &Path) -> AppResult<TypedImportFile> {
     }
 }
 
+#[cfg(test)]
 fn parse_import_value(value: Value) -> AppResult<TypedImportFile> {
     let object = value.as_object().ok_or_else(|| AppError::Import {
         code: "invalid_top_level",
@@ -1535,17 +1571,6 @@ fn parse_import_value(value: Value) -> AppResult<TypedImportFile> {
                 message: format!("Invalid Core Nades import: {error}"),
             })
     }
-}
-
-fn read_import_bytes(file: fs::File) -> AppResult<Vec<u8>> {
-    let mut bytes = Vec::new();
-    BufReader::new(file)
-        .read_to_end(&mut bytes)
-        .map_err(|error| AppError::Import {
-            code: "file_unavailable",
-            message: format!("Cannot read import file: {error}"),
-        })?;
-    Ok(bytes)
 }
 
 fn is_messagepack_path(path: &Path) -> bool {
@@ -4963,6 +4988,26 @@ mod tests {
                 .and_then(Value::as_str),
             Some("M1+JUMP")
         );
+    }
+
+    #[test]
+    fn parses_json_file_without_building_a_root_value() {
+        let root = std::env::temp_dir().join(format!(
+            "nade-viewer-json-{}-{}",
+            std::process::id(),
+            Utc::now().timestamp_nanos_opt().unwrap_or_default()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let path = root.join("library.json");
+        fs::write(
+            &path,
+            br#"{"version":1,"canonical_grenades":[{"map":"de_test"}]}"#,
+        )
+        .unwrap();
+
+        let parsed = parse_json_file(&path).unwrap();
+        assert!(matches!(parsed, TypedImportFile::GrenadeIndex(_)));
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
