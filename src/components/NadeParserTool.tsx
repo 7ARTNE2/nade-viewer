@@ -1,15 +1,18 @@
 import { invoke } from '@tauri-apps/api/core';
 import { useEffect, useRef, useState } from 'react';
 import {
+  Check,
   CheckCircle2,
   Database,
   Download,
   FileArchive,
   FileJson,
   FilePlus2,
+  Fingerprint,
   FolderOpen,
   FolderPlus,
   Gauge,
+  Layers,
   Package,
   Play,
   RefreshCw,
@@ -22,6 +25,7 @@ import {
 import { importJson } from '../lib/tauri';
 import { useI18n } from '../i18n';
 import DestructiveConfirmDialog from './DestructiveConfirmDialog';
+import WorkersSelect from './WorkersSelect';
 
 type Props = { refreshImports?: () => Promise<void> };
 type Status = {
@@ -68,7 +72,9 @@ export default function NadeParserTool({ refreshImports }: Props) {
   const [busy, setBusy] = useState(false);
   const [source, setSource] = useState<'raw' | 'canonical'>('raw');
   const [counts, setCounts] = useState<[number, number]>([0, 0]);
-  const [confirmation, setConfirmation] = useState<'uninstall' | 'clear' | null>(null);
+  const [confirmation, setConfirmation] = useState<
+    'uninstall' | 'clear' | null
+  >(null);
   const [confirmationError, setConfirmationError] = useState('');
   const [confirmBusy, setConfirmBusy] = useState(false);
   const confirmingRef = useRef(false);
@@ -157,16 +163,22 @@ export default function NadeParserTool({ refreshImports }: Props) {
     setError('');
     setMessage('');
     try {
-      await invoke(confirmation === 'uninstall' ? 'uninstall_nade_parser' : 'clear_parser_workspace');
+      await invoke(
+        confirmation === 'uninstall'
+          ? 'uninstall_nade_parser'
+          : 'clear_parser_workspace',
+      );
       // Commit the successful action before refreshing so a refresh failure never invites a retry.
       if (confirmation === 'uninstall') setInstalled(false);
       else {
         setCounts([0, 0]);
         setSource('raw');
       }
-      setMessage(confirmation === 'uninstall'
-        ? tr('Plugin removed.', 'Плагин удалён.')
-        : tr('Parser database cleared.', 'База данных парсера очищена.'));
+      setMessage(
+        confirmation === 'uninstall'
+          ? tr('Plugin removed.', 'Плагин удалён.')
+          : tr('Parser database cleared.', 'База данных парсера очищена.'),
+      );
       try {
         await refresh();
       } catch (e) {
@@ -345,7 +357,7 @@ export default function NadeParserTool({ refreshImports }: Props) {
               </div>
             )}
             <div className="tools-parser-options">
-              <label className="tools-workers">
+              <div className="tools-workers">
                 <span>
                   <b>{tr('Parallel workers', 'Параллельные воркеры')}</b>
                   <small>
@@ -355,36 +367,34 @@ export default function NadeParserTool({ refreshImports }: Props) {
                     )}
                   </small>
                 </span>
-                <select
+                <WorkersSelect
                   value={workers}
                   disabled={locked}
-                  onChange={(event) => setWorkers(Number(event.target.value))}
-                >
-                  {[1, 2, 3, 4, 5, 6, 7, 8].map((count) => (
-                    <option key={count} value={count}>
-                      {count}
-                      {count === 2
-                        ? ` — ${tr('recommended', 'рекомендуется')}`
-                        : ''}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="tools-check">
-                <input
-                  type="checkbox"
-                  disabled={locked}
-                  checked={dedup}
-                  onChange={(e) => setDedup(e.target.checked)}
+                  onChange={setWorkers}
                 />
-                <span>
-                  <b>{tr('Build canonical set', 'Создать канонический набор')}</b>
+              </div>
+              <label className={`tools-check ${dedup ? 'is-on' : ''}`}>
+                <span className="tools-check-copy">
+                  <b>
+                    {tr('Build canonical set', 'Создать канонический набор')}
+                  </b>
                   <small>
                     {tr(
                       'Keep raw throws available for later recomputation.',
                       'Исходные броски сохранятся для повторной обработки.',
                     )}
                   </small>
+                </span>
+                <span className="tools-check-switch">
+                  <input
+                    type="checkbox"
+                    disabled={locked}
+                    checked={dedup}
+                    onChange={(e) => setDedup(e.target.checked)}
+                  />
+                  <span className="tools-check-knob">
+                    <Check size={11} strokeWidth={3} aria-hidden="true" />
+                  </span>
                 </span>
               </label>
             </div>
@@ -551,7 +561,18 @@ export default function NadeParserTool({ refreshImports }: Props) {
                     checked={source === 'raw'}
                     onChange={() => setSource('raw')}
                   />
-                  <span>{tr('All throws', 'Все броски')}</span>
+                  <span className="tools-dataset-icon" aria-hidden="true">
+                    <Layers size={15} />
+                  </span>
+                  <span className="tools-dataset-copy">
+                    <strong>{tr('All throws', 'Все броски')}</strong>
+                    <small>
+                      {tr(
+                        'Every parsed throw as-is',
+                        'Каждый разобранный бросок как есть',
+                      )}
+                    </small>
+                  </span>
                 </label>
                 <label>
                   <input
@@ -561,7 +582,18 @@ export default function NadeParserTool({ refreshImports }: Props) {
                     checked={source === 'canonical'}
                     onChange={() => setSource('canonical')}
                   />
-                  <span>{tr('Deduplicated', 'Без повторов')}</span>
+                  <span className="tools-dataset-icon" aria-hidden="true">
+                    <Fingerprint size={15} />
+                  </span>
+                  <span className="tools-dataset-copy">
+                    <strong>{tr('Deduplicated', 'Без повторов')}</strong>
+                    <small>
+                      {tr(
+                        'Similar throws merged into one',
+                        'Похожие броски объединены в один',
+                      )}
+                    </small>
+                  </span>
                 </label>
               </div>
             </fieldset>
@@ -572,11 +604,15 @@ export default function NadeParserTool({ refreshImports }: Props) {
                 onClick={() =>
                   void action(async () => {
                     await invoke('deduplicate_parser_workspace');
-                    const nextStatus = await invoke<Status>('get_nade_parser_status');
+                    const nextStatus = await invoke<Status>(
+                      'get_nade_parser_status',
+                    );
                     setStatus(nextStatus);
                     if (!nextStatus.running) {
                       setCounts(
-                        await invoke<[number, number]>('get_parser_workspace_counts'),
+                        await invoke<[number, number]>(
+                          'get_parser_workspace_counts',
+                        ),
                       );
                     }
                   })
@@ -585,47 +621,51 @@ export default function NadeParserTool({ refreshImports }: Props) {
                 <RefreshCw size={14} />
                 {tr('Recompute', 'Пересчитать')}
               </button>
-              <div className="tools-export-formats" role="group" aria-label={tr('Export format', 'Формат экспорта')}>
-              <button
-                className="btn tools-format-btn"
-                aria-label={tr('Export JSON', 'Экспорт JSON')}
-                disabled={locked}
-                onClick={() =>
-                  void action(async () => {
-                    const p = await invoke<string | null>(
-                      'save_parser_output',
-                      {
-                        source,
-                        format: 'json',
-                      },
-                    );
-                    if (p) setMessage(`${tr('Saved', 'Сохранено')}: ${p}`);
-                  })
-                }
+              <div
+                className="tools-export-formats"
+                role="group"
+                aria-label={tr('Export format', 'Формат экспорта')}
               >
-                <FileJson size={14} />
-                JSON
-              </button>
-              <button
-                className="btn tools-format-btn"
-                aria-label={tr('Export MPK', 'Экспорт MPK')}
-                disabled={locked}
-                onClick={() =>
-                  void action(async () => {
-                    const p = await invoke<string | null>(
-                      'save_parser_output',
-                      {
-                        source,
-                        format: 'msgpack',
-                      },
-                    );
-                    if (p) setMessage(`${tr('Saved', 'Сохранено')}: ${p}`);
-                  })
-                }
-              >
-                <FileArchive size={16} aria-hidden="true" />
-                MPK
-              </button>
+                <button
+                  className="btn tools-format-btn"
+                  aria-label={tr('Export JSON', 'Экспорт JSON')}
+                  disabled={locked}
+                  onClick={() =>
+                    void action(async () => {
+                      const p = await invoke<string | null>(
+                        'save_parser_output',
+                        {
+                          source,
+                          format: 'json',
+                        },
+                      );
+                      if (p) setMessage(`${tr('Saved', 'Сохранено')}: ${p}`);
+                    })
+                  }
+                >
+                  <FileJson size={14} />
+                  JSON
+                </button>
+                <button
+                  className="btn tools-format-btn"
+                  aria-label={tr('Export MPK', 'Экспорт MPK')}
+                  disabled={locked}
+                  onClick={() =>
+                    void action(async () => {
+                      const p = await invoke<string | null>(
+                        'save_parser_output',
+                        {
+                          source,
+                          format: 'msgpack',
+                        },
+                      );
+                      if (p) setMessage(`${tr('Saved', 'Сохранено')}: ${p}`);
+                    })
+                  }
+                >
+                  <FileArchive size={16} aria-hidden="true" />
+                  MPK
+                </button>
               </div>
             </div>
             <button
@@ -655,22 +695,54 @@ export default function NadeParserTool({ refreshImports }: Props) {
       )}
       {confirmation && (
         <DestructiveConfirmDialog
-          eyebrow={confirmation === 'uninstall'
-            ? tr('Remove plugin', 'Удаление плагина')
-            : tr('Clear database', 'Очистка базы данных')}
-          title={confirmation === 'uninstall' ? 'Nade Parser' : tr('Parser workspace', 'Рабочая база парсера')}
-          description={confirmation === 'uninstall'
-            ? tr('Parsing will be unavailable until you install the plugin again. Your parser data and Viewer libraries will be preserved.', 'Парсинг будет недоступен до повторной установки плагина. Данные парсера и библиотеки Viewer сохранятся.')
-            : tr('Raw throws, indexed demos and the canonical set will be permanently removed. Imported Viewer libraries will be preserved.', 'Исходные броски, обработанные демо и канонический набор будут удалены без возможности восстановления. Импортированные библиотеки Viewer сохранятся.')}
-          metadata={confirmation === 'uninstall' ? <>
-            <span>{tr('Plugin', 'Плагин')}</span><strong>Nade Parser</strong>
-            <span>{tr('Data and libraries', 'Данные и библиотеки')}</span><strong>{tr('Preserved', 'Сохранятся')}</strong>
-          </> : <>
-            <span>{tr('Raw throws', 'Исходные броски')}</span><strong>{counts[0].toLocaleString()}</strong>
-            <span>{tr('Indexed demos', 'Демо в базе')}</span><strong>{counts[1].toLocaleString()}</strong>
-          </>}
-          confirmLabel={confirmation === 'uninstall' ? tr('Remove plugin', 'Удалить плагин') : tr('Clear database', 'Очистить базу')}
-          pendingLabel={confirmation === 'uninstall' ? tr('Removing...', 'Удаление...') : tr('Clearing...', 'Очистка...')}
+          eyebrow={
+            confirmation === 'uninstall'
+              ? tr('Remove plugin', 'Удаление плагина')
+              : tr('Clear database', 'Очистка базы данных')
+          }
+          title={
+            confirmation === 'uninstall'
+              ? 'Nade Parser'
+              : tr('Parser workspace', 'Рабочая база парсера')
+          }
+          description={
+            confirmation === 'uninstall'
+              ? tr(
+                  'Parsing will be unavailable until you install the plugin again. Your parser data and Viewer libraries will be preserved.',
+                  'Парсинг будет недоступен до повторной установки плагина. Данные парсера и библиотеки Viewer сохранятся.',
+                )
+              : tr(
+                  'Raw throws, indexed demos and the canonical set will be permanently removed. Imported Viewer libraries will be preserved.',
+                  'Исходные броски, обработанные демо и канонический набор будут удалены без возможности восстановления. Импортированные библиотеки Viewer сохранятся.',
+                )
+          }
+          metadata={
+            confirmation === 'uninstall' ? (
+              <>
+                <span>{tr('Plugin', 'Плагин')}</span>
+                <strong>Nade Parser</strong>
+                <span>{tr('Data and libraries', 'Данные и библиотеки')}</span>
+                <strong>{tr('Preserved', 'Сохранятся')}</strong>
+              </>
+            ) : (
+              <>
+                <span>{tr('Raw throws', 'Исходные броски')}</span>
+                <strong>{counts[0].toLocaleString()}</strong>
+                <span>{tr('Indexed demos', 'Демо в базе')}</span>
+                <strong>{counts[1].toLocaleString()}</strong>
+              </>
+            )
+          }
+          confirmLabel={
+            confirmation === 'uninstall'
+              ? tr('Remove plugin', 'Удалить плагин')
+              : tr('Clear database', 'Очистить базу')
+          }
+          pendingLabel={
+            confirmation === 'uninstall'
+              ? tr('Removing...', 'Удаление...')
+              : tr('Clearing...', 'Очистка...')
+          }
           busy={confirmBusy}
           error={confirmationError}
           onCancel={closeConfirmation}
