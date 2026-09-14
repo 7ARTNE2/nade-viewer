@@ -13,6 +13,7 @@ import {
   Package,
   Play,
   RefreshCw,
+  Square,
   ShieldCheck,
   Timer,
   Trash2,
@@ -32,6 +33,7 @@ type Status = {
   total: number;
   current?: string;
   elapsed_ms: number;
+  workers: number;
 };
 
 function formatDuration(milliseconds: number) {
@@ -55,10 +57,13 @@ export default function NadeParserTool({ refreshImports }: Props) {
     completed: 0,
     total: 0,
     elapsed_ms: 0,
+    workers: 4,
   });
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [dedup, setDedup] = useState(false);
+  const [workers, setWorkers] = useState(2);
+  const [stopping, setStopping] = useState(false);
   const [paths, setPaths] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [source, setSource] = useState<'raw' | 'canonical'>('raw');
@@ -98,6 +103,7 @@ export default function NadeParserTool({ refreshImports }: Props) {
         const nextStatus = await invoke<Status>('get_nade_parser_status');
         if (!active) return;
         setStatus(nextStatus);
+        if (!nextStatus.running) setStopping(false);
         if (nextStatus.running) {
           timer = window.setTimeout(poll, 500);
           return;
@@ -184,6 +190,8 @@ export default function NadeParserTool({ refreshImports }: Props) {
       'Сохранение общего результата...',
     ),
     complete: tr('Complete', 'Завершено'),
+    cancelling: tr('Stopping parser...', 'Остановка парсера...'),
+    cancelled: tr('Parsing stopped', 'Парсинг остановлен'),
     failed: tr(
       'Job failed. No new result was published.',
       'Задача завершилась ошибкой. Новый результат не сохранён.',
@@ -336,49 +344,97 @@ export default function NadeParserTool({ refreshImports }: Props) {
                 </span>
               </div>
             )}
-            <label className="tools-check">
-              <input
-                type="checkbox"
-                disabled={locked}
-                checked={dedup}
-                onChange={(e) => setDedup(e.target.checked)}
-              />
-              <span>
-                <b>{tr('Build canonical set', 'Создать канонический набор')}</b>
-                <small>
-                  {tr(
-                    'Keep raw throws available for later recomputation.',
-                    'Исходные броски сохранятся для повторной обработки.',
-                  )}
-                </small>
-              </span>
-            </label>
-            <button
-              className="btn primary tools-run"
-              disabled={locked || !installed || !paths.length}
-              onClick={() =>
-                void action(async () => {
-                  await invoke('run_nade_parser_batch', {
-                    paths,
-                    deduplicate: dedup,
+            <div className="tools-parser-options">
+              <label className="tools-workers">
+                <span>
+                  <b>{tr('Parallel workers', 'Параллельные воркеры')}</b>
+                  <small>
+                    {tr(
+                      'Use fewer workers for HDD or constrained storage.',
+                      'Для HDD или медленного диска используйте меньше воркеров.',
+                    )}
+                  </small>
+                </span>
+                <select
+                  value={workers}
+                  disabled={locked}
+                  onChange={(event) => setWorkers(Number(event.target.value))}
+                >
+                  {[1, 2, 3, 4, 5, 6, 7, 8].map((count) => (
+                    <option key={count} value={count}>
+                      {count}
+                      {count === 2
+                        ? ` — ${tr('recommended', 'рекомендуется')}`
+                        : ''}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="tools-check">
+                <input
+                  type="checkbox"
+                  disabled={locked}
+                  checked={dedup}
+                  onChange={(e) => setDedup(e.target.checked)}
+                />
+                <span>
+                  <b>{tr('Build canonical set', 'Создать канонический набор')}</b>
+                  <small>
+                    {tr(
+                      'Keep raw throws available for later recomputation.',
+                      'Исходные броски сохранятся для повторной обработки.',
+                    )}
+                  </small>
+                </span>
+              </label>
+            </div>
+            {status.running ? (
+              <button
+                className="btn danger-action tools-run"
+                disabled={stopping}
+                onClick={() => {
+                  setStopping(true);
+                  setError('');
+                  void invoke('stop_nade_parser').catch((e) => {
+                    setStopping(false);
+                    setError(String(e));
                   });
-                  const nextStatus = await invoke<Status>(
-                    'get_nade_parser_status',
-                  );
-                  setStatus(nextStatus);
-                  if (!nextStatus.running) {
-                    setCounts(
-                      await invoke<[number, number]>(
-                        'get_parser_workspace_counts',
-                      ),
+                }}
+              >
+                <Square size={15} />
+                {stopping
+                  ? tr('Stopping...', 'Останавливаем...')
+                  : tr('Stop parsing', 'Остановить парсинг')}
+              </button>
+            ) : (
+              <button
+                className="btn primary tools-run"
+                disabled={locked || !installed || !paths.length}
+                onClick={() =>
+                  void action(async () => {
+                    await invoke('run_nade_parser_batch', {
+                      paths,
+                      deduplicate: dedup,
+                      workers,
+                    });
+                    const nextStatus = await invoke<Status>(
+                      'get_nade_parser_status',
                     );
-                  }
-                })
-              }
-            >
-              <Play size={15} />
-              {tr('Start parsing', 'Начать парсинг')}
-            </button>
+                    setStatus(nextStatus);
+                    if (!nextStatus.running) {
+                      setCounts(
+                        await invoke<[number, number]>(
+                          'get_parser_workspace_counts',
+                        ),
+                      );
+                    }
+                  })
+                }
+              >
+                <Play size={15} />
+                {tr('Start parsing', 'Начать парсинг')}
+              </button>
+            )}
           </div>
           <div className="tools-card tools-status">
             <div className="tools-card-title">
@@ -414,9 +470,17 @@ export default function NadeParserTool({ refreshImports }: Props) {
                     ? tr('Elapsed', 'Прошло')
                     : status.stage === 'failed'
                       ? tr('Failed after', 'Ошибка через')
-                      : tr('Completed in', 'Выполнено за')}
+                      : status.stage === 'cancelled'
+                        ? tr('Stopped after', 'Остановлено через')
+                        : tr('Completed in', 'Выполнено за')}
                 </span>
                 <strong>{formatDuration(status.elapsed_ms)}</strong>
+              </div>
+            )}
+            {status.running && status.workers > 0 && (
+              <div className="tools-worker-status">
+                <span>{tr('Active worker limit', 'Лимит воркеров')}</span>
+                <b>{status.workers}</b>
               </div>
             )}
             <div className="tools-current" role="status">

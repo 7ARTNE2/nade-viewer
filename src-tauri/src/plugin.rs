@@ -5,7 +5,10 @@ use std::{
     fs::File,
     path::{Path, PathBuf},
     process::{Command, Stdio},
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    },
     time::{Duration, Instant, SystemTime},
 };
 use tauri::{AppHandle, Manager};
@@ -26,6 +29,7 @@ pub(crate) struct ParserStatus {
     pub total: usize,
     pub current: Option<String>,
     pub elapsed_ms: u64,
+    pub workers: usize,
     #[serde(skip)]
     started_at: Option<Instant>,
 }
@@ -58,6 +62,7 @@ impl ParserStatus {
             Ok(output) => {
                 self.stage = "complete".into();
                 self.output = output.map(|path| path.display().to_string());
+                self.error = None;
             }
             Err(error) => {
                 self.stage = "failed".into();
@@ -79,6 +84,62 @@ fn exe(app: &AppHandle) -> PathBuf {
 }
 fn state(app: &AppHandle) -> Arc<Mutex<ParserStatus>> {
     app.state::<Arc<Mutex<ParserStatus>>>().inner().clone()
+}
+
+#[derive(Default)]
+pub(crate) struct ParserControl {
+    cancel: AtomicBool,
+    children: Mutex<Vec<u32>>,
+}
+
+fn control(app: &AppHandle) -> Arc<ParserControl> {
+    app.state::<Arc<ParserControl>>().inner().clone()
+}
+
+impl ParserControl {
+    fn reset(&self) {
+        self.cancel.store(false, Ordering::Release);
+        self.children.lock().unwrap().clear();
+    }
+
+    fn cancel(&self) {
+        self.cancel.store(true, Ordering::Release);
+        let children = self.children.lock().unwrap().clone();
+        for pid in children {
+            terminate_process(pid);
+        }
+    }
+
+    fn is_cancelled(&self) -> bool {
+        self.cancel.load(Ordering::Acquire)
+    }
+
+    fn register(&self, pid: u32) {
+        self.children.lock().unwrap().push(pid);
+    }
+
+    fn unregister(&self, pid: u32) {
+        self.children.lock().unwrap().retain(|child| *child != pid);
+    }
+}
+
+fn terminate_process(pid: u32) {
+    #[cfg(windows)]
+    {
+        let _ = Command::new("taskkill")
+            .args(["/PID", &pid.to_string(), "/T", "/F"])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = Command::new("kill")
+            .args(["-TERM", &pid.to_string()])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    }
 }
 
 fn parser_supports_stdout(executable: &Path) -> bool {
@@ -248,10 +309,13 @@ fn bounded_worker_count(configured: usize, available: usize, job_count: usize) -
         .min(job_count.max(1))
 }
 
-fn parser_worker_count(job_count: usize) -> usize {
-    let configured = std::env::var("NADE_PARSER_MAX_WORKERS")
-        .ok()
-        .and_then(|value| value.parse::<usize>().ok())
+fn parser_worker_count(requested: Option<usize>, job_count: usize) -> usize {
+    let configured = requested
+        .or_else(|| {
+            std::env::var("NADE_PARSER_MAX_WORKERS")
+                .ok()
+                .and_then(|value| value.parse::<usize>().ok())
+        })
         .unwrap_or(DEFAULT_PARSER_WORKERS);
     let available = std::thread::available_parallelism()
         .map(usize::from)
@@ -281,6 +345,7 @@ fn run_parser_job(
     executable: &Path,
     workspace_path: &Path,
     stdout_protocol: bool,
+    control: &ParserControl,
     job: ParseJob,
 ) -> ParseJobResult {
     let output_path = spool_path(workspace_path, job.ordinal, "json");
@@ -289,6 +354,9 @@ fn run_parser_job(
     remove_spool_file(&stderr_path);
 
     let result = (|| -> Result<(), String> {
+        if control.is_cancelled() {
+            return Err("Parsing cancelled".into());
+        }
         let stderr = File::create(&stderr_path)
             .map_err(|error| format!("{}: stderr: {error}", job.file.display()))?;
         let mut command = Command::new(executable);
@@ -312,9 +380,22 @@ fn run_parser_job(
             command.stdout(Stdio::null());
         }
 
-        let status = command
-            .status()
+        let mut child = command
+            .spawn()
             .map_err(|error| format!("{}: {error}", job.file.display()))?;
+        let pid = child.id();
+        control.register(pid);
+        if control.is_cancelled() {
+            terminate_process(pid);
+        }
+        let status = child
+            .wait()
+            .map_err(|error| format!("{}: {error}", job.file.display()));
+        control.unregister(pid);
+        let status = status?;
+        if control.is_cancelled() {
+            return Err("Parsing cancelled".into());
+        }
         if status.success() {
             return Ok(());
         }
@@ -400,33 +481,47 @@ pub(crate) fn run_nade_parser(
     app: AppHandle,
     demo_path: String,
     deduplicate: bool,
+    workers: Option<usize>,
 ) -> Result<(), String> {
-    run_nade_parser_batch(app, vec![demo_path], deduplicate)
+    run_nade_parser_batch(app, vec![demo_path], deduplicate, workers)
 }
 #[tauri::command]
 pub(crate) fn run_nade_parser_batch(
     app: AppHandle,
     paths: Vec<String>,
     deduplicate: bool,
+    workers: Option<usize>,
 ) -> Result<(), String> {
     let executable = exe(&app);
     if !executable.is_file() {
         return Err("Nade Parser plugin is not installed".into());
     }
     let stdout_protocol = parser_supports_stdout(&executable);
+    if workers.is_some_and(|workers| !(1..=MAX_PARSER_WORKERS).contains(&workers)) {
+        return Err(format!(
+            "Worker count must be between 1 and {MAX_PARSER_WORKERS}"
+        ));
+    }
     let workspace_path = workspace_path(&app)?;
     let s = state(&app);
+    let parser_control = control(&app);
     {
         let mut status = s.lock().unwrap();
         if status.running {
             return Err("A parser job is already running".into());
         }
+        parser_control.reset();
         status.start("scanning");
+        status.workers = workers.unwrap_or(DEFAULT_PARSER_WORKERS);
     }
     let worker_state = s.clone();
+    let worker_control = parser_control.clone();
     let spawn = std::thread::Builder::new().spawn(move || {
         let result = (|| -> Result<PathBuf, String> {
             let files = discover_demos(&paths)?;
+            if worker_control.is_cancelled() {
+                return Err("Parsing cancelled".into());
+            }
             {
                 let mut x = worker_state.lock().unwrap();
                 x.total = files.len();
@@ -453,7 +548,8 @@ pub(crate) fn run_nade_parser_batch(
                 }
             }
 
-            let worker_count = parser_worker_count(jobs.len());
+            let worker_count = parser_worker_count(workers, jobs.len());
+            worker_state.lock().unwrap().workers = worker_count;
             let changed_ordinals = jobs.iter().map(|job| job.ordinal).collect::<BTreeSet<_>>();
             let (job_sender, job_receiver) = std::sync::mpsc::sync_channel(worker_count);
             let job_receiver = Arc::new(Mutex::new(job_receiver));
@@ -469,6 +565,7 @@ pub(crate) fn run_nade_parser_batch(
                     let workspace_path = workspace_path.as_path();
                     let job_receiver = job_receiver.clone();
                     let result_sender = result_sender.clone();
+                    let worker_control = worker_control.clone();
                     scope.spawn(move || loop {
                         let job = {
                             let receiver = job_receiver.lock().unwrap();
@@ -482,6 +579,7 @@ pub(crate) fn run_nade_parser_batch(
                                 executable,
                                 workspace_path,
                                 stdout_protocol,
+                                &worker_control,
                                 job,
                             ))
                             .is_err()
@@ -494,7 +592,15 @@ pub(crate) fn run_nade_parser_batch(
 
                 let mut failure = None;
                 'coordinator: while next_job < jobs.len() || in_flight > 0 {
+                    if worker_control.is_cancelled() {
+                        failure = Some("Parsing cancelled".into());
+                        break;
+                    }
                     while next_job < jobs.len() && in_flight + reorder.len() < worker_count {
+                        if worker_control.is_cancelled() {
+                            failure = Some("Parsing cancelled".into());
+                            break 'coordinator;
+                        }
                         if let Err(error) = job_sender.send(jobs[next_job].clone()) {
                             failure = Some(error.to_string());
                             break 'coordinator;
@@ -567,6 +673,9 @@ pub(crate) fn run_nade_parser_batch(
                 }
             })?;
 
+            if worker_control.is_cancelled() {
+                return Err("Parsing cancelled".into());
+            }
             while next_commit < worker_state.lock().unwrap().total {
                 if cached_ordinals.remove(&next_commit) {
                     next_commit += 1;
@@ -579,6 +688,9 @@ pub(crate) fn run_nade_parser_batch(
             }
             worker_state.lock().unwrap().completed = next_commit;
             if deduplicate {
+                if worker_control.is_cancelled() {
+                    return Err("Parsing cancelled".into());
+                }
                 {
                     let mut status = worker_state.lock().unwrap();
                     status.stage = "deduplicating".into();
@@ -594,7 +706,18 @@ pub(crate) fn run_nade_parser_batch(
             }
             Ok(workspace_path.clone())
         })();
-        worker_state.lock().unwrap().finish(result.map(Some));
+        let mut status = worker_state.lock().unwrap();
+        if worker_control.is_cancelled() {
+            status.update_elapsed();
+            status.started_at = None;
+            status.running = false;
+            status.current = None;
+            status.stage = "cancelled".into();
+            status.error = None;
+            status.output = None;
+        } else {
+            status.finish(result.map(Some));
+        }
     });
     if let Err(error) = spawn {
         let message = error.to_string();
@@ -603,6 +726,22 @@ pub(crate) fn run_nade_parser_batch(
     }
     Ok(())
 }
+
+#[tauri::command]
+pub(crate) fn stop_nade_parser(app: AppHandle) -> Result<(), String> {
+    let status = state(&app);
+    if !status.lock().unwrap().running {
+        return Err("No parser job is running".into());
+    }
+    {
+        let mut status = status.lock().unwrap();
+        status.stage = "cancelling".into();
+        status.current = None;
+    }
+    control(&app).cancel();
+    Ok(())
+}
+
 #[tauri::command]
 pub(crate) fn deduplicate_parser_workspace(app: AppHandle) -> Result<(), String> {
     let workspace_path = workspace_path(&app)?;
@@ -711,6 +850,16 @@ mod tests {
         assert_eq!(bounded_worker_count(0, 16, 100), 1);
         assert_eq!(bounded_worker_count(99, 16, 100), MAX_PARSER_WORKERS);
         assert_eq!(bounded_worker_count(4, 16, 0), 1);
+    }
+
+    #[test]
+    fn parser_control_sets_and_resets_cancellation() {
+        let control = ParserControl::default();
+        assert!(!control.is_cancelled());
+        control.cancel();
+        assert!(control.is_cancelled());
+        control.reset();
+        assert!(!control.is_cancelled());
     }
 
     #[test]
