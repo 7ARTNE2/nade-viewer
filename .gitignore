@@ -22,6 +22,8 @@ src-tauri/gen/
 # Local AI coding-tool skills
 .agents/
 .opencode/
+.impeccable/
+.workbuddy-ai/
 skills-lock.json
 
 # Logs and operating system files

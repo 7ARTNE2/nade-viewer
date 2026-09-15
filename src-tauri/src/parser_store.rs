@@ -71,12 +71,13 @@ pub(crate) fn all(c: &Connection) -> rusqlite::Result<Vec<Value>> {
         .collect()
 }
 
-pub(crate) fn counts(c: &Connection) -> rusqlite::Result<(i64, i64)> {
+pub(crate) fn counts(c: &Connection) -> rusqlite::Result<(i64, i64, i64)> {
     Ok((
         c.query_row("SELECT count(*) FROM throws", [], |r| r.get(0))?,
         c.query_row("SELECT count(*) FROM demos WHERE status='ok'", [], |r| {
             r.get(0)
         })?,
+        c.query_row("SELECT count(*) FROM dedup", [], |r| r.get(0))?,
     ))
 }
 
@@ -209,7 +210,7 @@ mod tests {
 
         import_demo_file(&mut c, "a.dem", 10, 20, &output).unwrap();
 
-        assert_eq!(counts(&c).unwrap(), (1, 1));
+        assert_eq!(counts(&c).unwrap(), (1, 1, 0));
         assert_eq!(
             all(&c).unwrap()[0]["trajectory"],
             serde_json::json!([[1, 2, 3]])
@@ -297,7 +298,7 @@ mod tests {
 
         clear(&mut c).unwrap();
 
-        assert_eq!(counts(&c).unwrap(), (0, 0));
+        assert_eq!(counts(&c).unwrap(), (0, 0, 0));
         assert_eq!(canonical_count(&c).unwrap(), 0);
     }
 

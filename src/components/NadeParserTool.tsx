@@ -85,7 +85,7 @@ export default function NadeParserTool({ refreshImports }: Props) {
   const [paths, setPaths] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [source, setSource] = useState<'raw' | 'canonical'>('raw');
-  const [counts, setCounts] = useState<[number, number]>([0, 0]);
+  const [counts, setCounts] = useState<[number, number, number]>([0, 0, 0]);
   const [confirmation, setConfirmation] = useState<
     'uninstall' | 'clear' | null
   >(null);
@@ -98,7 +98,9 @@ export default function NadeParserTool({ refreshImports }: Props) {
     const info = await invoke<{ installed: boolean }>('get_nade_parser_info');
     setInstalled(info.installed);
     setStatus(await invoke<Status>('get_nade_parser_status'));
-    setCounts(await invoke<[number, number]>('get_parser_workspace_counts'));
+    setCounts(
+      await invoke<[number, number, number]>('get_parser_workspace_counts'),
+    );
   };
   useEffect(() => {
     refresh().catch((e) => setError(String(e)));
@@ -129,7 +131,9 @@ export default function NadeParserTool({ refreshImports }: Props) {
             countedCompletedRef.current = nextStatus.completed;
             try {
               setCounts(
-                await invoke<[number, number]>('get_parser_workspace_counts'),
+                await invoke<[number, number, number]>(
+                  'get_parser_workspace_counts',
+                ),
               );
             } catch (e) {
               if (active) setError(String(e));
@@ -141,7 +145,7 @@ export default function NadeParserTool({ refreshImports }: Props) {
         // Publishing running=false cleans up this effect. Refresh counts first
         // so the terminal response is not discarded and raw import is enabled.
         try {
-          const nextCounts = await invoke<[number, number]>(
+          const nextCounts = await invoke<[number, number, number]>(
             'get_parser_workspace_counts',
           );
           if (active) setCounts(nextCounts);
@@ -203,7 +207,7 @@ export default function NadeParserTool({ refreshImports }: Props) {
       // Commit the successful action before refreshing so a refresh failure never invites a retry.
       if (confirmation === 'uninstall') setInstalled(false);
       else {
-        setCounts([0, 0]);
+        setCounts([0, 0, 0]);
         setSource('raw');
       }
       setMessage(
@@ -578,7 +582,7 @@ export default function NadeParserTool({ refreshImports }: Props) {
                     setStatus(nextStatus);
                     if (!nextStatus.running) {
                       setCounts(
-                        await invoke<[number, number]>(
+                        await invoke<[number, number, number]>(
                           'get_parser_workspace_counts',
                         ),
                       );
@@ -713,6 +717,13 @@ export default function NadeParserTool({ refreshImports }: Props) {
                   <b>{counts[1].toLocaleString()}</b>
                   <span>{tr('demos indexed', 'демо в базе')}</span>
                 </div>
+                <div>
+                  <Fingerprint size={15} />
+                  <b>{counts[2].toLocaleString()}</b>
+                  <span>
+                    {tr('deduplicated throws', 'дедуплицированных бросков')}
+                  </span>
+                </div>
               </div>
               <p className="parser-local-note">
                 <ShieldCheck size={13} aria-hidden="true" />
@@ -798,7 +809,7 @@ export default function NadeParserTool({ refreshImports }: Props) {
                     setStatus(nextStatus);
                     if (!nextStatus.running) {
                       setCounts(
-                        await invoke<[number, number]>(
+                        await invoke<[number, number, number]>(
                           'get_parser_workspace_counts',
                         ),
                       );
@@ -939,6 +950,10 @@ export default function NadeParserTool({ refreshImports }: Props) {
                 <strong>{counts[0].toLocaleString()}</strong>
                 <span>{tr('Indexed demos', 'Демо в базе')}</span>
                 <strong>{counts[1].toLocaleString()}</strong>
+                <span>
+                  {tr('Deduplicated throws', 'Дедуплицированные броски')}
+                </span>
+                <strong>{counts[2].toLocaleString()}</strong>
               </>
             )
           }

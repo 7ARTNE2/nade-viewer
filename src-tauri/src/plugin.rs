@@ -538,7 +538,7 @@ fn workspace_connection(app: &AppHandle) -> Result<rusqlite::Connection, String>
 }
 
 fn ensure_dataset_ready(c: &rusqlite::Connection, canonical: bool) -> Result<(), String> {
-    let (raw, _) = parser_store::counts(c).map_err(|e| e.to_string())?;
+    let (raw, _, _) = parser_store::counts(c).map_err(|e| e.to_string())?;
     if raw == 0 {
         return Err("Parser workspace is empty. Parse demos first.".into());
     }
@@ -845,7 +845,7 @@ pub(crate) fn deduplicate_parser_workspace(app: AppHandle) -> Result<(), String>
     Ok(())
 }
 #[tauri::command]
-pub(crate) fn get_parser_workspace_counts(app: AppHandle) -> Result<(i64, i64), String> {
+pub(crate) fn get_parser_workspace_counts(app: AppHandle) -> Result<(i64, i64, i64), String> {
     parser_store::counts(&workspace_connection(&app)?).map_err(|e| e.to_string())
 }
 
