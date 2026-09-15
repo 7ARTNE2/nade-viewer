@@ -139,7 +139,7 @@ export function recordGrenadeView(id: number) {
   return invoke<boolean>('record_grenade_view', { id });
 }
 
-export function getRecentlyViewedGrenades(limit = 8) {
+export function getRecentlyViewedGrenades(limit = 10) {
   return invoke<ViewedGrenade[]>('get_recently_viewed_grenades', { limit });
 }
 
