@@ -81,6 +81,7 @@ export default function NadeParserTool({ refreshImports }: Props) {
   const [confirmationError, setConfirmationError] = useState('');
   const [confirmBusy, setConfirmBusy] = useState(false);
   const confirmingRef = useRef(false);
+  const countedCompletedRef = useRef(0);
   const installButtonRef = useRef<HTMLButtonElement>(null);
   const refresh = async () => {
     const info = await invoke<{ installed: boolean }>('get_nade_parser_info');
@@ -113,6 +114,16 @@ export default function NadeParserTool({ refreshImports }: Props) {
         if (!active) return;
         if (nextStatus.running) {
           setStatus(nextStatus);
+          if (nextStatus.completed !== countedCompletedRef.current) {
+            countedCompletedRef.current = nextStatus.completed;
+            try {
+              setCounts(
+                await invoke<[number, number]>('get_parser_workspace_counts'),
+              );
+            } catch (e) {
+              if (active) setError(String(e));
+            }
+          }
           timer = window.setTimeout(poll, 500);
           return;
         }
@@ -123,6 +134,7 @@ export default function NadeParserTool({ refreshImports }: Props) {
             'get_parser_workspace_counts',
           );
           if (active) setCounts(nextCounts);
+          countedCompletedRef.current = nextStatus.completed;
         } catch (e) {
           if (active) setError(String(e));
         } finally {
