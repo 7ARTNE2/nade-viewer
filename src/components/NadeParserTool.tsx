@@ -14,6 +14,7 @@ import {
   FolderOpen,
   FolderPlus,
   Gauge,
+  HardDrive,
   Layers,
   Package,
   Play,
@@ -41,6 +42,8 @@ type Status = {
   current?: string;
   elapsed_ms: number;
   workers: number;
+  disk_read_bytes_per_sec: number;
+  disk_write_bytes_per_sec: number;
 };
 
 function formatDuration(milliseconds: number) {
@@ -55,6 +58,12 @@ function formatDuration(milliseconds: number) {
     : `${minutes}:${String(seconds).padStart(2, '0')}`;
 }
 
+function formatDataRate(bytesPerSecond: number) {
+  if (bytesPerSecond < 1024) return `${bytesPerSecond} B/s`;
+  if (bytesPerSecond < 1024 ** 2) return `${(bytesPerSecond / 1024).toFixed(1)} KB/s`;
+  return `${(bytesPerSecond / 1024 ** 2).toFixed(1)} MB/s`;
+}
+
 export default function NadeParserTool({ refreshImports }: Props) {
   const { tr } = useI18n();
   const [installed, setInstalled] = useState(false);
@@ -65,6 +74,8 @@ export default function NadeParserTool({ refreshImports }: Props) {
     total: 0,
     elapsed_ms: 0,
     workers: 4,
+    disk_read_bytes_per_sec: 0,
+    disk_write_bytes_per_sec: 0,
   });
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -665,6 +676,16 @@ export default function NadeParserTool({ refreshImports }: Props) {
               <div className="tools-worker-status">
                 <span>{tr('Active worker limit', 'Лимит воркеров')}</span>
                 <b>{status.workers}</b>
+              </div>
+            )}
+            {status.running && (
+              <div className="tools-runtime parser-disk-rate">
+                <HardDrive size={16} aria-hidden="true" />
+                <span>{tr('Parser disk I/O', 'Диск парсера')}</span>
+                <strong>
+                  {tr('Read', 'Чтение')} {formatDataRate(status.disk_read_bytes_per_sec)} ·{' '}
+                  {tr('Write', 'Запись')} {formatDataRate(status.disk_write_bytes_per_sec)}
+                </strong>
               </div>
             )}
             <div className="tools-current" role="status">

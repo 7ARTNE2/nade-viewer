@@ -30,8 +30,12 @@ pub(crate) struct ParserStatus {
     pub current: Option<String>,
     pub elapsed_ms: u64,
     pub workers: usize,
+    pub disk_read_bytes_per_sec: u64,
+    pub disk_write_bytes_per_sec: u64,
     #[serde(skip)]
     started_at: Option<Instant>,
+    #[serde(skip)]
+    last_io_sample: Option<(Instant, u64, u64)>,
 }
 
 impl ParserStatus {
@@ -44,13 +48,31 @@ impl ParserStatus {
         self.total = 0;
         self.current = None;
         self.elapsed_ms = 0;
+        self.disk_read_bytes_per_sec = 0;
+        self.disk_write_bytes_per_sec = 0;
         self.started_at = Some(Instant::now());
+        self.last_io_sample = None;
     }
 
     fn update_elapsed(&mut self) {
         if let Some(started_at) = self.started_at.as_ref() {
             self.elapsed_ms = started_at.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
         }
+    }
+
+    fn update_io_rate(&mut self, pids: &[u32]) {
+        let now = Instant::now();
+        let (read_bytes, write_bytes) = process_io_bytes(pids);
+        if let Some((sampled_at, previous_read, previous_write)) = self.last_io_sample {
+            let elapsed = now.duration_since(sampled_at).as_secs_f64();
+            if elapsed > 0.0 {
+                self.disk_read_bytes_per_sec =
+                    (read_bytes.saturating_sub(previous_read) as f64 / elapsed) as u64;
+                self.disk_write_bytes_per_sec =
+                    (write_bytes.saturating_sub(previous_write) as f64 / elapsed) as u64;
+            }
+        }
+        self.last_io_sample = Some((now, read_bytes, write_bytes));
     }
 
     fn finish(&mut self, result: Result<Option<PathBuf>, String>) {
@@ -94,6 +116,53 @@ pub(crate) struct ParserControl {
 
 fn control(app: &AppHandle) -> Arc<ParserControl> {
     app.state::<Arc<ParserControl>>().inner().clone()
+}
+
+#[cfg(windows)]
+fn process_io_bytes(pids: &[u32]) -> (u64, u64) {
+    #[repr(C)]
+    struct IoCounters {
+        read_operation_count: u64,
+        write_operation_count: u64,
+        other_operation_count: u64,
+        read_transfer_count: u64,
+        write_transfer_count: u64,
+        other_transfer_count: u64,
+    }
+
+    unsafe extern "system" {
+        fn OpenProcess(
+            desired_access: u32,
+            inherit_handle: i32,
+            process_id: u32,
+        ) -> *mut std::ffi::c_void;
+        fn GetProcessIoCounters(handle: *mut std::ffi::c_void, counters: *mut IoCounters) -> i32;
+        fn CloseHandle(handle: *mut std::ffi::c_void) -> i32;
+    }
+
+    const PROCESS_QUERY_LIMITED_INFORMATION: u32 = 0x1000;
+    let mut read_bytes = 0;
+    let mut write_bytes = 0;
+    for pid in pids {
+        // Child processes may exit between sampling and opening their handle.
+        let handle = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, *pid) };
+        if handle.is_null() {
+            continue;
+        }
+        let mut counters = std::mem::MaybeUninit::<IoCounters>::uninit();
+        if unsafe { GetProcessIoCounters(handle, counters.as_mut_ptr()) } != 0 {
+            let counters = unsafe { counters.assume_init() };
+            read_bytes += counters.read_transfer_count;
+            write_bytes += counters.write_transfer_count;
+        }
+        unsafe { CloseHandle(handle) };
+    }
+    (read_bytes, write_bytes)
+}
+
+#[cfg(not(windows))]
+fn process_io_bytes(_: &[u32]) -> (u64, u64) {
+    (0, 0)
 }
 
 impl ParserControl {
@@ -170,11 +239,14 @@ pub(crate) fn get_nade_parser_info(app: AppHandle) -> PluginInfo {
 }
 #[tauri::command]
 pub(crate) fn get_nade_parser_status(app: AppHandle) -> ParserStatus {
-    let mut snapshot = state(&app).lock().unwrap().clone();
-    if snapshot.running {
-        snapshot.update_elapsed();
+    let parser_control = control(&app);
+    let parser_state = state(&app);
+    let mut status = parser_state.lock().unwrap();
+    if status.running {
+        status.update_elapsed();
+        status.update_io_rate(&parser_control.children.lock().unwrap());
     }
-    snapshot
+    status.clone()
 }
 #[tauri::command]
 pub(crate) fn select_demo_files() -> Vec<String> {
