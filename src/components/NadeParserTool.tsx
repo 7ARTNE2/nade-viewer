@@ -450,6 +450,16 @@ export default function NadeParserTool({ refreshImports }: Props) {
                 <FolderPlus size={16} aria-hidden="true" />
                 {tr('Add folders', 'Добавить папки')}
               </button>
+              {paths.length > 0 && (
+                <button
+                  className="btn"
+                  disabled={locked}
+                  onClick={() => setPaths([])}
+                >
+                  <Trash2 size={16} aria-hidden="true" />
+                  {tr('Clear all', 'Очистить всё')}
+                </button>
+              )}
             </div>
             {paths.length > 0 ? (
               <ul
