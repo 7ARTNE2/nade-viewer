@@ -766,6 +766,891 @@
   color: var(--acid);
 }
 
+/* Nade Parser: a scoped, three-stage operational workspace. */
+.nade-parser {
+  max-width: 1360px;
+  margin: 0 auto;
+  --parser-muted: #a0a9b6;
+}
+
+.nade-parser .parser-header {
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.nade-parser .tools-kicker {
+  margin-bottom: 12px;
+  color: var(--parser-muted);
+  font:
+    600 10px/1.4 Inter,
+    'Segoe UI',
+    sans-serif;
+  letter-spacing: 0.12em;
+}
+
+.parser-heading-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.nade-parser .tools-header h1 {
+  font-size: clamp(24px, 2.4vw, 32px);
+}
+
+.nade-parser .tools-header p {
+  max-width: 620px;
+  margin-top: 10px;
+  color: var(--parser-muted);
+}
+
+.nade-parser .tools-health {
+  padding: 5px 8px;
+  gap: 5px;
+  border-radius: 6px;
+  background: transparent;
+  font-size: 10px;
+}
+
+.nade-parser .tools-plugin-controls {
+  flex: none;
+  max-width: 430px;
+}
+
+.nade-parser .btn {
+  gap: 8px;
+  min-height: 40px;
+  padding: 9px 12px;
+  border-color: var(--line);
+  background: var(--surface-2);
+  color: var(--text);
+  box-shadow: none;
+  letter-spacing: 0;
+}
+
+.nade-parser .btn svg {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border-radius: 0;
+  background: none;
+  color: currentColor;
+}
+
+.nade-parser .btn:hover:not(:disabled) {
+  transform: none;
+  box-shadow: none;
+}
+
+.nade-parser .btn:hover:not(:disabled) svg,
+.nade-parser .btn.primary svg,
+.nade-parser .btn.primary:hover:not(:disabled) svg {
+  background: none;
+  color: currentColor;
+}
+
+.nade-parser .btn.primary {
+  box-shadow: none;
+}
+
+.nade-parser .tools-plugin-controls .btn {
+  min-height: 34px;
+  padding: 7px 10px;
+  font-size: 10px;
+}
+
+.nade-parser .btn.parser-remove-plugin,
+.nade-parser .btn.parser-clear-database {
+  background: transparent;
+  color: var(--parser-muted);
+}
+
+.nade-parser .btn.parser-remove-plugin:hover:not(:disabled),
+.nade-parser .btn.parser-clear-database:hover:not(:disabled) {
+  border-color: rgba(var(--red-rgb), 0.45);
+  background: rgba(var(--red-rgb), 0.06);
+  color: #ffabb2;
+}
+
+.parser-workflow {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 24px;
+  margin: 0 0 24px;
+  padding: 16px 0;
+  border-block: 1px solid var(--line);
+  list-style: none;
+}
+
+.parser-workflow li {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 12px;
+}
+
+.parser-step-number {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--parser-muted);
+  font:
+    600 11px Orbitron,
+    sans-serif;
+}
+
+.parser-workflow li > div {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.parser-workflow strong {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.parser-workflow small {
+  color: var(--parser-muted);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.parser-workflow li > svg {
+  flex: none;
+  margin-left: auto;
+  color: var(--dim);
+}
+
+.nade-parser .tools-grid {
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  align-items: stretch;
+  gap: 16px;
+}
+
+.nade-parser .tools-card {
+  padding: 22px;
+  border-radius: 12px;
+}
+
+.nade-parser .tools-card-title {
+  gap: 11px;
+  margin-bottom: 22px;
+}
+
+.nade-parser .tools-card-title > div {
+  min-width: 0;
+}
+
+.nade-parser .tools-card-title h2 {
+  margin: 0;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.nade-parser .tools-card-title small {
+  color: var(--parser-muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.parser-panel-icon {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  flex: none;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface-2);
+  color: var(--parser-muted);
+}
+
+.parser-count {
+  min-width: 25px;
+  margin-left: auto;
+  padding: 4px 7px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  color: var(--parser-muted);
+  font-size: 11px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.nade-parser .tools-input > .tools-actions {
+  gap: 10px;
+}
+
+.nade-parser .tools-input > .tools-actions .btn {
+  flex: 1 1 auto;
+}
+
+.nade-parser .tools-empty {
+  min-height: 176px;
+  margin: 14px 0 20px;
+  padding: 20px;
+  gap: 8px;
+  border-color: #363e49;
+  background: var(--bg);
+  text-align: center;
+}
+
+.parser-empty-icon {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  margin-bottom: 3px;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--surface-2);
+}
+
+.nade-parser .tools-empty svg {
+  color: var(--parser-muted);
+}
+
+.nade-parser .tools-empty strong {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.nade-parser .tools-empty > span:not(.parser-empty-icon) {
+  max-width: 310px;
+  color: var(--parser-muted);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.nade-parser .tools-empty small {
+  margin-top: 6px;
+  color: var(--parser-muted);
+  font-size: 9px;
+  letter-spacing: 0.09em;
+}
+
+.nade-parser .tools-paths {
+  min-height: 176px;
+  max-height: 250px;
+  align-content: start;
+  gap: 6px;
+  margin: 14px 0 20px;
+}
+
+.nade-parser .tools-paths li {
+  min-width: 0;
+  padding: 10px;
+  border-color: var(--line);
+  background: var(--bg);
+}
+
+.nade-parser .tools-paths li > svg {
+  flex: none;
+  color: var(--parser-muted);
+}
+
+.parser-path-copy {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 4px;
+}
+
+.parser-path-copy strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nade-parser .tools-paths .parser-path-copy span {
+  color: var(--parser-muted);
+  font-size: 10px;
+}
+
+.nade-parser .tools-paths button {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  flex: none;
+  padding: 0;
+  place-items: center;
+  border-radius: 6px;
+}
+
+.nade-parser .tools-paths button:hover:not(:disabled) {
+  background: rgba(var(--red-rgb), 0.1);
+  color: var(--red);
+}
+
+.nade-parser .tools-parser-options {
+  margin: 0 0 20px;
+  gap: 15px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.parser-section-label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+  color: var(--parser-muted);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.5;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.nade-parser .tools-workers,
+.nade-parser .tools-check {
+  gap: 20px;
+  font-size: 12px;
+}
+
+.nade-parser .tools-workers b,
+.nade-parser .tools-check b {
+  font-weight: 600;
+}
+
+.nade-parser .tools-workers small,
+.nade-parser .tools-check small {
+  color: var(--parser-muted);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.nade-parser .workers-select {
+  width: 194px;
+  flex: none;
+}
+
+.nade-parser .workers-select-trigger {
+  border-color: var(--line);
+  background: var(--surface-2);
+}
+
+.nade-parser .workers-select-trigger:hover:not(:disabled) {
+  border-color: rgba(var(--acid-rgb), 0.5);
+  transform: none;
+}
+
+.nade-parser .workers-select-value small {
+  color: var(--parser-muted);
+  font-size: 10px;
+}
+
+.nade-parser .tools-check-knob {
+  pointer-events: none;
+}
+
+.nade-parser .tools-check.is-on .tools-check-switch {
+  background: rgba(var(--acid-rgb), 0.15);
+  box-shadow: none;
+}
+
+.nade-parser .tools-check.is-on .tools-check-knob {
+  box-shadow: none;
+}
+
+.nade-parser .tools-run {
+  min-height: 44px;
+  margin-top: 0;
+  font-size: 12px;
+}
+
+.parser-run-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  padding: 5px 7px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  color: var(--parser-muted);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.parser-run-state i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.parser-run-state.is-running,
+.parser-run-state.is-complete {
+  border-color: rgba(var(--acid-rgb), 0.25);
+  background: rgba(var(--acid-rgb), 0.04);
+  color: var(--acid);
+}
+
+.parser-run-state.is-failed {
+  border-color: rgba(var(--red-rgb), 0.3);
+  color: var(--red);
+}
+
+.nade-parser .tools-progress {
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+}
+
+.nade-parser .tools-progress-meta {
+  align-items: flex-end;
+  gap: 18px;
+  margin-top: 20px;
+  color: var(--parser-muted);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.nade-parser .tools-progress-meta b {
+  color: var(--text);
+  font:
+    600 44px/1 Orbitron,
+    sans-serif;
+  letter-spacing: -0.04em;
+  font-variant-numeric: tabular-nums;
+}
+
+.nade-parser .tools-progress-meta b small {
+  margin-left: 4px;
+  color: var(--parser-muted);
+  font:
+    400 21px/1 Inter,
+    'Segoe UI',
+    sans-serif;
+}
+
+.nade-parser .tools-status.is-running .tools-progress-meta b,
+.nade-parser .tools-status.is-complete .tools-progress-meta b {
+  color: var(--acid);
+}
+
+.nade-parser .tools-progress-meta > span {
+  max-width: 55%;
+  text-align: right;
+}
+
+.nade-parser .tools-progress .progress-shell {
+  height: 5px;
+  margin-top: 20px;
+  background: var(--surface-3);
+}
+
+.nade-parser .progress-shell.is-indeterminate .progress-bar {
+  opacity: 0.55;
+  background: repeating-linear-gradient(
+    110deg,
+    var(--acid) 0 8px,
+    transparent 8px 14px
+  );
+}
+
+.nade-parser .tools-status.is-failed .progress-bar {
+  background: var(--red);
+}
+
+.parser-progress-caption {
+  margin: 12px 0 0;
+  color: var(--parser-muted);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.nade-parser .tools-runtime,
+.nade-parser .tools-worker-status {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-color: var(--line);
+  background: var(--surface-2);
+  color: var(--parser-muted);
+  font-size: 11px;
+}
+
+.nade-parser .tools-runtime svg,
+.nade-parser .tools-worker-status b {
+  color: var(--parser-muted);
+}
+
+.nade-parser .tools-current {
+  gap: 8px;
+  margin-top: 18px;
+  padding: 0 0 18px;
+  border-top: 0;
+}
+
+.nade-parser .tools-current span {
+  color: var(--parser-muted);
+  font-size: 10px;
+}
+
+.nade-parser .tools-current strong {
+  overflow: visible;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.parser-workspace-summary {
+  margin-top: auto;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.nade-parser .tools-stats {
+  gap: 10px;
+  margin-top: 12px;
+  padding-top: 0;
+}
+
+.nade-parser .tools-stats > div {
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 9px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface-2);
+}
+
+.nade-parser .tools-stats svg {
+  grid-column: 2;
+  grid-row: 1;
+  color: var(--parser-muted);
+}
+
+.nade-parser .tools-stats b {
+  grid-column: 1;
+  grid-row: 1;
+  font:
+    600 22px/1.2 Orbitron,
+    sans-serif;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.nade-parser .tools-stats span {
+  grid-column: 1 / -1;
+  color: var(--parser-muted);
+  font-size: 11px;
+}
+
+.parser-local-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin: 12px 0 0;
+  color: var(--parser-muted);
+  font-size: 10px;
+  line-height: 1.6;
+}
+
+.parser-local-note svg {
+  flex: none;
+  margin-top: 2px;
+}
+
+.nade-parser .tools-output {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  column-gap: 28px;
+  row-gap: 10px;
+}
+
+.nade-parser .tools-output > .tools-card-title {
+  grid-column: 1 / -1;
+  margin-bottom: 6px;
+}
+
+.nade-parser .tools-dataset {
+  min-width: 0;
+  grid-row: span 2;
+  margin: 0;
+}
+
+.nade-parser .tools-dataset legend {
+  margin-bottom: 9px;
+  color: var(--parser-muted);
+  font-size: 10px;
+}
+
+.nade-parser .tools-dataset-options label {
+  padding: 13px 11px;
+  background: var(--bg);
+}
+
+.nade-parser .tools-dataset-options label:has(input:checked) {
+  background: rgba(var(--acid-rgb), 0.045);
+  box-shadow: none;
+}
+
+.nade-parser .tools-dataset-options label:has(input:focus-visible) {
+  outline: 2px solid var(--acid);
+  outline-offset: 3px;
+}
+
+.nade-parser .tools-dataset-icon {
+  background: var(--surface-2);
+  color: var(--parser-muted);
+}
+
+.nade-parser
+  .tools-dataset-options
+  label:has(input:checked)
+  .tools-dataset-icon {
+  box-shadow: none;
+}
+
+.nade-parser .tools-dataset-copy strong {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.nade-parser .tools-dataset-copy small {
+  overflow: visible;
+  color: var(--parser-muted);
+  font-size: 10px;
+  line-height: 1.6;
+  white-space: normal;
+}
+
+.nade-parser .tools-export-actions {
+  align-self: end;
+  gap: 8px;
+  padding-top: 23px;
+}
+
+.nade-parser .tools-export-actions > .btn {
+  flex: 1 1 auto;
+}
+
+.nade-parser .tools-export-formats {
+  flex: 1 1 auto;
+  border-color: var(--line);
+  background: var(--surface-2);
+}
+
+.nade-parser .tools-format-btn {
+  min-width: 0;
+  min-height: 38px;
+  flex: 1;
+  border: 0;
+  background: transparent;
+}
+
+.nade-parser .tools-format-btn + .tools-format-btn {
+  border-left: 1px solid var(--line);
+}
+
+.nade-parser .tools-import {
+  width: 100%;
+  margin: 0;
+  justify-content: center;
+}
+
+.nade-parser .tools-import svg:last-child {
+  margin-left: auto;
+}
+
+.nade-parser .parser-maintenance {
+  grid-column: 1 / -1;
+  flex-wrap: nowrap;
+  gap: 12px;
+  margin: 0;
+  padding: 4px 2px 12px;
+  border: 0;
+  color: var(--parser-muted);
+}
+
+.parser-maintenance > svg {
+  flex: none;
+}
+
+.nade-parser .parser-maintenance strong {
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.nade-parser .parser-maintenance small {
+  max-width: none;
+  color: var(--parser-muted);
+  font-size: 10px;
+  line-height: 1.6;
+}
+
+.nade-parser .tools-error,
+.nade-parser .tools-message {
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.parser-install-note {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 36px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.parser-install-note > svg {
+  flex: none;
+  color: var(--parser-muted);
+}
+
+.parser-install-note h2 {
+  margin: 0 0 10px;
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.parser-install-note p {
+  max-width: 620px;
+  margin: 0;
+  color: var(--parser-muted);
+  font-size: 12px;
+  line-height: 1.8;
+}
+
+@media (max-width: 1100px) {
+  .nade-parser .parser-header {
+    align-items: flex-start;
+  }
+  .nade-parser .tools-plugin-controls {
+    max-width: 190px;
+  }
+  .nade-parser .tools-card {
+    padding: 18px;
+  }
+  .nade-parser .tools-workers {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .nade-parser .workers-select {
+    width: 100%;
+  }
+  .nade-parser .tools-output {
+    column-gap: 20px;
+  }
+  .nade-parser .tools-dataset-options {
+    grid-template-columns: 1fr;
+  }
+  .nade-parser .tools-export-actions {
+    align-self: start;
+  }
+}
+
+@media (max-width: 760px) {
+  .nade-parser .parser-header {
+    display: grid;
+    gap: 16px;
+  }
+  .nade-parser .tools-plugin-controls {
+    max-width: none;
+    justify-content: flex-start;
+  }
+  .parser-workflow {
+    gap: 12px;
+  }
+  .parser-workflow li {
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .parser-workflow li > svg {
+    display: none;
+  }
+  .parser-workflow strong {
+    font-size: 11px;
+  }
+  .parser-workflow small {
+    display: none;
+  }
+  .parser-step-number {
+    width: 25px;
+    height: 25px;
+    font-size: 9px;
+  }
+  .nade-parser .tools-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .nade-parser .tools-output {
+    grid-column: auto;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .nade-parser .tools-dataset {
+    grid-row: auto;
+  }
+  .nade-parser .tools-dataset-options {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .nade-parser .tools-export-actions {
+    padding-top: 6px;
+  }
+  .nade-parser .parser-maintenance {
+    flex-wrap: wrap;
+  }
+  .nade-parser .parser-maintenance > div {
+    flex: 1;
+  }
+  .nade-parser .parser-maintenance .btn {
+    margin-left: 30px;
+  }
+}
+
+@media (max-width: 440px) {
+  .nade-parser .tools-card {
+    padding: 15px;
+  }
+  .nade-parser .tools-card-title {
+    flex-wrap: wrap;
+  }
+  .parser-run-state {
+    margin-left: 47px;
+  }
+  .nade-parser .tools-dataset-options {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .nade-parser .tools-stats b {
+    font-size: 18px;
+  }
+  .parser-install-note {
+    align-items: flex-start;
+    padding: 22px;
+    gap: 14px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nade-parser *,
+  .nade-parser *::before,
+  .nade-parser *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
 .filter-summary {
   align-items: flex-start;
 }

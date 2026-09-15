@@ -1,8 +1,10 @@
 import { invoke } from '@tauri-apps/api/core';
 import { useEffect, useRef, useState } from 'react';
 import {
+  ArrowRight,
   Check,
   CheckCircle2,
+  Cpu,
   Database,
   Download,
   FileArchive,
@@ -20,6 +22,7 @@ import {
   ShieldCheck,
   Timer,
   Trash2,
+  X,
   XCircle,
 } from 'lucide-react';
 import { importJson } from '../lib/tauri';
@@ -210,32 +213,56 @@ export default function NadeParserTool({ refreshImports }: Props) {
     ),
   };
   const progress = status.total
-    ? Math.round((status.completed / status.total) * 100)
+    ? Math.max(
+        0,
+        Math.min(100, Math.round((status.completed / status.total) * 100)),
+      )
     : 0;
+  const indeterminate = status.running && !status.total;
+  const runState = status.running
+    ? 'running'
+    : status.stage === 'complete'
+      ? 'complete'
+      : status.stage === 'failed'
+        ? 'failed'
+        : 'idle';
+  const runLabel = status.running
+    ? tr('In progress', 'В процессе')
+    : status.stage === 'complete'
+      ? tr('Complete', 'Завершено')
+      : status.stage === 'failed'
+        ? tr('Failed', 'Ошибка')
+        : status.stage === 'cancelled'
+          ? tr('Stopped', 'Остановлено')
+          : tr('Standby', 'Ожидание');
   return (
-    <section className="tools-plugin-view" aria-label="Nade Parser">
-      <div className="tools-header">
+    <section className="tools-plugin-view nade-parser" aria-label="Nade Parser">
+      <header className="tools-header parser-header">
         <div>
           <span className="tools-kicker">
-            {tr('Demo analysis', 'Анализ демо')}
+            {tr('Tools / Demo analysis', 'Инструменты / Анализ демо')}
           </span>
-          <h1>Nade Parser</h1>
+          <div className="parser-heading-row">
+            <h1>Nade Parser</h1>
+            <span className={`tools-health ${installed ? 'ok' : 'warn'}`}>
+              {installed ? (
+                <CheckCircle2 size={13} aria-hidden="true" />
+              ) : (
+                <Package size={13} aria-hidden="true" />
+              )}
+              {installed
+                ? tr('Plugin ready', 'Плагин готов')
+                : tr('Not installed', 'Не установлен')}
+            </span>
+          </div>
           <p>
             {tr(
-              'Turn demos into a clean, reviewable lineup library.',
-              'Превратите демо в чистую библиотеку раскидок.',
+              'From match demos to your next lineup. Parse, refine, and bring it into Viewer.',
+              'От демо матча к вашей раскидке. Разберите, отберите и добавьте в Viewer.',
             )}
           </p>
         </div>
         <div className="tools-plugin-controls">
-          <div className={`tools-health ${installed ? 'ok' : 'warn'}`}>
-            {installed ? <CheckCircle2 size={16} /> : <XCircle size={16} />}
-            <span>
-              {installed
-                ? tr('Plugin ready', 'Плагин готов')
-                : tr('Plugin required', 'Нужен плагин')}
-            </span>
-          </div>
           <button
             ref={installButtonRef}
             className={`btn ${installed ? '' : 'primary'}`}
@@ -260,7 +287,7 @@ export default function NadeParserTool({ refreshImports }: Props) {
           </button>
           {installed && (
             <button
-              className="btn danger-action"
+              className="btn parser-remove-plugin"
               disabled={locked}
               onClick={() => openConfirmation('uninstall')}
             >
@@ -269,7 +296,62 @@ export default function NadeParserTool({ refreshImports }: Props) {
             </button>
           )}
         </div>
-      </div>
+      </header>
+      <ol
+        className="parser-workflow"
+        aria-label={tr('Parser workflow', 'Этапы работы')}
+      >
+        <li>
+          <span className="parser-step-number">01</span>
+          <div>
+            <strong>{tr('Select sources', 'Выберите демо')}</strong>
+            <small>{tr('Files or folders', 'Файлы или папки')}</small>
+          </div>
+          <ArrowRight size={15} aria-hidden="true" />
+        </li>
+        <li>
+          <span className="parser-step-number">02</span>
+          <div>
+            <strong>{tr('Parse & refine', 'Обработайте')}</strong>
+            <small>
+              {tr('Extract and deduplicate', 'Броски и дедупликация')}
+            </small>
+          </div>
+          <ArrowRight size={15} aria-hidden="true" />
+        </li>
+        <li>
+          <span className="parser-step-number">03</span>
+          <div>
+            <strong>{tr('Build your library', 'Пополните библиотеку')}</strong>
+            <small>
+              {tr(
+                'Export or import into Viewer',
+                'Экспорт или импорт в Viewer',
+              )}
+            </small>
+          </div>
+          <CheckCircle2 size={15} aria-hidden="true" />
+        </li>
+      </ol>
+      {!installed && (
+        <div className="parser-install-note">
+          <Package size={28} aria-hidden="true" />
+          <div>
+            <h2>
+              {tr(
+                'Your demo workspace starts here',
+                'Рабочее пространство для ваших демо',
+              )}
+            </h2>
+            <p>
+              {tr(
+                'Install Nade Parser using the button above to select demos and extract grenade throws. Processing runs locally on your computer.',
+                'Установите Nade Parser кнопкой выше, чтобы выбрать демо и извлечь броски гранат. Обработка выполняется локально на вашем компьютере.',
+              )}
+            </p>
+          </div>
+        </div>
+      )}
       {(error || (installed && status.error) || message) && (
         <div className="tools-feedback">
           {(error || (installed && status.error)) && (
@@ -289,16 +371,24 @@ export default function NadeParserTool({ refreshImports }: Props) {
         <div className="tools-grid">
           <div className="tools-card tools-input">
             <div className="tools-card-title">
-              <FolderOpen size={18} />
+              <span className="parser-panel-icon">
+                <FolderOpen size={18} aria-hidden="true" />
+              </span>
               <div>
-                <strong>{tr('Input sources', 'Источники')}</strong>
+                <h2>{tr('Input sources', 'Источники')}</h2>
                 <small>
                   {tr(
-                    'One demo or many folders',
-                    'Одно демо или несколько папок',
+                    'Queue demos for your next run',
+                    'Добавьте демо для следующего запуска',
                   )}
                 </small>
               </div>
+              <span
+                className="parser-count"
+                aria-label={tr('Selected sources', 'Выбрано источников')}
+              >
+                {paths.length}
+              </span>
             </div>
             <div className="tools-actions">
               <button
@@ -335,7 +425,17 @@ export default function NadeParserTool({ refreshImports }: Props) {
               >
                 {paths.map((path) => (
                   <li key={path}>
-                    <span title={path}>{path}</span>
+                    {path.toLowerCase().endsWith('.dem') ? (
+                      <FileArchive size={17} aria-hidden="true" />
+                    ) : (
+                      <FolderOpen size={17} aria-hidden="true" />
+                    )}
+                    <div className="parser-path-copy">
+                      <strong title={path}>
+                        {path.split(/[\\/]/).filter(Boolean).pop() || path}
+                      </strong>
+                      <span title={path}>{path}</span>
+                    </div>
                     <button
                       disabled={locked}
                       aria-label={`${tr('Remove', 'Удалить')}: ${path}`}
@@ -343,20 +443,36 @@ export default function NadeParserTool({ refreshImports }: Props) {
                         setPaths((old) => old.filter((p) => p !== path))
                       }
                     >
-                      ×
+                      <X size={15} aria-hidden="true" />
                     </button>
                   </li>
                 ))}
               </ul>
             ) : (
               <div className="tools-empty">
-                <FolderOpen size={20} />
-                <span>
-                  {tr('No sources selected yet', 'Источники ещё не выбраны')}
+                <span className="parser-empty-icon">
+                  <FilePlus2 size={25} aria-hidden="true" />
                 </span>
+                <strong>{tr('Start with a demo', 'Начните с демо')}</strong>
+                <span>
+                  {tr(
+                    'Choose .dem files or add an entire folder using the buttons above.',
+                    'Выберите файлы .dem или добавьте папку с помощью кнопок выше.',
+                  )}
+                </span>
+                <small>
+                  {tr(
+                    '.DEM FILES · BATCH PROCESSING',
+                    'ФАЙЛЫ .DEM · ПАКЕТНАЯ ОБРАБОТКА',
+                  )}
+                </small>
               </div>
             )}
             <div className="tools-parser-options">
+              <h3 className="parser-section-label">
+                <Cpu size={13} aria-hidden="true" />
+                {tr('Processing settings', 'Параметры обработки')}
+              </h3>
               <div className="tools-workers">
                 <span>
                   <b>{tr('Parallel workers', 'Параллельные воркеры')}</b>
@@ -446,17 +562,34 @@ export default function NadeParserTool({ refreshImports }: Props) {
               </button>
             )}
           </div>
-          <div className="tools-card tools-status">
+          <div className={`tools-card tools-status is-${runState}`}>
             <div className="tools-card-title">
-              <Gauge size={18} />
+              <span className="parser-panel-icon">
+                <Gauge size={18} aria-hidden="true" />
+              </span>
               <div>
-                <strong>{tr('Live processing', 'Текущая обработка')}</strong>
-                <small>{stages[status.stage] || status.stage}</small>
+                <h2>{tr('Live processing', 'Текущая обработка')}</h2>
+                <small>
+                  {tr(
+                    'Follow your parsing session',
+                    'Следите за ходом разбора',
+                  )}
+                </small>
               </div>
+              <span className={`parser-run-state is-${runState}`} role="status">
+                <i aria-hidden="true" />
+                {runLabel}
+              </span>
             </div>
             <div className="tools-progress">
+              <div className="parser-section-label">
+                {tr('Session progress', 'Прогресс сессии')}
+              </div>
               <div className="tools-progress-meta">
-                <b>{progress}%</b>
+                <b>
+                  {indeterminate ? '—' : progress}
+                  <small>{indeterminate ? '' : '%'}</small>
+                </b>
                 <span>
                   {status.total
                     ? `${status.completed} / ${status.total} ${tr('demos', 'демо')}`
@@ -465,12 +598,35 @@ export default function NadeParserTool({ refreshImports }: Props) {
                       : tr('Waiting for a run', 'Ожидание запуска')}
                 </span>
               </div>
-              <div className="progress-shell">
+              <div
+                className={`progress-shell ${indeterminate ? 'is-indeterminate' : ''}`}
+                role="progressbar"
+                aria-label={tr(
+                  'Demo parsing progress',
+                  'Прогресс разбора демо',
+                )}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={indeterminate ? undefined : progress}
+                aria-valuetext={
+                  indeterminate
+                    ? stages[status.stage] || status.stage
+                    : `${progress}%`
+                }
+              >
                 <div
                   className="progress-bar"
-                  style={{ width: `${progress}%` }}
+                  style={{ width: indeterminate ? '100%' : `${progress}%` }}
                 />
               </div>
+              <p className="parser-progress-caption">
+                {status.stage === 'idle'
+                  ? tr(
+                      'Add sources and start parsing to see progress here.',
+                      'Добавьте источники и запустите парсинг — прогресс появится здесь.',
+                    )
+                  : stages[status.stage] || status.stage}
+              </p>
             </div>
             {status.stage !== 'idle' && (
               <div className="tools-runtime" aria-live="polite">
@@ -503,45 +659,38 @@ export default function NadeParserTool({ refreshImports }: Props) {
                 {status.current || stages[status.stage] || status.stage}
               </strong>
             </div>
-            <div className="tools-stats">
-              <div>
-                <Database size={15} />
-                <b>{counts[0].toLocaleString()}</b>
-                <span>{tr('raw throws', 'исходных бросков')}</span>
+            <div className="parser-workspace-summary">
+              <h3 className="parser-section-label">
+                {tr('Saved in workspace', 'Сохранено в базе')}
+              </h3>
+              <div className="tools-stats">
+                <div>
+                  <Database size={15} />
+                  <b>{counts[0].toLocaleString()}</b>
+                  <span>{tr('raw throws', 'исходных бросков')}</span>
+                </div>
+                <div>
+                  <Package size={15} />
+                  <b>{counts[1].toLocaleString()}</b>
+                  <span>{tr('demos indexed', 'демо в базе')}</span>
+                </div>
               </div>
-              <div>
-                <Package size={15} />
-                <b>{counts[1].toLocaleString()}</b>
-                <span>{tr('demos indexed', 'демо в базе')}</span>
-              </div>
-            </div>
-            <div className="tools-workspace-actions">
-              <div>
-                <strong>
-                  {tr('Parser workspace', 'Рабочая база парсера')}
-                </strong>
-                <small>
-                  {tr(
-                    'Remove parsed demos and the canonical set. Viewer libraries stay intact.',
-                    'Удалить обработанные демо и канонический набор. Библиотеки Viewer не затрагиваются.',
-                  )}
-                </small>
-              </div>
-              <button
-                className="btn danger-action"
-                disabled={locked || !counts[0]}
-                onClick={() => openConfirmation('clear')}
-              >
-                <Trash2 size={14} />
-                {tr('Clear parser database', 'Очистить базу парсера')}
-              </button>
+              <p className="parser-local-note">
+                <ShieldCheck size={13} aria-hidden="true" />
+                {tr(
+                  'Stored locally. Import into Viewer when ready.',
+                  'Сохранено локально. Импортируйте в Viewer, когда будете готовы.',
+                )}
+              </p>
             </div>
           </div>
           <div className="tools-card tools-output">
             <div className="tools-card-title">
-              <ShieldCheck size={18} />
+              <span className="parser-panel-icon">
+                <Download size={18} aria-hidden="true" />
+              </span>
               <div>
-                <strong>{tr('Review and export', 'Проверка и экспорт')}</strong>
+                <h2>{tr('Review and export', 'Проверка и экспорт')}</h2>
                 <small>
                   {tr(
                     'Nothing is imported automatically',
@@ -689,8 +838,29 @@ export default function NadeParserTool({ refreshImports }: Props) {
                 'Import selected dataset into Viewer',
                 'Импортировать выбранный набор',
               )}
+              <ArrowRight size={15} aria-hidden="true" />
             </button>
           </div>
+          <footer className="tools-workspace-actions parser-maintenance">
+            <Database size={18} aria-hidden="true" />
+            <div>
+              <strong>{tr('Parser workspace', 'Рабочая база парсера')}</strong>
+              <small>
+                {tr(
+                  'Clears parsed demos and the canonical set. Your Viewer libraries are kept.',
+                  'Очистка демо и канонического набора. Ваши библиотеки Viewer сохранятся.',
+                )}
+              </small>
+            </div>
+            <button
+              className="btn parser-clear-database"
+              disabled={locked || !counts[0]}
+              onClick={() => openConfirmation('clear')}
+            >
+              <Trash2 size={14} aria-hidden="true" />
+              {tr('Clear parser database', 'Очистить базу парсера')}
+            </button>
+          </footer>
         </div>
       )}
       {confirmation && (
