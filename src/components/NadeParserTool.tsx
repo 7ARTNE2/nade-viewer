@@ -111,12 +111,13 @@ export default function NadeParserTool({ refreshImports }: Props) {
       try {
         const nextStatus = await invoke<Status>('get_nade_parser_status');
         if (!active) return;
-        setStatus(nextStatus);
-        if (!nextStatus.running) setStopping(false);
         if (nextStatus.running) {
+          setStatus(nextStatus);
           timer = window.setTimeout(poll, 500);
           return;
         }
+        // Publishing running=false cleans up this effect. Refresh counts first
+        // so the terminal response is not discarded and raw import is enabled.
         try {
           const nextCounts = await invoke<[number, number]>(
             'get_parser_workspace_counts',
@@ -124,6 +125,11 @@ export default function NadeParserTool({ refreshImports }: Props) {
           if (active) setCounts(nextCounts);
         } catch (e) {
           if (active) setError(String(e));
+        } finally {
+          if (active) {
+            setStatus(nextStatus);
+            setStopping(false);
+          }
         }
       } catch (e) {
         if (!active) return;
