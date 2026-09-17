@@ -262,7 +262,7 @@ function Shell() {
       running: true,
       stage: 'checking_update',
       current: 0,
-      total: libraryUpdate.manifest.size,
+      total: libraryUpdate.manifest.compressed_size,
       message: tr('Preparing download', 'Подготовка загрузки'),
     });
     try {
@@ -914,16 +914,21 @@ function Shell() {
               {libraryUpdateBusy
                 ? libraryUpdateStatus?.stage === 'downloading'
                   ? tr(
-                      'Downloading and verifying data',
-                      'Загрузка и проверка данных',
+                      'Downloading compressed library',
+                      'Скачивание сжатой библиотеки',
                     )
-                  : tr(
-                      'Importing into local storage',
-                      'Импорт в локальное хранилище',
-                    )
+                  : libraryUpdateStatus?.stage === 'decompressing'
+                    ? tr(
+                        'Verifying and unpacking library',
+                        'Проверка и распаковка библиотеки',
+                      )
+                    : tr(
+                        'Importing into local storage',
+                        'Импорт в локальное хранилище',
+                      )
                 : tr(
-                    `${formatBytes(libraryUpdate.manifest.size, locale)} will be downloaded. Your current library stays available until import succeeds.`,
-                    `Будет загружено ${formatBytes(libraryUpdate.manifest.size, locale)}. Текущая библиотека останется доступна до успешного импорта.`,
+                    `${formatBytes(libraryUpdate.manifest.compressed_size, locale)} will be downloaded and unpacked. Your current library stays available until import succeeds.`,
+                    `Будет загружено и распаковано ${formatBytes(libraryUpdate.manifest.compressed_size, locale)}. Текущая библиотека останется доступна до успешного импорта.`,
                   )}
             </span>
             {libraryUpdateBusy ? (
@@ -936,7 +941,10 @@ function Shell() {
               </div>
             ) : null}
           </div>
-          {libraryUpdateBusy && libraryUpdateStatus?.stage === 'downloading' ? (
+          {libraryUpdateBusy &&
+          ['downloading', 'decompressing', 'importing'].includes(
+            libraryUpdateStatus?.stage ?? '',
+          ) ? (
             <button
               className={`btn library-download-cancel ${libraryUpdateCancelling ? 'is-cancelling' : ''}`}
               type="button"
@@ -949,7 +957,7 @@ function Shell() {
               <span>
                 {libraryUpdateCancelling
                   ? tr('Cancelling', 'Отмена...')
-                  : tr('Cancel download', 'Отменить скачивание')}
+                  : tr('Cancel update', 'Отменить обновление')}
               </span>
             </button>
           ) : (

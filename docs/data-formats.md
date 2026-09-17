@@ -12,6 +12,24 @@ on the grenade detail page.
 This document describes only formats implemented by the import code in
 `src-tauri/src/lib.rs`. No external schema or data source is assumed.
 
+## Online library updates
+
+Online updates use manifest version 2 (`docs/library-manifest.example.json`).
+The asset is a Zstd-compressed MessagePack stream. NadeViewer verifies the
+downloaded compressed size and SHA-256 before opening it, then streams the
+decompressed records directly into one uncommitted SQLite transaction while
+counting and hashing the uncompressed bytes. It commits and activates the new
+library only after the entire Zstd stream, MessagePack payload, uncompressed
+size, and uncompressed SHA-256 have all been verified. A failure or cancellation
+leaves the existing active library and library-version metadata unchanged.
+
+The online payload is intentionally narrower than manual imports: it must be
+the definite-size MessagePack envelope written by `parser_store::write_msgpack`:
+a two-entry root map with `version` first (integer `1`) and
+`canonical_grenades` second (a definite-size array). Manual JSON, raw
+MessagePack, and ZIP imports continue to accept the broader formats documented
+below.
+
 For library imports, Nade Viewer expects a UTF-8 object for JSON files. A file with a
 `.messagepack`, `.msgpack`, or `.mpk` extension is decoded as MessagePack;
 other non-ZIP library files are decoded as JSON. After decoding, JSON and

@@ -183,54 +183,77 @@ https://github.com/7ARTNE2/nade-viewer/releases/download/library/library-manifes
 ```
 
 This check does not download the library automatically. When a new manifest
-version is available, the application shows its download size and waits for
-the user to start the update. It downloads the MessagePack asset to a temporary
-file, verifies its exact size and SHA-256 digest, then imports it through the
-same SQLite transaction used by local imports. The active library and installed
-data version change only when the complete import commits successfully.
+version is available, the application shows its compressed download size and
+waits for the user to start the update. It downloads a Zstd-compressed
+MessagePack asset, verifies the exact size and SHA-256 digest of both the
+compressed asset and the unpacked MessagePack, then imports it through the same
+SQLite transaction used by local imports. The active library and installed data
+version change only when the complete import commits successfully.
 
 The manifest format is shown in
 [`docs/library-manifest.example.json`](docs/library-manifest.example.json):
 
 ```json
 {
-  "version": "2026.08.26.1",
-  "url": "https://github.com/7ARTNE2/nade-viewer/releases/download/data-2026.08.26.1/library.msgpack",
-  "size": 709942607,
-  "sha256": "64 lowercase or uppercase hexadecimal characters"
+  "manifest_version": 2,
+  "version": "2026.09.17.1",
+  "format": "messagepack",
+  "compression": "zstd",
+  "url": "https://github.com/7ARTNE2/nade-viewer/releases/download/data-2026.09.17.1/library.msgpack.zst",
+  "compressed_size": 220000000,
+  "compressed_sha256": "64 lowercase or uppercase hexadecimal characters",
+  "uncompressed_size": 709942607,
+  "uncompressed_sha256": "64 lowercase or uppercase hexadecimal characters"
 }
 ```
 
-Publish `library.msgpack` in an immutable versioned data release such as
+Publish `library.msgpack.zst` in an immutable versioned data release such as
 `data-2026.08.26.1`. Create a separate release with the permanent tag `library`
 and upload `library-manifest.json` there. For each data update, replace only the
 manifest asset in the `library` release; its `url` points to the new immutable
 MessagePack asset. This keeps data releases independent from the application's
 `latest` release, which is used by the executable updater.
 
-The MessagePack asset must contain one of the supported envelopes documented
-in [Data formats](docs/data-formats.md). Determine the real metadata in
-PowerShell before publishing:
+The unpacked MessagePack asset must contain one of the supported envelopes
+documented in [Data formats](docs/data-formats.md). Determine the compressed
+and unpacked metadata in PowerShell before publishing:
 
 ```powershell
-$file = Get-Item -LiteralPath ".\library.msgpack"
-$size = $file.Length
-$sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $file.FullName).Hash.ToLowerInvariant()
+$compressed = Get-Item -LiteralPath ".\library.msgpack.zst"
+$compressedSize = $compressed.Length
+$compressedSha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $compressed.FullName).Hash.ToLowerInvariant()
+$uncompressed = Get-Item -LiteralPath ".\library.msgpack"
+$uncompressedSize = $uncompressed.Length
+$uncompressedSha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $uncompressed.FullName).Hash.ToLowerInvariant()
 ```
 
-The manifest's `url` must be HTTPS and point to the exact release asset, not a
-mutable branch file. `version` is the data version and is independent of the
-application version. Use a new unique value whenever the MessagePack content
-changes.
+The manifest's `url` must be HTTPS and point to the exact `.zst` release asset,
+not a mutable branch file. `version` is the data version and is independent of
+the application version. Use a new unique value whenever the MessagePack
+content changes. Online updates require manifest version 2 and Zstd; manual
+imports continue to support JSON, raw MessagePack, and ZIP archives.
 
 One-time manifest release creation and subsequent publication can be done with
 GitHub CLI:
 
 ```powershell
 gh release create library --title "Nade Viewer library manifest" --notes "Stable update manifest endpoint"
-gh release create data-2026.08.26.1 ".\library.msgpack" --title "Library 2026.08.26.1" --notes "Nade Viewer data snapshot"
+gh release create data-2026.09.17.1 ".\library.msgpack.zst" --title "Library 2026.09.17.1" --notes "Nade Viewer data snapshot"
 gh release upload library ".\library-manifest.json" --clobber
 ```
+
+The repository also includes a release helper. It creates `library.msgpack.zst`,
+verifies the archive, calculates both SHA-256 digests, and writes the v2
+manifest. Add `-Publish` only after inspecting the generated files:
+
+```powershell
+.\scripts\publish-library.ps1 -SourcePath .\library.msgpack -Version 2026.09.17.1
+.\scripts\publish-library.ps1 -SourcePath .\library.msgpack -Version 2026.09.17.1 -Publish
+```
+
+The script uses the installed `zstd` command-line tool when available; otherwise
+it uses the bundled Rust compressor. Publishing requires an authenticated
+GitHub CLI session. It refuses to replace an existing immutable data release.
 
 For another repository or manifest location, set
 `NADE_VIEWER_LIBRARY_MANIFEST_URL` while building the Tauri application. The

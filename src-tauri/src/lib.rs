@@ -90,10 +90,15 @@ struct ImportStatus {
 
 #[derive(Clone, Serialize, Deserialize)]
 struct LibraryManifest {
+    manifest_version: u8,
     version: String,
+    format: String,
+    compression: String,
     url: String,
-    size: u64,
-    sha256: String,
+    compressed_size: u64,
+    compressed_sha256: String,
+    uncompressed_size: u64,
+    uncompressed_sha256: String,
 }
 
 #[derive(Serialize)]
@@ -1231,15 +1236,28 @@ fn fetch_library_manifest() -> AppResult<LibraryManifest> {
 }
 
 fn validate_library_manifest(manifest: &LibraryManifest) -> AppResult<()> {
-    if manifest.version.trim().is_empty()
-        || manifest.size == 0
+    if manifest.manifest_version != 2
+        || manifest.version.trim().is_empty()
+        || manifest.format != "messagepack"
+        || manifest.compression != "zstd"
+        || manifest.compressed_size == 0
+        || manifest.uncompressed_size == 0
         || !manifest.url.starts_with("https://")
-        || manifest.sha256.len() != 64
-        || !manifest.sha256.bytes().all(|byte| byte.is_ascii_hexdigit())
+        || manifest.compressed_sha256.len() != 64
+        || !manifest
+            .compressed_sha256
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit())
+        || manifest.uncompressed_sha256.len() != 64
+        || !manifest
+            .uncompressed_sha256
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit())
     {
         return Err(AppError::Import {
             code: "library_update_invalid",
-            message: "Library manifest has invalid version, URL, size, or SHA-256".to_string(),
+            message: "Library manifest must describe a version 2 Zstd MessagePack asset"
+                .to_string(),
         });
     }
     Ok(())
@@ -1299,8 +1317,8 @@ fn download_library_file(state: &AppState, manifest: &LibraryManifest) -> AppRes
     let directory = state.db_path.parent().ok_or_else(|| {
         AppError::Message("Application data directory is unavailable".to_string())
     })?;
-    let destination = directory.join("library-update.msgpack.part");
-    let _ = fs::remove_file(&destination);
+    let compressed_destination = directory.join("library-update.msgpack.zst.part");
+    let _ = fs::remove_file(&compressed_destination);
     let response = Client::builder()
         .connect_timeout(std::time::Duration::from_secs(30))
         .timeout(std::time::Duration::from_secs(2 * 60 * 60))
@@ -1322,7 +1340,7 @@ fn download_library_file(state: &AppState, manifest: &LibraryManifest) -> AppRes
         });
     }
 
-    let file = fs::File::create(&destination).map_err(|error| AppError::Import {
+    let file = fs::File::create(&compressed_destination).map_err(|error| AppError::Import {
         code: "library_download_failed",
         message: format!("Unable to create temporary library file: {error}"),
     })?;
@@ -1336,7 +1354,7 @@ fn download_library_file(state: &AppState, manifest: &LibraryManifest) -> AppRes
         state,
         "downloading",
         0,
-        manifest.size,
+        manifest.compressed_size,
         "Downloading online library",
     );
     loop {
@@ -1356,10 +1374,13 @@ fn download_library_file(state: &AppState, manifest: &LibraryManifest) -> AppRes
             break;
         }
         downloaded = downloaded.saturating_add(read as u64);
-        if downloaded > manifest.size {
+        if downloaded > manifest.compressed_size {
             return Err(AppError::Import {
                 code: "library_size_mismatch",
-                message: format!("Library is larger than manifest size {}", manifest.size),
+                message: format!(
+                    "Compressed library is larger than manifest size {}",
+                    manifest.compressed_size
+                ),
             });
         }
         file.write_all(&buffer[..read])?;
@@ -1369,37 +1390,354 @@ fn download_library_file(state: &AppState, manifest: &LibraryManifest) -> AppRes
                 state,
                 "downloading",
                 downloaded,
-                manifest.size,
+                manifest.compressed_size,
                 "Downloading online library",
             );
             last_status_update = std::time::Instant::now();
         }
     }
     file.flush()?;
-    if downloaded != manifest.size {
+    if downloaded != manifest.compressed_size {
         return Err(AppError::Import {
             code: "library_size_mismatch",
             message: format!(
-                "Library size is {downloaded} bytes; manifest expects {}",
-                manifest.size
+                "Compressed library size is {downloaded} bytes; manifest expects {}",
+                manifest.compressed_size
             ),
         });
     }
     let digest = format!("{:x}", hasher.finalize());
-    if !digest.eq_ignore_ascii_case(&manifest.sha256) {
+    if !digest.eq_ignore_ascii_case(&manifest.compressed_sha256) {
         return Err(AppError::Import {
             code: "library_hash_mismatch",
-            message: "Library SHA-256 does not match the manifest".to_string(),
+            message: "Compressed library SHA-256 does not match the manifest".to_string(),
         });
     }
+
     set_status(
         state,
         "downloading",
         downloaded,
-        manifest.size,
+        manifest.compressed_size,
         "Downloading online library",
     );
-    Ok(destination)
+    Ok(compressed_destination)
+}
+
+struct VerifiedLibraryReader<'a, R> {
+    reader: R,
+    state: &'a AppState,
+    manifest: &'a LibraryManifest,
+    hasher: Sha256,
+    bytes: u64,
+}
+
+impl<R: Read> Read for VerifiedLibraryReader<'_, R> {
+    fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+        if self
+            .state
+            .library_download_cancelled
+            .load(Ordering::Relaxed)
+        {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Interrupted,
+                "Library update was cancelled",
+            ));
+        }
+        let read = self.reader.read(buffer)?;
+        self.bytes = self.bytes.saturating_add(read as u64);
+        if self.bytes > self.manifest.uncompressed_size {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Unpacked library exceeds its manifest size",
+            ));
+        }
+        self.hasher.update(&buffer[..read]);
+        set_status(
+            self.state,
+            "decompressing",
+            self.bytes,
+            self.manifest.uncompressed_size,
+            "Decompressing and verifying online library",
+        );
+        Ok(read)
+    }
+}
+
+fn library_cancelled(state: &AppState) -> AppResult<()> {
+    if state.library_download_cancelled.load(Ordering::Relaxed) {
+        return Err(AppError::Import {
+            code: "library_download_cancelled",
+            message: "Library update was cancelled".to_string(),
+        });
+    }
+    Ok(())
+}
+
+fn begin_library_finalization(state: &AppState, total: u64) -> AppResult<()> {
+    let mut status = state.import_status.lock().map_err(|_| AppError::Import {
+        code: "import_state_unavailable",
+        message: "Import state is unavailable".to_string(),
+    })?;
+    if state.library_download_cancelled.load(Ordering::Relaxed) {
+        return Err(AppError::Import {
+            code: "library_download_cancelled",
+            message: "Library update was cancelled".to_string(),
+        });
+    }
+    status.stage = "finalizing".to_string();
+    status.current = total;
+    status.total = total;
+    status.message = "Finalizing verified library update".to_string();
+    Ok(())
+}
+
+fn online_messagepack_error(state: &AppState, error: impl std::fmt::Display) -> AppError {
+    if state.library_download_cancelled.load(Ordering::Relaxed) {
+        AppError::Import {
+            code: "library_download_cancelled",
+            message: "Library update was cancelled".to_string(),
+        }
+    } else {
+        AppError::Import {
+            code: "invalid_messagepack",
+            message: format!("Invalid online MessagePack: {error}"),
+        }
+    }
+}
+
+fn verify_online_library_reader<R: Read>(
+    mut reader: VerifiedLibraryReader<'_, R>,
+    state: &AppState,
+    manifest: &LibraryManifest,
+) -> AppResult<()> {
+    let mut buffer = [0_u8; LARGE_IO_BUFFER_SIZE];
+    while reader
+        .read(&mut buffer)
+        .map_err(|error| online_messagepack_error(state, error))?
+        != 0
+    {}
+    library_cancelled(state)?;
+    if reader.bytes != manifest.uncompressed_size {
+        return Err(AppError::Import {
+            code: "library_uncompressed_size_mismatch",
+            message: format!(
+                "Unpacked library size is {} bytes; manifest expects {}",
+                reader.bytes, manifest.uncompressed_size
+            ),
+        });
+    }
+    let digest = format!("{:x}", reader.hasher.finalize());
+    if !digest.eq_ignore_ascii_case(&manifest.uncompressed_sha256) {
+        return Err(AppError::Import {
+            code: "library_uncompressed_hash_mismatch",
+            message: "Unpacked library SHA-256 does not match the manifest".to_string(),
+        });
+    }
+    Ok(())
+}
+
+fn import_online_library_blocking(
+    state: &AppState,
+    compressed_path: &Path,
+    manifest: &LibraryManifest,
+) -> AppResult<ImportReport> {
+    set_status(
+        state,
+        "decompressing",
+        0,
+        manifest.uncompressed_size,
+        "Decompressing and verifying online library",
+    );
+    let compressed = fs::File::open(compressed_path)?;
+    let verified = VerifiedLibraryReader {
+        reader: zstd::stream::read::Decoder::new(BufReader::with_capacity(
+            LARGE_IO_BUFFER_SIZE,
+            compressed,
+        ))
+        .map_err(|error| AppError::Import {
+            code: "library_decompression_failed",
+            message: format!("Unable to open compressed library: {error}"),
+        })?,
+        state,
+        manifest,
+        hasher: Sha256::new(),
+        bytes: 0,
+    };
+    let mut reader = BufReader::with_capacity(LARGE_IO_BUFFER_SIZE, verified);
+    let root_len = rmp::decode::read_map_len(&mut reader)
+        .map_err(|error| online_messagepack_error(state, error))?;
+    if root_len != 2 {
+        return Err(AppError::Import {
+            code: "invalid_messagepack",
+            message: "Online MessagePack must contain exactly version and canonical_grenades"
+                .to_string(),
+        });
+    }
+
+    let first_key: String = rmp_serde::from_read(&mut reader)
+        .map_err(|error| online_messagepack_error(state, error))?;
+    if first_key != "version" {
+        return Err(AppError::Import {
+            code: "invalid_messagepack",
+            message: "Online MessagePack must write version before canonical_grenades".to_string(),
+        });
+    }
+    let version: i64 = rmp_serde::from_read(&mut reader)
+        .map_err(|error| online_messagepack_error(state, error))?;
+    if version != SUPPORTED_IMPORT_VERSION {
+        return Err(AppError::Import {
+            code: "unsupported_version",
+            message: format!(
+                "Unsupported import version {version}; supported version is {SUPPORTED_IMPORT_VERSION}"
+            ),
+        });
+    }
+    let second_key: String = rmp_serde::from_read(&mut reader)
+        .map_err(|error| online_messagepack_error(state, error))?;
+    if second_key != "canonical_grenades" {
+        return Err(AppError::Import {
+            code: "invalid_messagepack",
+            message: "Online MessagePack must contain canonical_grenades".to_string(),
+        });
+    }
+    let total = rmp::decode::read_array_len(&mut reader)
+        .map_err(|error| online_messagepack_error(state, error))?;
+
+    let mut conn = open_conn(state)?;
+    init_schema(&conn)?;
+    let tx = conn.transaction()?;
+    seed_assets(&tx, &state.resource_dir)?;
+    seed_spawn_points(&tx, &state.resource_dir)?;
+    let imported_at = Utc::now().to_rfc3339();
+    tx.execute(
+        "INSERT INTO imports(source_path, kind, imported_at, parser_version, grenade_count, map_count)
+         VALUES (?1, 'grenade_index', ?2, ?3, 0, 0)",
+        params![manifest.url, imported_at, version],
+    )?;
+    let import_id = tx.last_insert_rowid();
+    let mut maps = HashSet::new();
+    let mut metadata = BTreeMap::new();
+    let mut insert = tx.prepare(
+        "INSERT INTO grenades(
+            import_id, source_index, map, side, grenade_type, is_core, throw_keys, coordinates,
+            thrower, thrower_steamid64, thrower_team, airtime, usage_count, usage_throwers_json, demo_filename, throw_tick,
+            lineup_tick, tickrate, round_time_seconds, start_pos_x, start_pos_y, start_pos_z,
+            explode_pos_x, explode_pos_y, explode_pos_z, start_map_x, start_map_y,
+            explode_map_x, explode_map_y, trajectory_preview_json, trajectory_json
+        ) VALUES (
+            ?1, ?2, ?3, ?4, ?5, 0, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16,
+            ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30
+        )",
+    )?;
+    for idx in 0..total {
+        library_cancelled(state)?;
+        let grenade: RawGrenade = rmp_serde::from_read(&mut reader)
+            .map_err(|error| online_messagepack_error(state, error))?;
+        let radar = state.radars.get(&map_name_to_key(&grenade.map));
+        let project = |x: Option<f64>, y: Option<f64>| match (x, y, radar) {
+            (Some(x), Some(y), Some(radar)) => Some(game_to_map_coords(x, y, radar)),
+            _ => None,
+        };
+        let (start_map_x, start_map_y) = project(grenade.start_pos_x, grenade.start_pos_y)
+            .map_or((None, None), |(x, y)| (Some(x), Some(y)));
+        let (explode_map_x, explode_map_y) = project(grenade.explode_pos_x, grenade.explode_pos_y)
+            .map_or((None, None), |(x, y)| (Some(x), Some(y)));
+        let (trajectory_preview, trajectory_json) = trajectory_storage_json(
+            grenade.trajectory.as_ref(),
+            grenade.trajectory_preview.as_ref(),
+            radar,
+        )?;
+        insert.execute(params![
+            import_id,
+            idx as i64,
+            grenade.map,
+            grenade.side.as_deref().unwrap_or("Any"),
+            grenade.grenade_type.as_deref().unwrap_or("smoke"),
+            grenade.throw_keys.as_deref(),
+            grenade.coordinates.as_deref(),
+            grenade.thrower.as_deref(),
+            grenade.thrower_steamid64.as_deref(),
+            grenade.thrower_team.as_deref(),
+            grenade.airtime,
+            grenade.usage_count.unwrap_or(1),
+            serde_json::to_string(grenade.usage_throwers.as_deref().unwrap_or(&[]))?,
+            grenade.demo_filename.as_deref(),
+            grenade.throw_tick,
+            grenade.lineup_tick,
+            round_tickrate(grenade.tickrate),
+            grenade.round_time_seconds,
+            grenade.start_pos_x,
+            grenade.start_pos_y,
+            grenade.start_pos_z,
+            grenade.explode_pos_x,
+            grenade.explode_pos_y,
+            grenade.explode_pos_z,
+            start_map_x,
+            start_map_y,
+            explode_map_x,
+            explode_map_y,
+            trajectory_preview,
+            trajectory_json,
+        ])?;
+        let grenade_id = tx.last_insert_rowid();
+        for event in &grenade.usage_events {
+            insert_usage_event(&tx, import_id, grenade_id, event)?;
+        }
+        add_canonical_fallback_players(&tx, import_id, &grenade)?;
+        collect_grenade_metadata(&grenade, &mut metadata);
+        maps.insert(grenade.map);
+        if idx % 500 == 0 {
+            set_status(
+                state,
+                "importing",
+                idx as u64,
+                total as u64,
+                "Streaming grenades into local storage",
+            );
+        }
+    }
+    drop(insert);
+    let mut trailing = [0_u8; 1];
+    if reader
+        .read(&mut trailing)
+        .map_err(|error| online_messagepack_error(state, error))?
+        != 0
+    {
+        return Err(AppError::Import {
+            code: "invalid_messagepack",
+            message: "Online MessagePack contains trailing data".to_string(),
+        });
+    }
+    let verified = reader.into_inner();
+    verify_online_library_reader(verified, state, manifest)?;
+    // Cancellation remains available through record insertion, but not once final commit begins.
+    begin_library_finalization(state, total as u64)?;
+    insert_demo_metadata(&tx, import_id, &metadata)?;
+    populate_import_map_players(&tx, import_id)?;
+    let map_count = maps.len() as u64;
+    tx.execute(
+        "UPDATE imports SET grenade_count=?1, map_count=?2 WHERE id=?3",
+        params![total as i64, map_count as i64, import_id],
+    )?;
+    for map in &maps {
+        tx.execute(
+            "INSERT INTO map_assets(name, label) VALUES (?1, ?2)
+             ON CONFLICT(name) DO UPDATE SET label=excluded.label",
+            params![map, map],
+        )?;
+    }
+    tx.execute("INSERT INTO app_meta(key, value) VALUES ('library_version', ?1) ON CONFLICT(key) DO UPDATE SET value=excluded.value", params![manifest.version])?;
+    tx.execute("INSERT INTO app_meta(key, value) VALUES ('library_import_id', ?1) ON CONFLICT(key) DO UPDATE SET value=excluded.value", params![import_id.to_string()])?;
+    tx.execute("INSERT INTO app_meta(key, value) VALUES ('active_import_id', ?1) ON CONFLICT(key) DO UPDATE SET value=excluded.value", params![import_id.to_string()])?;
+    tx.commit()?;
+    set_status(state, "done", total as u64, total as u64, "Import complete");
+    Ok(ImportReport {
+        import_id,
+        grenade_count: total as u64,
+        map_count,
+        source_path: manifest.url.clone(),
+    })
 }
 
 fn import_typed_path_blocking(state: &AppState, path: &str) -> AppResult<JsonImportReport> {
@@ -2789,31 +3127,8 @@ async fn import_library_update(state: tauri::State<'_, AppState>) -> AppResult<J
             });
         }
         let path = download_library_file(&worker_state, &manifest)?;
-        let import_result = (|| {
-            set_status(
-                &worker_state,
-                "verifying",
-                manifest.size,
-                manifest.size,
-                "Library download verified",
-            );
-            match parse_messagepack_file(&path)? {
-                TypedImportFile::GrenadeIndex(index) => import_index_blocking(
-                    &worker_state,
-                    &manifest.url,
-                    index,
-                    Some(&manifest.version),
-                )
-                .map(JsonImportReport::from),
-                TypedImportFile::CoreNades(core_file) => import_core_nades_snapshot_blocking(
-                    &worker_state,
-                    &manifest.url,
-                    core_file,
-                    Some(&manifest.version),
-                )
-                .map(JsonImportReport::core_nades),
-            }
-        })();
+        let import_result = import_online_library_blocking(&worker_state, &path, &manifest)
+            .map(JsonImportReport::from);
         let _ = fs::remove_file(path);
         import_result
     })
@@ -2822,11 +3137,11 @@ async fn import_library_update(state: tauri::State<'_, AppState>) -> AppResult<J
     match result {
         Ok(Ok(report)) => Ok(report),
         Ok(Err(err)) => {
-            let temporary = state
+            if let Some(temporary) = state
                 .db_path
                 .parent()
-                .map(|directory| directory.join("library-update.msgpack.part"));
-            if let Some(temporary) = temporary {
+                .map(|directory| directory.join("library-update.msgpack.zst.part"))
+            {
                 let _ = fs::remove_file(temporary);
             }
             if matches!(
@@ -2851,15 +3166,19 @@ async fn import_library_update(state: tauri::State<'_, AppState>) -> AppResult<J
 
 #[tauri::command]
 fn cancel_library_download(state: tauri::State<'_, AppState>) -> bool {
-    let is_downloading = state
-        .import_status
-        .lock()
-        .is_ok_and(|status| status.running && status.stage == "downloading");
-    if is_downloading {
-        state
-            .library_download_cancelled
-            .store(true, Ordering::Relaxed);
-    }
+    let is_downloading = state.import_status.lock().is_ok_and(|status| {
+        let can_cancel = status.running
+            && matches!(
+                status.stage.as_str(),
+                "downloading" | "decompressing" | "importing"
+            );
+        if can_cancel {
+            state
+                .library_download_cancelled
+                .store(true, Ordering::Relaxed);
+        }
+        can_cancel
+    });
     is_downloading
 }
 
@@ -4561,10 +4880,15 @@ mod tests {
     #[test]
     fn validates_online_library_manifest_security_fields() {
         let valid = LibraryManifest {
+            manifest_version: 2,
             version: "2026.08.26.1".to_string(),
-            url: "https://example.com/library.msgpack".to_string(),
-            size: 600 * 1024 * 1024,
-            sha256: "a".repeat(64),
+            format: "messagepack".to_string(),
+            compression: "zstd".to_string(),
+            url: "https://example.com/library.msgpack.zst".to_string(),
+            compressed_size: 300 * 1024 * 1024,
+            compressed_sha256: "a".repeat(64),
+            uncompressed_size: 600 * 1024 * 1024,
+            uncompressed_sha256: "b".repeat(64),
         };
         assert!(validate_library_manifest(&valid).is_ok());
 
@@ -4573,7 +4897,7 @@ mod tests {
         assert!(validate_library_manifest(&invalid_url).is_err());
 
         let mut invalid_hash = valid;
-        invalid_hash.sha256 = "not-a-sha256".to_string();
+        invalid_hash.uncompressed_sha256 = "not-a-sha256".to_string();
         assert!(validate_library_manifest(&invalid_hash).is_err());
     }
 
@@ -5084,6 +5408,101 @@ mod tests {
 
         let parsed = parse_messagepack_file(&path).unwrap();
         assert!(matches!(parsed, TypedImportFile::GrenadeIndex(_)));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    fn online_library_fixture(root: &Path, invalid_hash: bool) -> (PathBuf, LibraryManifest) {
+        let mut messagepack = Vec::new();
+        rmp::encode::write_map_len(&mut messagepack, 2).unwrap();
+        rmp_serde::encode::write_named(&mut messagepack, &"version").unwrap();
+        rmp::encode::write_sint(&mut messagepack, 1).unwrap();
+        rmp_serde::encode::write_named(&mut messagepack, &"canonical_grenades").unwrap();
+        rmp::encode::write_array_len(&mut messagepack, 1).unwrap();
+        rmp_serde::encode::write_named(
+            &mut messagepack,
+            &serde_json::json!({"map": "de_test", "throw_keys": "M1+JUMP"}),
+        )
+        .unwrap();
+        let compressed = zstd::stream::encode_all(std::io::Cursor::new(&messagepack), 1).unwrap();
+        let path = root.join("library.msgpack.zst");
+        fs::write(&path, &compressed).unwrap();
+        (
+            path,
+            LibraryManifest {
+                manifest_version: 2,
+                version: "test-online-version".to_string(),
+                format: "messagepack".to_string(),
+                compression: "zstd".to_string(),
+                url: "https://example.com/library.msgpack.zst".to_string(),
+                compressed_size: compressed.len() as u64,
+                compressed_sha256: format!("{:x}", Sha256::digest(&compressed)),
+                uncompressed_size: messagepack.len() as u64,
+                uncompressed_sha256: if invalid_hash {
+                    "0".repeat(64)
+                } else {
+                    format!("{:x}", Sha256::digest(&messagepack))
+                },
+            },
+        )
+    }
+
+    #[test]
+    fn online_zstd_library_streams_records_without_a_raw_msgpack_file() {
+        let (state, root) = temporary_test_state("online-stream-success");
+        let (path, manifest) = online_library_fixture(&root, false);
+
+        let report = import_online_library_blocking(&state, &path, &manifest).unwrap();
+        let conn = open_conn(&state).unwrap();
+        assert_eq!(report.grenade_count, 1);
+        assert_eq!(count(&conn, "SELECT COUNT(*) FROM imports"), 1);
+        assert_eq!(count(&conn, "SELECT COUNT(*) FROM grenades"), 1);
+        assert_eq!(
+            app_meta_value(&conn, "library_version").unwrap().as_deref(),
+            Some("test-online-version")
+        );
+        assert!(!root.join("library-update.msgpack.part").exists());
+        drop(conn);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn online_zstd_library_hash_failure_rolls_back_insert_and_activation() {
+        let (state, root) = temporary_test_state("online-stream-rollback");
+        let conn = open_conn(&state).unwrap();
+        init_schema(&conn).unwrap();
+        insert_import(&conn, 7);
+        conn.execute(
+            "INSERT INTO app_meta(key, value) VALUES ('active_import_id', '7')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO app_meta(key, value) VALUES ('library_version', 'old')",
+            [],
+        )
+        .unwrap();
+        drop(conn);
+        let (path, manifest) = online_library_fixture(&root, true);
+
+        let error = match import_online_library_blocking(&state, &path, &manifest) {
+            Ok(_) => panic!("expected the invalid hash to fail"),
+            Err(error) => error,
+        };
+        assert!(matches!(
+            error,
+            AppError::Import {
+                code: "library_uncompressed_hash_mismatch",
+                ..
+            }
+        ));
+        let conn = open_conn(&state).unwrap();
+        assert_eq!(count(&conn, "SELECT COUNT(*) FROM imports"), 1);
+        assert_eq!(active_import_id(&conn).unwrap(), Some(7));
+        assert_eq!(
+            app_meta_value(&conn, "library_version").unwrap().as_deref(),
+            Some("old")
+        );
+        drop(conn);
         fs::remove_dir_all(root).unwrap();
     }
 

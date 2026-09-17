@@ -8,10 +8,15 @@ export type ImportStatus = {
 };
 
 export type LibraryManifest = {
+  manifest_version: number;
   version: string;
+  format: 'messagepack';
+  compression: 'zstd';
   url: string;
-  size: number;
-  sha256: string;
+  compressed_size: number;
+  compressed_sha256: string;
+  uncompressed_size: number;
+  uncompressed_sha256: string;
 };
 
 export type LibraryUpdate = {

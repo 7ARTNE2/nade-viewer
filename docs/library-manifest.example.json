@@ -1,6 +1,11 @@
 {
-  "version": "2026.08.26.1",
-  "url": "https://github.com/7ARTNE2/nade-viewer/releases/download/data-2026.08.26.1/library.msgpack",
-  "size": 709942607,
-  "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+  "manifest_version": 2,
+  "version": "2026.09.17.1",
+  "format": "messagepack",
+  "compression": "zstd",
+  "url": "https://github.com/7ARTNE2/nade-viewer/releases/download/data-2026.09.17.1/library.msgpack.zst",
+  "compressed_size": 220000000,
+  "compressed_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "uncompressed_size": 709942607,
+  "uncompressed_sha256": "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"
 }

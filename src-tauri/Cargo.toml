@@ -28,3 +28,4 @@ tauri-plugin-updater = "2.10.1"
 thiserror = "2"
 image = { version = "0.25", default-features = false, features = ["jpeg"] }
 zip = { version = "2", default-features = false, features = ["deflate"] }
+zstd = "0.13"
