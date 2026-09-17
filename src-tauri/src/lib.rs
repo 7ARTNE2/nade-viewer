@@ -8,7 +8,7 @@ use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     env, fs,
-    io::{BufReader, Read, Write},
+    io::{BufReader, BufWriter, Read, Write},
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -26,6 +26,7 @@ const WORLD: f64 = 1024.0;
 const SUPPORTED_IMPORT_VERSION: i64 = 1;
 const DEFAULT_LIBRARY_MANIFEST_URL: &str =
     "https://github.com/7ARTNE2/nade-viewer/releases/download/library/library-manifest.json";
+const LARGE_IO_BUFFER_SIZE: usize = 1024 * 1024;
 const GRENADE_PREVIEW_COLUMNS: &str = "g.id, g.map, g.side, g.grenade_type, g.is_core,
     g.throw_keys, g.coordinates, g.thrower, g.thrower_steamid64, g.thrower_team, g.airtime, g.usage_count, g.round_time_seconds,
     g.start_map_x, g.start_map_y, g.explode_map_x, g.explode_map_y, g.explode_pos_z,
@@ -1321,14 +1322,16 @@ fn download_library_file(state: &AppState, manifest: &LibraryManifest) -> AppRes
         });
     }
 
-    let mut file = fs::File::create(&destination).map_err(|error| AppError::Import {
+    let file = fs::File::create(&destination).map_err(|error| AppError::Import {
         code: "library_download_failed",
         message: format!("Unable to create temporary library file: {error}"),
     })?;
+    let mut file = BufWriter::with_capacity(LARGE_IO_BUFFER_SIZE, file);
     let mut response = response;
     let mut hasher = Sha256::new();
-    let mut buffer = [0_u8; 64 * 1024];
+    let mut buffer = vec![0_u8; LARGE_IO_BUFFER_SIZE];
     let mut downloaded = 0_u64;
+    let mut last_status_update = std::time::Instant::now();
     set_status(
         state,
         "downloading",
@@ -1361,13 +1364,16 @@ fn download_library_file(state: &AppState, manifest: &LibraryManifest) -> AppRes
         }
         file.write_all(&buffer[..read])?;
         hasher.update(&buffer[..read]);
-        set_status(
-            state,
-            "downloading",
-            downloaded,
-            manifest.size,
-            "Downloading online library",
-        );
+        if last_status_update.elapsed() >= std::time::Duration::from_millis(250) {
+            set_status(
+                state,
+                "downloading",
+                downloaded,
+                manifest.size,
+                "Downloading online library",
+            );
+            last_status_update = std::time::Instant::now();
+        }
     }
     file.flush()?;
     if downloaded != manifest.size {
@@ -1386,6 +1392,13 @@ fn download_library_file(state: &AppState, manifest: &LibraryManifest) -> AppRes
             message: "Library SHA-256 does not match the manifest".to_string(),
         });
     }
+    set_status(
+        state,
+        "downloading",
+        downloaded,
+        manifest.size,
+        "Downloading online library",
+    );
     Ok(destination)
 }
 
@@ -1499,22 +1512,24 @@ fn parse_messagepack_file(path: &Path) -> AppResult<TypedImportFile> {
         message: format!("Cannot open downloaded library: {error}"),
     })?;
     let shape: ImportEnvelopeShape =
-        rmp_serde::from_read(BufReader::new(shape_file)).map_err(|error| AppError::Import {
-            code: "invalid_messagepack",
-            message: format!("Invalid MessagePack: {error}"),
-        })?;
+        rmp_serde::from_read(BufReader::with_capacity(LARGE_IO_BUFFER_SIZE, shape_file)).map_err(
+            |error| AppError::Import {
+                code: "invalid_messagepack",
+                message: format!("Invalid MessagePack: {error}"),
+            },
+        )?;
     validate_import_shape(&shape)?;
 
     let file = fs::File::open(path)?;
     if shape.canonical_grenades {
-        rmp_serde::from_read(BufReader::new(file))
+        rmp_serde::from_read(BufReader::with_capacity(LARGE_IO_BUFFER_SIZE, file))
             .map(TypedImportFile::GrenadeIndex)
             .map_err(|error| AppError::Import {
                 code: "invalid_canonical_format",
                 message: format!("Invalid grenade_index import: {error}"),
             })
     } else {
-        rmp_serde::from_read(BufReader::new(file))
+        rmp_serde::from_read(BufReader::with_capacity(LARGE_IO_BUFFER_SIZE, file))
             .map(TypedImportFile::CoreNades)
             .map_err(|error| AppError::Import {
                 code: "invalid_core_format",
@@ -3148,7 +3163,7 @@ fn import_index_blocking(
                 g.thrower_team.as_deref(),
                 g.airtime,
                 g.usage_count.unwrap_or(1),
-                serde_json::to_string(&g.usage_throwers.clone().unwrap_or_default())?,
+                serde_json::to_string(g.usage_throwers.as_deref().unwrap_or(&[]))?,
                 g.demo_filename.as_deref(),
                 g.throw_tick,
                 g.lineup_tick,
@@ -4295,7 +4310,7 @@ fn import_core_nades_snapshot_blocking(
                 g.thrower_team.as_deref(),
                 g.airtime,
                 g.usage_count.unwrap_or(1),
-                serde_json::to_string(&g.usage_throwers.clone().unwrap_or_default())?,
+                serde_json::to_string(g.usage_throwers.as_deref().unwrap_or(&[]))?,
                 g.demo_filename.as_deref(),
                 g.throw_tick,
                 g.lineup_tick,
