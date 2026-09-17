@@ -60,7 +60,8 @@ function formatDuration(milliseconds: number) {
 
 function formatDataRate(bytesPerSecond: number) {
   if (bytesPerSecond < 1024) return `${bytesPerSecond} B/s`;
-  if (bytesPerSecond < 1024 ** 2) return `${(bytesPerSecond / 1024).toFixed(1)} KB/s`;
+  if (bytesPerSecond < 1024 ** 2)
+    return `${(bytesPerSecond / 1024).toFixed(1)} KB/s`;
   return `${(bytesPerSecond / 1024 ** 2).toFixed(1)} MB/s`;
 }
 
@@ -697,8 +698,10 @@ export default function NadeParserTool({ refreshImports }: Props) {
                 <HardDrive size={16} aria-hidden="true" />
                 <span>{tr('Parser disk I/O', 'Диск парсера')}</span>
                 <strong>
-                  {tr('Read', 'Чтение')} {formatDataRate(status.disk_read_bytes_per_sec)} ·{' '}
-                  {tr('Write', 'Запись')} {formatDataRate(status.disk_write_bytes_per_sec)}
+                  {tr('Read', 'Чтение')}{' '}
+                  {formatDataRate(status.disk_read_bytes_per_sec)} ·{' '}
+                  {tr('Write', 'Запись')}{' '}
+                  {formatDataRate(status.disk_write_bytes_per_sec)}
                 </strong>
               </div>
             )}

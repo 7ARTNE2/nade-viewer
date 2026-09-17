@@ -85,7 +85,11 @@ export default function DestructiveConfirmDialog({
           <p id={`${id}-description`}>{description}</p>
         </div>
         <div className="snapshot-delete-meta">{metadata}</div>
-        {error && <p className="tools-confirm-error" role="alert">{error}</p>}
+        {error && (
+          <p className="tools-confirm-error" role="alert">
+            {error}
+          </p>
+        )}
         <div className="snapshot-delete-actions">
           <button type="button" className="btn" disabled={busy} onClick={close}>
             {tr('Cancel', 'Отмена')}
@@ -96,7 +100,11 @@ export default function DestructiveConfirmDialog({
             disabled={busy}
             onClick={onConfirm}
           >
-            {busy ? <LoaderCircle size={15} aria-hidden="true" /> : <Trash2 size={15} aria-hidden="true" />}
+            {busy ? (
+              <LoaderCircle size={15} aria-hidden="true" />
+            ) : (
+              <Trash2 size={15} aria-hidden="true" />
+            )}
             {busy ? pendingLabel : confirmLabel}
           </button>
         </div>

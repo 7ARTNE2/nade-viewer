@@ -46,7 +46,7 @@ if ($zstd) {
         throw "zstd verification failed with exit code $LASTEXITCODE"
     }
 } else {
-    & cargo run --quiet --manifest-path "$PSScriptRoot\..\src-tauri\Cargo.toml" --bin library-compress -- --input $source.FullName --output $compressedPath --level $CompressionLevel
+    & cargo run --quiet --manifest-path "$PSScriptRoot\..\src-tauri\Cargo.toml" --example library-compress -- --input $source.FullName --output $compressedPath --level $CompressionLevel
     if ($LASTEXITCODE -ne 0) {
         throw "Rust Zstd compression failed with exit code $LASTEXITCODE"
     }
