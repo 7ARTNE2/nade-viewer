@@ -64,7 +64,11 @@ $manifest = [ordered]@{
     uncompressed_size = $source.Length
     uncompressed_sha256 = Get-Sha256 $source.FullName
 }
-$manifest | ConvertTo-Json | Set-Content -LiteralPath $manifestPath -Encoding utf8
+[System.IO.File]::WriteAllText(
+    $manifestPath,
+    ($manifest | ConvertTo-Json),
+    [System.Text.UTF8Encoding]::new($false)
+)
 
 if (-not $Publish) {
     "Prepared $compressedPath and $manifestPath. Run again with -Publish to upload release $releaseTag."
@@ -76,8 +80,12 @@ if ($LASTEXITCODE -ne 0) {
     throw 'GitHub CLI is not authenticated. Run gh auth login -h github.com before publishing.'
 }
 
+$previousErrorActionPreference = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
 & gh release view $releaseTag --repo $Repository 2>$null
-if ($LASTEXITCODE -eq 0) {
+$releaseExists = $LASTEXITCODE -eq 0
+$ErrorActionPreference = $previousErrorActionPreference
+if ($releaseExists) {
     throw "Release $releaseTag already exists. Use a new library version rather than replacing an immutable asset."
 }
 
