@@ -36,6 +36,7 @@ import {
   updateImportLabel,
   completeOnboarding,
   checkLibraryUpdate,
+  cancelLibraryDownload,
   getImportStatus,
   importLibraryUpdate,
 } from './lib/tauri';
@@ -103,6 +104,7 @@ function Shell() {
     null,
   );
   const [libraryUpdateBusy, setLibraryUpdateBusy] = useState(false);
+  const [libraryUpdateCancelling, setLibraryUpdateCancelling] = useState(false);
   const [libraryUpdateStatus, setLibraryUpdateStatus] =
     useState<ImportStatus | null>(null);
   const closeDeleteModal = useCallback(() => setDeleteSnapshotOpen(false), []);
@@ -277,16 +279,39 @@ function Shell() {
       navigate('/maps', { replace: true });
     } catch (error) {
       console.error(error);
+      const cancelled =
+        typeof error === 'object' &&
+        error !== null &&
+        'code' in error &&
+        error.code === 'library_download_cancelled';
       showToast(
-        tr(
-          'Library update failed. The previous library is unchanged.',
-          'Не удалось обновить библиотеку. Предыдущая библиотека не изменена.',
-        ),
-        { tone: 'error', duration: 4200 },
+        cancelled
+          ? tr('Library download cancelled', 'Скачивание библиотеки отменено')
+          : tr(
+              'Library update failed. The previous library is unchanged.',
+              'Не удалось обновить библиотеку. Предыдущая библиотека не изменена.',
+            ),
+        cancelled ? undefined : { tone: 'error', duration: 4200 },
       );
     } finally {
       setLibraryUpdateBusy(false);
+      setLibraryUpdateCancelling(false);
       setLibraryUpdateStatus(null);
+    }
+  };
+
+  const cancelCurrentLibraryDownload = async () => {
+    setLibraryUpdateCancelling(true);
+    try {
+      const accepted = await cancelLibraryDownload();
+      if (!accepted) setLibraryUpdateCancelling(false);
+    } catch (error) {
+      console.error(error);
+      setLibraryUpdateCancelling(false);
+      showToast(
+        tr('Could not cancel the download', 'Не удалось отменить скачивание'),
+        { tone: 'error' },
+      );
     }
   };
 
@@ -798,8 +823,14 @@ function Shell() {
                 />
               }
             />
-            <Route path="/tools" element={<ToolsPage refreshImports={refreshImports} />} />
-            <Route path="/tools/:pluginId" element={<ToolsPage refreshImports={refreshImports} />} />
+            <Route
+              path="/tools"
+              element={<ToolsPage refreshImports={refreshImports} />}
+            />
+            <Route
+              path="/tools/:pluginId"
+              element={<ToolsPage refreshImports={refreshImports} />}
+            />
             <Route
               path="/map/:mapName"
               element={
@@ -905,17 +936,35 @@ function Shell() {
               </div>
             ) : null}
           </div>
-          <button
-            className="btn primary"
-            type="button"
-            onClick={() => void installLibraryUpdate()}
-            disabled={libraryUpdateBusy}
-          >
-            <Download size={15} />
-            {libraryUpdateBusy
-              ? tr('Updating', 'Обновление')
-              : tr('Download and install', 'Скачать и установить')}
-          </button>
+          {libraryUpdateBusy && libraryUpdateStatus?.stage === 'downloading' ? (
+            <button
+              className={`btn library-download-cancel ${libraryUpdateCancelling ? 'is-cancelling' : ''}`}
+              type="button"
+              onClick={() => void cancelCurrentLibraryDownload()}
+              disabled={libraryUpdateCancelling}
+            >
+              <span className="library-download-cancel-icon" aria-hidden="true">
+                <X size={15} />
+              </span>
+              <span>
+                {libraryUpdateCancelling
+                  ? tr('Cancelling', 'Отмена...')
+                  : tr('Cancel download', 'Отменить скачивание')}
+              </span>
+            </button>
+          ) : (
+            <button
+              className="btn primary"
+              type="button"
+              onClick={() => void installLibraryUpdate()}
+              disabled={libraryUpdateBusy}
+            >
+              <Download size={15} />
+              {libraryUpdateBusy
+                ? tr('Updating', 'Обновление')
+                : tr('Download and install', 'Скачать и установить')}
+            </button>
+          )}
           {!libraryUpdateBusy ? (
             <button
               className="icon-btn"

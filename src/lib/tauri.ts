@@ -47,6 +47,10 @@ export function importLibraryUpdate() {
   return invoke<JsonImportReport>('import_library_update');
 }
 
+export function cancelLibraryDownload() {
+  return invoke<boolean>('cancel_library_download');
+}
+
 export function listImports() {
   return invoke<ImportSummary[]>('list_imports');
 }

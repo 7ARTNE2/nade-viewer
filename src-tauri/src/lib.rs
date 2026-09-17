@@ -10,7 +10,10 @@ use std::{
     env, fs,
     io::{BufReader, Read, Write},
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    },
 };
 
 use tauri::{AppHandle, Manager};
@@ -71,6 +74,7 @@ struct AppState {
     resource_dir: PathBuf,
     radars: Arc<HashMap<String, RadarParams>>,
     import_status: Arc<Mutex<ImportStatus>>,
+    library_download_cancelled: Arc<AtomicBool>,
 }
 
 #[derive(Clone, Serialize)]
@@ -704,6 +708,7 @@ pub fn run() {
             plugin::prepare_parser_import,
             check_library_update,
             import_library_update,
+            cancel_library_download,
             get_import_status,
             list_imports,
             get_import_teams,
@@ -748,6 +753,7 @@ fn init_state(app: &AppHandle) -> Result<AppState, Box<dyn std::error::Error>> {
         resource_dir,
         radars,
         import_status: Arc::new(Mutex::new(ImportStatus::default())),
+        library_download_cancelled: Arc::new(AtomicBool::new(false)),
     };
     let conn = open_conn(&state)?;
     init_schema(&conn)?;
@@ -1141,7 +1147,7 @@ fn migrate_grenade_columns(conn: &Connection) -> AppResult<()> {
 
 fn set_status(state: &AppState, stage: &str, current: u64, total: u64, message: &str) {
     if let Ok(mut status) = state.import_status.lock() {
-        status.running = stage != "done" && stage != "error" && stage != "idle";
+        status.running = !matches!(stage, "done" | "error" | "idle" | "cancelled");
         status.stage = stage.to_string();
         status.current = current;
         status.total = total;
@@ -1331,6 +1337,12 @@ fn download_library_file(state: &AppState, manifest: &LibraryManifest) -> AppRes
         "Downloading online library",
     );
     loop {
+        if state.library_download_cancelled.load(Ordering::Relaxed) {
+            return Err(AppError::Import {
+                code: "library_download_cancelled",
+                message: "Library download was cancelled".to_string(),
+            });
+        }
         let read = response
             .read(&mut buffer)
             .map_err(|error| AppError::Import {
@@ -2748,6 +2760,9 @@ async fn import_json(
 async fn import_library_update(state: tauri::State<'_, AppState>) -> AppResult<JsonImportReport> {
     let state = state.inner().clone();
     try_begin_import(&state.import_status)?;
+    state
+        .library_download_cancelled
+        .store(false, Ordering::Relaxed);
     set_status(&state, "checking_update", 0, 0, "Checking online library");
     let worker_state = state.clone();
     let result = tauri::async_runtime::spawn_blocking(move || {
@@ -2799,7 +2814,17 @@ async fn import_library_update(state: tauri::State<'_, AppState>) -> AppResult<J
             if let Some(temporary) = temporary {
                 let _ = fs::remove_file(temporary);
             }
-            set_error(&state, &err.to_string());
+            if matches!(
+                err,
+                AppError::Import {
+                    code: "library_download_cancelled",
+                    ..
+                }
+            ) {
+                set_status(&state, "cancelled", 0, 0, "Library download cancelled");
+            } else {
+                set_error(&state, &err.to_string());
+            }
             Err(err)
         }
         Err(err) => {
@@ -2807,6 +2832,20 @@ async fn import_library_update(state: tauri::State<'_, AppState>) -> AppResult<J
             Err(AppError::Message(err.to_string()))
         }
     }
+}
+
+#[tauri::command]
+fn cancel_library_download(state: tauri::State<'_, AppState>) -> bool {
+    let is_downloading = state
+        .import_status
+        .lock()
+        .is_ok_and(|status| status.running && status.stage == "downloading");
+    if is_downloading {
+        state
+            .library_download_cancelled
+            .store(true, Ordering::Relaxed);
+    }
+    is_downloading
 }
 
 fn import_screenshot_archive_blocking(
@@ -4611,6 +4650,7 @@ mod tests {
                 resource_dir: root.join("resources"),
                 radars: Arc::new(HashMap::new()),
                 import_status: Arc::new(Mutex::new(ImportStatus::default())),
+                library_download_cancelled: Arc::new(AtomicBool::new(false)),
             },
             root,
         )
