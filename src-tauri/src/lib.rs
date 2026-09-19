@@ -1752,8 +1752,9 @@ fn import_online_library_blocking(
             state,
             import_id,
             idx as i64,
-            false,
+            CanonicalWriteMode::Canonical,
             &grenade,
+            None,
         )?;
         collect_grenade_metadata(&grenade, &mut metadata);
         maps.insert(grenade.map);
@@ -2336,47 +2337,6 @@ fn add_canonical_fallback_players(
                 Some(thrower),
                 grenade.thrower_team.as_deref(),
                 grenade.side.as_deref(),
-            )?;
-        }
-    }
-    Ok(())
-}
-
-fn add_core_fallback_players(
-    conn: &Connection,
-    import_id: i64,
-    grenade: &CoreNadeRecord,
-) -> AppResult<()> {
-    insert_fallback_player(
-        conn,
-        import_id,
-        grenade.demo_filename.as_deref(),
-        grenade.thrower_steamid64.as_deref(),
-        grenade.thrower.as_deref(),
-        grenade.thrower_team.as_deref(),
-        Some(&grenade.side),
-    )?;
-    for event in &grenade.usage_events {
-        insert_fallback_player(
-            conn,
-            import_id,
-            event.demo_filename.as_deref(),
-            event.thrower_steamid64.as_deref(),
-            event.thrower.as_deref(),
-            event.thrower_team.as_deref(),
-            Some(&grenade.side),
-        )?;
-    }
-    if let Some(throwers) = grenade.usage_throwers.as_deref() {
-        for thrower in throwers {
-            insert_fallback_player(
-                conn,
-                import_id,
-                grenade.demo_filename.as_deref(),
-                None,
-                Some(thrower),
-                grenade.thrower_team.as_deref(),
-                Some(&grenade.side),
             )?;
         }
     }
@@ -3178,24 +3138,37 @@ fn select_import_file() -> Option<String> {
         .map(|p| p.to_string_lossy().to_string())
 }
 
+#[derive(Clone, Copy)]
+enum CanonicalWriteMode {
+    Canonical,
+    Core,
+}
+
 fn insert_canonical_grenade(
     tx: &Transaction<'_>,
     statement: &mut rusqlite::Statement<'_>,
     state: &AppState,
     import_id: i64,
     source_index: i64,
-    is_core: bool,
+    mode: CanonicalWriteMode,
     grenade: &RawGrenade,
+    fallback_map_coordinates: Option<(Option<f64>, Option<f64>, Option<f64>, Option<f64>)>,
 ) -> AppResult<i64> {
     let radar = state.radars.get(&map_name_to_key(&grenade.map));
     let project = |x: Option<f64>, y: Option<f64>| match (x, y, radar) {
         (Some(x), Some(y), Some(radar)) => Some(game_to_map_coords(x, y, radar)),
         _ => None,
     };
+    let (fallback_start_x, fallback_start_y, fallback_explode_x, fallback_explode_y) =
+        fallback_map_coordinates.unwrap_or((None, None, None, None));
     let (start_map_x, start_map_y) = project(grenade.start_pos_x, grenade.start_pos_y)
-        .map_or((None, None), |(x, y)| (Some(x), Some(y)));
+        .map_or((fallback_start_x, fallback_start_y), |(x, y)| {
+            (Some(x), Some(y))
+        });
     let (explode_map_x, explode_map_y) = project(grenade.explode_pos_x, grenade.explode_pos_y)
-        .map_or((None, None), |(x, y)| (Some(x), Some(y)));
+        .map_or((fallback_explode_x, fallback_explode_y), |(x, y)| {
+            (Some(x), Some(y))
+        });
     let (trajectory_preview, trajectory_json) = trajectory_storage_json(
         grenade.trajectory.as_ref(),
         grenade.trajectory_preview.as_ref(),
@@ -3207,7 +3180,10 @@ fn insert_canonical_grenade(
         grenade.map,
         grenade.side.as_deref().unwrap_or("Any"),
         grenade.grenade_type.as_deref().unwrap_or("smoke"),
-        i64::from(is_core),
+        match mode {
+            CanonicalWriteMode::Canonical => 0,
+            CanonicalWriteMode::Core => 1,
+        },
         grenade.throw_keys.as_deref(),
         grenade.coordinates.as_deref(),
         grenade.thrower.as_deref(),
@@ -3297,8 +3273,9 @@ fn import_workspace_rows_blocking(
                 state,
                 import_id,
                 ordinal as i64,
-                false,
+                CanonicalWriteMode::Canonical,
                 &grenade,
+                None,
             )
             .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
             collect_grenade_metadata(&grenade, &mut metadata);
@@ -3754,8 +3731,13 @@ fn import_index_blocking(
                 state,
                 import_id,
                 idx as i64,
-                is_core_snapshot,
+                if is_core_snapshot {
+                    CanonicalWriteMode::Core
+                } else {
+                    CanonicalWriteMode::Canonical
+                },
                 g,
+                None,
             )?;
         }
     }
@@ -4784,7 +4766,6 @@ fn import_core_nades_snapshot_blocking(
         "Preparing Core Nades snapshot",
     );
 
-    let radars = &state.radars;
     let mut conn = open_conn(state)?;
     init_schema(&conn)?;
 
@@ -4843,8 +4824,8 @@ fn import_core_nades_snapshot_blocking(
                 explode_pos_x, explode_pos_y, explode_pos_z, start_map_x, start_map_y,
                 explode_map_x, explode_map_y, trajectory_preview_json, trajectory_json
             ) VALUES (
-                ?1, ?2, ?3, ?4, ?5, 1, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16,
-                ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30
+                ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17,
+                ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31
             )",
         )?;
 
@@ -4852,65 +4833,54 @@ fn import_core_nades_snapshot_blocking(
             if idx % 500 == 0 {
                 set_status(state, "importing", idx as u64, total, "Indexing Core Nades");
             }
-            let key = map_name_to_key(&g.map);
-            let radar = radars.get(&key);
-            let (start_map_x, start_map_y) = match (g.start_pos_x, g.start_pos_y, radar) {
-                (Some(x), Some(y), Some(r)) => {
-                    let (mx, my) = game_to_map_coords(x, y, r);
-                    (Some(mx), Some(my))
-                }
-                _ => (g.start_map_x, g.start_map_y),
+            let raw = RawGrenade {
+                source_index: g.source_index,
+                map: g.map.clone(),
+                side: Some(g.side.clone()),
+                grenade_type: Some(g.grenade_type.clone()),
+                throw_keys: g.throw_keys.clone(),
+                usage_count: g.usage_count,
+                usage_throwers: g.usage_throwers.clone(),
+                coordinates: g.coordinates.clone(),
+                demo_filename: g.demo_filename.clone(),
+                throw_tick: g.throw_tick,
+                lineup_tick: g.lineup_tick,
+                tickrate: g.tickrate,
+                round_time_seconds: g.round_time_seconds,
+                start_pos_x: g.start_pos_x,
+                start_pos_y: g.start_pos_y,
+                start_pos_z: g.start_pos_z,
+                explode_pos_x: g.explode_pos_x,
+                explode_pos_y: g.explode_pos_y,
+                explode_pos_z: g.explode_pos_z,
+                start_map_x: g.start_map_x,
+                start_map_y: g.start_map_y,
+                explode_map_x: g.explode_map_x,
+                explode_map_y: g.explode_map_y,
+                trajectory: g.trajectory.clone(),
+                trajectory_preview: g.trajectory_preview.clone(),
+                thrower: g.thrower.clone(),
+                thrower_steamid64: g.thrower_steamid64.clone(),
+                thrower_team: g.thrower_team.clone(),
+                airtime: g.airtime,
+                tournament: None,
+                usage_events: g.usage_events.clone(),
             };
-            let (explode_map_x, explode_map_y) = match (g.explode_pos_x, g.explode_pos_y, radar) {
-                (Some(x), Some(y), Some(r)) => {
-                    let (mx, my) = game_to_map_coords(x, y, r);
-                    (Some(mx), Some(my))
-                }
-                _ => (g.explode_map_x, g.explode_map_y),
-            };
-            let (trajectory_preview, trajectory_json) = trajectory_storage_json(
-                g.trajectory.as_ref(),
-                g.trajectory_preview.as_ref(),
-                radar,
-            )?;
-
-            stmt.execute(params![
+            insert_canonical_grenade(
+                &tx,
+                &mut stmt,
+                state,
                 import_id,
                 g.source_index.unwrap_or(idx as i64),
-                g.map,
-                g.side,
-                g.grenade_type,
-                g.throw_keys.as_deref(),
-                g.coordinates.as_deref(),
-                g.thrower.as_deref(),
-                g.thrower_steamid64.as_deref(),
-                g.thrower_team.as_deref(),
-                g.airtime,
-                g.usage_count.unwrap_or(1),
-                serde_json::to_string(g.usage_throwers.as_deref().unwrap_or(&[]))?,
-                g.demo_filename.as_deref(),
-                g.throw_tick,
-                g.lineup_tick,
-                round_tickrate(g.tickrate),
-                g.round_time_seconds,
-                g.start_pos_x,
-                g.start_pos_y,
-                g.start_pos_z,
-                g.explode_pos_x,
-                g.explode_pos_y,
-                g.explode_pos_z,
-                start_map_x,
-                start_map_y,
-                explode_map_x,
-                explode_map_y,
-                trajectory_preview,
-                trajectory_json,
-            ])?;
-            let grenade_id = tx.last_insert_rowid();
-            for event in &g.usage_events {
-                insert_usage_event(&tx, import_id, grenade_id, event)?;
-            }
-            add_core_fallback_players(&tx, import_id, g)?;
+                CanonicalWriteMode::Core,
+                &raw,
+                Some((
+                    g.start_map_x,
+                    g.start_map_y,
+                    g.explode_map_x,
+                    g.explode_map_y,
+                )),
+            )?;
         }
     }
 
