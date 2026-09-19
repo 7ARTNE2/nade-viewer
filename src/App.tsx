@@ -267,6 +267,8 @@ function Shell() {
       current: 0,
       total: libraryUpdate.manifest.compressed_size,
       message: tr('Preparing download', 'Подготовка загрузки'),
+      phase_current: 0,
+      phase_total: libraryUpdate.manifest.compressed_size,
     });
     try {
       await importLibraryUpdate();

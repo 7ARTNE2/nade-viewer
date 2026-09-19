@@ -4,6 +4,8 @@ export type ImportStatus = {
   current: number;
   total: number;
   message: string;
+  phase_current: number;
+  phase_total: number;
   error?: string | null;
 };
 

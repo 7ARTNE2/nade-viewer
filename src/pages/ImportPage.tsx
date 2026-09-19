@@ -37,6 +37,8 @@ export default function ImportPage({ onImported, lastImport }: Props) {
     current: 0,
     total: 0,
     message: 'Ready',
+    phase_current: 0,
+    phase_total: 0,
   });
   const [busy, setBusy] = useState(false);
   const [dragging, setDragging] = useState(false);
