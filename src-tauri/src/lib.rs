@@ -3728,7 +3728,6 @@ fn import_index_blocking(
         "grenade_index"
     };
 
-    let radars = &state.radars;
     let mut conn = open_conn(state)?;
     init_schema(&conn)?;
 
@@ -3797,66 +3796,15 @@ fn import_index_blocking(
             if idx % 500 == 0 {
                 set_status(state, "importing", idx as u64, total, "Indexing grenades");
             }
-            let key = map_name_to_key(&g.map);
-            let radar = radars.get(&key);
-            let (start_map_x, start_map_y) = match (g.start_pos_x, g.start_pos_y, radar) {
-                (Some(x), Some(y), Some(r)) => {
-                    let (mx, my) = game_to_map_coords(x, y, r);
-                    (Some(mx), Some(my))
-                }
-                _ => (None, None),
-            };
-            let (explode_map_x, explode_map_y) = match (g.explode_pos_x, g.explode_pos_y, radar) {
-                (Some(x), Some(y), Some(r)) => {
-                    let (mx, my) = game_to_map_coords(x, y, r);
-                    (Some(mx), Some(my))
-                }
-                _ => (None, None),
-            };
-            let (trajectory_preview, trajectory_json) = trajectory_storage_json(
-                g.trajectory.as_ref(),
-                g.trajectory_preview.as_ref(),
-                radar,
-            )?;
-
-            stmt.execute(params![
+            insert_canonical_grenade(
+                &tx,
+                &mut stmt,
+                state,
                 import_id,
                 idx as i64,
-                g.map,
-                g.side.as_deref().unwrap_or("Any"),
-                g.grenade_type.as_deref().unwrap_or("smoke"),
-                if is_core_snapshot { 1 } else { 0 },
-                g.throw_keys.as_deref(),
-                g.coordinates.as_deref(),
-                g.thrower.as_deref(),
-                g.thrower_steamid64.as_deref(),
-                g.thrower_team.as_deref(),
-                g.airtime,
-                g.usage_count.unwrap_or(1),
-                serde_json::to_string(g.usage_throwers.as_deref().unwrap_or(&[]))?,
-                g.demo_filename.as_deref(),
-                g.throw_tick,
-                g.lineup_tick,
-                round_tickrate(g.tickrate),
-                g.round_time_seconds,
-                g.start_pos_x,
-                g.start_pos_y,
-                g.start_pos_z,
-                g.explode_pos_x,
-                g.explode_pos_y,
-                g.explode_pos_z,
-                start_map_x,
-                start_map_y,
-                explode_map_x,
-                explode_map_y,
-                trajectory_preview,
-                trajectory_json,
-            ])?;
-            let grenade_id = tx.last_insert_rowid();
-            for event in &g.usage_events {
-                insert_usage_event(&tx, import_id, grenade_id, event)?;
-            }
-            add_canonical_fallback_players(&tx, import_id, g)?;
+                is_core_snapshot,
+                g,
+            )?;
         }
     }
 
