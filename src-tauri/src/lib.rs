@@ -1,7 +1,7 @@
 use chrono::{Duration, NaiveDate, Utc};
 use regex::Regex;
 use reqwest::blocking::Client;
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use serde::{de::IgnoredAny, Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -1120,6 +1120,76 @@ fn init_schema(conn: &Connection) -> AppResult<()> {
     Ok(())
 }
 
+fn defer_import_indexes(tx: &Transaction<'_>) -> AppResult<()> {
+    tx.execute_batch(
+        "DROP INDEX IF EXISTS idx_grenades_filter;
+         DROP INDEX IF EXISTS idx_grenades_explode;
+         DROP INDEX IF EXISTS idx_grenades_map_usage;
+         DROP INDEX IF EXISTS idx_grenades_map_type_usage;
+         DROP INDEX IF EXISTS idx_grenades_map_side_usage;
+         DROP INDEX IF EXISTS idx_grenades_map_type_side_usage;
+         DROP INDEX IF EXISTS idx_grenades_cluster;
+         DROP INDEX IF EXISTS idx_grenades_cluster_type_side;
+         DROP INDEX IF EXISTS idx_grenades_start;
+         DROP INDEX IF EXISTS idx_grenades_usage;
+         DROP INDEX IF EXISTS idx_grenades_similar;
+         DROP INDEX IF EXISTS idx_grenades_import_demo_map;
+         DROP INDEX IF EXISTS idx_grenades_core;
+         DROP INDEX IF EXISTS idx_grenades_core_usage;
+         DROP INDEX IF EXISTS idx_grenades_import_map_team;
+         DROP INDEX IF EXISTS idx_grenades_import_map_player;
+         DROP INDEX IF EXISTS idx_grenades_import_map_thrower;
+         DROP INDEX IF EXISTS idx_grenade_usage_events_import_demo;
+         DROP INDEX IF EXISTS idx_grenade_usage_events_player;
+         DROP INDEX IF EXISTS idx_grenade_usage_events_team;
+         DROP INDEX IF EXISTS idx_grenade_usage_events_grenade_team;
+         DROP INDEX IF EXISTS idx_grenade_usage_events_grenade_player;
+         DROP INDEX IF EXISTS idx_grenade_usage_events_grenade_thrower;
+         DROP INDEX IF EXISTS idx_import_players_import_team;
+         DROP INDEX IF EXISTS idx_import_players_import_player;
+         DROP INDEX IF EXISTS idx_import_players_import_demo;
+         DROP INDEX IF EXISTS idx_demo_metadata_tournament;
+         DROP INDEX IF EXISTS idx_demo_metadata_tournament_demo;
+         DROP INDEX IF EXISTS idx_import_map_players_scope;",
+    )?;
+    Ok(())
+}
+
+fn restore_import_indexes(tx: &Transaction<'_>) -> AppResult<()> {
+    tx.execute_batch(
+        "CREATE INDEX idx_grenades_filter ON grenades(import_id, map, grenade_type, side);
+         CREATE INDEX idx_grenades_explode ON grenades(import_id, map, explode_map_x, explode_map_y);
+         CREATE INDEX idx_grenades_map_usage ON grenades(import_id, map, usage_count DESC, id);
+         CREATE INDEX idx_grenades_map_type_usage ON grenades(import_id, map, grenade_type, usage_count DESC, id);
+         CREATE INDEX idx_grenades_map_side_usage ON grenades(import_id, map, side, usage_count DESC, id);
+         CREATE INDEX idx_grenades_map_type_side_usage ON grenades(import_id, map, grenade_type, side, usage_count DESC, id);
+         CREATE INDEX idx_grenades_cluster ON grenades(import_id, map, CAST(explode_map_x / 28 AS INTEGER), CAST(explode_map_y / 28 AS INTEGER), usage_count DESC, id);
+         CREATE INDEX idx_grenades_cluster_type_side ON grenades(import_id, map, grenade_type, side, CAST(explode_map_x / 28 AS INTEGER), CAST(explode_map_y / 28 AS INTEGER), usage_count DESC, id);
+         CREATE INDEX idx_grenades_start ON grenades(import_id, map, start_map_x, start_map_y);
+         CREATE INDEX idx_grenades_usage ON grenades(import_id, usage_count);
+         CREATE INDEX idx_grenades_similar ON grenades(import_id, map, grenade_type, usage_count DESC, explode_map_x, explode_map_y, id);
+         CREATE INDEX idx_grenades_import_demo_map ON grenades(import_id, demo_filename, map);
+         CREATE INDEX idx_grenades_core ON grenades(import_id, map, is_core);
+         CREATE INDEX idx_grenades_core_usage ON grenades(import_id, map, is_core, usage_count DESC, id);
+         CREATE INDEX idx_grenades_import_map_team ON grenades(import_id, map, thrower_team);
+         CREATE INDEX idx_grenades_import_map_player ON grenades(import_id, map, thrower_steamid64);
+         CREATE INDEX idx_grenades_import_map_thrower ON grenades(import_id, map, thrower_team, thrower_steamid64, thrower);
+         CREATE INDEX idx_grenade_usage_events_import_demo ON grenade_usage_events(import_id, demo_filename);
+         CREATE INDEX idx_grenade_usage_events_player ON grenade_usage_events(import_id, thrower_steamid64);
+         CREATE INDEX idx_grenade_usage_events_team ON grenade_usage_events(import_id, thrower_team);
+         CREATE INDEX idx_grenade_usage_events_grenade_team ON grenade_usage_events(grenade_id, thrower_team);
+         CREATE INDEX idx_grenade_usage_events_grenade_player ON grenade_usage_events(grenade_id, thrower_steamid64);
+         CREATE INDEX idx_grenade_usage_events_grenade_thrower ON grenade_usage_events(grenade_id, thrower_team, thrower_steamid64, thrower);
+         CREATE INDEX idx_import_players_import_team ON import_players(import_id, team_name);
+         CREATE INDEX idx_import_players_import_player ON import_players(import_id, steamid64);
+         CREATE INDEX idx_import_players_import_demo ON import_players(import_id, demo_filename);
+         CREATE INDEX idx_demo_metadata_tournament ON demo_metadata(import_id, tournament, demo_date);
+         CREATE INDEX idx_demo_metadata_tournament_demo ON demo_metadata(import_id, tournament, demo_filename);
+         CREATE INDEX idx_import_map_players_scope ON import_map_players(import_id, map, tournament, team_name, steamid64);",
+    )?;
+    Ok(())
+}
+
 fn table_columns(conn: &Connection, table: &str) -> AppResult<HashSet<String>> {
     let mut statement = conn.prepare(&format!("PRAGMA table_info({table})"))?;
     let columns = statement.query_map([], |row| row.get::<_, String>(1))?;
@@ -1631,6 +1701,7 @@ fn import_online_library_blocking(
     let mut conn = open_conn(state)?;
     init_schema(&conn)?;
     let tx = conn.transaction()?;
+    defer_import_indexes(&tx)?;
     seed_assets(&tx, &state.resource_dir)?;
     seed_spawn_points(&tx, &state.resource_dir)?;
     let imported_at = Utc::now().to_rfc3339();
@@ -1772,6 +1843,7 @@ fn import_online_library_blocking(
     tx.execute("INSERT INTO app_meta(key, value) VALUES ('library_version', ?1) ON CONFLICT(key) DO UPDATE SET value=excluded.value", params![manifest.version])?;
     tx.execute("INSERT INTO app_meta(key, value) VALUES ('library_import_id', ?1) ON CONFLICT(key) DO UPDATE SET value=excluded.value", params![import_id.to_string()])?;
     tx.execute("INSERT INTO app_meta(key, value) VALUES ('active_import_id', ?1) ON CONFLICT(key) DO UPDATE SET value=excluded.value", params![import_id.to_string()])?;
+    restore_import_indexes(&tx)?;
     tx.commit()?;
     set_status(state, "done", total as u64, total as u64, "Import complete");
     Ok(ImportReport {
@@ -2153,17 +2225,28 @@ fn insert_fallback_player(
     team_name: Option<&str>,
     side: Option<&str>,
 ) -> AppResult<()> {
-    insert_import_player(
-        conn,
+    let demo_filename = demo_filename.unwrap_or("").trim();
+    let steamid64 = steamid64.unwrap_or("").trim();
+    let player_name = player_name.unwrap_or("").trim();
+    let team_name = team_name.unwrap_or("").trim();
+    let side = side.unwrap_or("").trim();
+    if steamid64.is_empty() && player_name.is_empty() {
+        return Ok(());
+    }
+    let mut statement = conn.prepare_cached(
+        "INSERT OR IGNORE INTO import_players(
+            import_id, demo_filename, steamid64, player_name, team_name, side
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+    )?;
+    statement.execute(params![
         import_id,
-        &RawPlayer {
-            demo_filename: demo_filename.map(str::to_string),
-            steamid64: steamid64.map(str::to_string),
-            player_name: player_name.map(str::to_string),
-            team_name: team_name.map(str::to_string),
-            side: side.map(str::to_string),
-        },
-    )
+        demo_filename,
+        steamid64,
+        player_name,
+        team_name,
+        side,
+    ])?;
+    Ok(())
 }
 
 fn insert_demo_metadata(
@@ -2171,14 +2254,14 @@ fn insert_demo_metadata(
     import_id: i64,
     metadata: &BTreeMap<String, (String, String)>,
 ) -> AppResult<()> {
+    let mut statement = conn.prepare_cached(
+        "INSERT INTO demo_metadata(import_id, demo_filename, tournament, demo_date)
+         VALUES (?1, ?2, ?3, ?4)
+         ON CONFLICT(import_id, demo_filename) DO UPDATE SET
+           tournament=excluded.tournament, demo_date=excluded.demo_date",
+    )?;
     for (filename, (tournament, date)) in metadata {
-        conn.execute(
-            "INSERT INTO demo_metadata(import_id, demo_filename, tournament, demo_date)
-             VALUES (?1, ?2, ?3, ?4)
-             ON CONFLICT(import_id, demo_filename) DO UPDATE SET
-               tournament=excluded.tournament, demo_date=excluded.demo_date",
-            params![import_id, filename, tournament, date],
-        )?;
+        statement.execute(params![import_id, filename, tournament, date])?;
     }
     Ok(())
 }
@@ -2197,7 +2280,7 @@ fn populate_import_map_players(conn: &Connection, import_id: i64) -> AppResult<(
          WHERE g.import_id=?1
            AND (g.thrower_steamid64 IS NOT NULL OR g.thrower IS NOT NULL)
            AND (g.thrower_steamid64 IS NOT NULL AND g.thrower_steamid64 <> '' OR g.thrower IS NOT NULL AND g.thrower <> '')
-         UNION
+         UNION ALL
          SELECT g.import_id, g.map, COALESCE(dm.tournament, ''),
                 COALESCE(ue.thrower_steamid64, ''), COALESCE(ue.thrower, ''),
                 COALESCE(ue.thrower_team, ''), COALESCE(g.side, '')
@@ -3422,8 +3505,6 @@ fn import_index_blocking(
     let radars = &state.radars;
     let mut conn = open_conn(state)?;
     init_schema(&conn)?;
-    seed_assets(&conn, &state.resource_dir)?;
-    seed_spawn_points(&conn, &state.resource_dir)?;
 
     let imported_at = Utc::now().to_rfc3339();
     let unique_maps = index
@@ -3458,6 +3539,7 @@ fn import_index_blocking(
         ],
     )?;
     let import_id = tx.last_insert_rowid();
+    defer_import_indexes(&tx)?;
 
     for map_name in &unique_maps {
         tx.execute(
@@ -3573,6 +3655,7 @@ fn import_index_blocking(
          ON CONFLICT(key) DO UPDATE SET value=excluded.value",
         params![import_id.to_string()],
     )?;
+    restore_import_indexes(&tx)?;
     tx.commit()?;
     set_status(state, "done", total, total, "Import complete");
     Ok(ImportReport {
@@ -4576,8 +4659,6 @@ fn import_core_nades_snapshot_blocking(
     let radars = &state.radars;
     let mut conn = open_conn(state)?;
     init_schema(&conn)?;
-    seed_assets(&conn, &state.resource_dir)?;
-    seed_spawn_points(&conn, &state.resource_dir)?;
 
     let imported_at = Utc::now().to_rfc3339();
     let unique_maps = core_file
