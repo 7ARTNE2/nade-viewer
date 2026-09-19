@@ -3226,6 +3226,162 @@ fn select_import_file() -> Option<String> {
         .map(|p| p.to_string_lossy().to_string())
 }
 
+fn import_workspace_rows_blocking(
+    state: &AppState,
+    connection: &Connection,
+    canonical: bool,
+) -> AppResult<ImportReport> {
+    let total = if canonical {
+        parser_store::canonical_count(connection)? as u64
+    } else {
+        parser_store::counts(connection)?.0 as u64
+    };
+    set_status(
+        state,
+        "preparing",
+        0,
+        total,
+        "Preparing parser workspace import",
+    );
+    let mut conn = open_conn(state)?;
+    init_schema(&conn)?;
+    let tx = conn.transaction()?;
+    tx.execute(
+        "INSERT INTO imports(source_path, kind, imported_at, parser_version, grenade_count, map_count)
+         VALUES ('parser-workspace', 'grenade_index', ?1, ?2, 0, 0)",
+        params![Utc::now().to_rfc3339(), SUPPORTED_IMPORT_VERSION],
+    )?;
+    let import_id = tx.last_insert_rowid();
+    let deferred_indexes = defer_import_indexes(&tx, total)?;
+    let mut maps = HashSet::new();
+    let mut metadata = BTreeMap::new();
+    let mut ordinal = 0_u64;
+    {
+        let mut statement = tx.prepare(
+            "INSERT INTO grenades(
+                import_id, source_index, map, side, grenade_type, is_core, throw_keys, coordinates,
+                thrower, thrower_steamid64, thrower_team, airtime, usage_count, usage_throwers_json, demo_filename, throw_tick,
+                lineup_tick, tickrate, round_time_seconds, start_pos_x, start_pos_y, start_pos_z,
+                explode_pos_x, explode_pos_y, explode_pos_z, start_map_x, start_map_y,
+                explode_map_x, explode_map_y, trajectory_preview_json, trajectory_json
+            ) VALUES (?1, ?2, ?3, ?4, ?5, 0, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14,
+                      ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30)",
+        )?;
+        parser_store::visit_rows(connection, canonical, |raw| {
+            let grenade: RawGrenade = serde_json::from_str(raw).map_err(|error| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    raw.len(),
+                    rusqlite::types::Type::Text,
+                    Box::new(error),
+                )
+            })?;
+            let radar = state.radars.get(&map_name_to_key(&grenade.map));
+            let project = |x: Option<f64>, y: Option<f64>| match (x, y, radar) {
+                (Some(x), Some(y), Some(radar)) => Some(game_to_map_coords(x, y, radar)),
+                _ => None,
+            };
+            let (start_map_x, start_map_y) = project(grenade.start_pos_x, grenade.start_pos_y)
+                .map_or((None, None), |(x, y)| (Some(x), Some(y)));
+            let (explode_map_x, explode_map_y) =
+                project(grenade.explode_pos_x, grenade.explode_pos_y)
+                    .map_or((None, None), |(x, y)| (Some(x), Some(y)));
+            let (trajectory_preview, trajectory_json) = trajectory_storage_json(
+                grenade.trajectory.as_ref(),
+                grenade.trajectory_preview.as_ref(),
+                radar,
+            )
+            .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
+            statement.execute(params![
+                import_id,
+                ordinal as i64,
+                grenade.map,
+                grenade.side.as_deref().unwrap_or("Any"),
+                grenade.grenade_type.as_deref().unwrap_or("smoke"),
+                grenade.throw_keys.as_deref(),
+                grenade.coordinates.as_deref(),
+                grenade.thrower.as_deref(),
+                grenade.thrower_steamid64.as_deref(),
+                grenade.thrower_team.as_deref(),
+                grenade.airtime,
+                grenade.usage_count.unwrap_or(1),
+                serde_json::to_string(grenade.usage_throwers.as_deref().unwrap_or(&[])).unwrap(),
+                grenade.demo_filename.as_deref(),
+                grenade.throw_tick,
+                grenade.lineup_tick,
+                round_tickrate(grenade.tickrate),
+                grenade.round_time_seconds,
+                grenade.start_pos_x,
+                grenade.start_pos_y,
+                grenade.start_pos_z,
+                grenade.explode_pos_x,
+                grenade.explode_pos_y,
+                grenade.explode_pos_z,
+                start_map_x,
+                start_map_y,
+                explode_map_x,
+                explode_map_y,
+                trajectory_preview,
+                trajectory_json
+            ])?;
+            let grenade_id = tx.last_insert_rowid();
+            for event in &grenade.usage_events {
+                insert_usage_event(&tx, import_id, grenade_id, event)
+                    .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
+            }
+            add_canonical_fallback_players(&tx, import_id, &grenade)
+                .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
+            collect_grenade_metadata(&grenade, &mut metadata);
+            maps.insert(grenade.map);
+            ordinal += 1;
+            if ordinal % 500 == 0 {
+                set_status(
+                    state,
+                    "importing",
+                    ordinal,
+                    total,
+                    "Importing parser workspace",
+                );
+            }
+            Ok(())
+        })?;
+    }
+    insert_demo_metadata(&tx, import_id, &metadata)?;
+    populate_import_map_players(&tx, import_id)?;
+    for map in &maps {
+        tx.execute(
+            "INSERT INTO map_assets(name, label) VALUES (?1, ?2)
+             ON CONFLICT(name) DO UPDATE SET label=excluded.label",
+            params![map, map],
+        )?;
+    }
+    tx.execute(
+        "UPDATE imports SET grenade_count=?1, map_count=?2 WHERE id=?3",
+        params![ordinal as i64, maps.len() as i64, import_id],
+    )?;
+    tx.execute(
+        "INSERT INTO app_meta(key, value) VALUES ('active_import_id', ?1)
+         ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+        params![import_id.to_string()],
+    )?;
+    if deferred_indexes {
+        restore_import_indexes(&tx)?;
+    }
+    tx.commit()?;
+    set_status(
+        state,
+        "done",
+        ordinal,
+        ordinal,
+        "Parser workspace import complete",
+    );
+    Ok(ImportReport {
+        import_id,
+        grenade_count: ordinal,
+        map_count: maps.len() as u64,
+        source_path: "parser-workspace".to_string(),
+    })
+}
+
 #[tauri::command]
 async fn import_parser_workspace(
     app: AppHandle,
@@ -3239,27 +3395,7 @@ async fn import_parser_workspace(
     let result = tauri::async_runtime::spawn_blocking(move || {
         let connection = plugin::workspace_connection(&app).map_err(AppError::Message)?;
         plugin::ensure_dataset_ready(&connection, canonical).map_err(AppError::Message)?;
-        let mut grenades = Vec::new();
-        parser_store::visit_rows(&connection, canonical, |raw| {
-            let grenade = serde_json::from_str::<RawGrenade>(raw).map_err(|error| {
-                rusqlite::Error::FromSqlConversionFailure(
-                    raw.len(),
-                    rusqlite::types::Type::Text,
-                    Box::new(error),
-                )
-            })?;
-            grenades.push(grenade);
-            Ok(())
-        })?;
-        let index = ParserIndex {
-            version: Some(SUPPORTED_IMPORT_VERSION),
-            updated_at: Some(Utc::now().to_rfc3339()),
-            core_nades: Some(false),
-            canonical_grenades: grenades,
-            players: Vec::new(),
-            processed_demos: None,
-        };
-        import_index_blocking(&worker_state, "parser-workspace", index, None)
+        import_workspace_rows_blocking(&worker_state, &connection, canonical)
             .map(JsonImportReport::from)
     })
     .await;
