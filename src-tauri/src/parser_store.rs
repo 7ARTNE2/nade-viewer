@@ -215,6 +215,21 @@ pub(crate) fn write_msgpack(
 mod tests {
     use super::*;
     #[test]
+    fn visits_workspace_rows_in_stable_order_without_materializing() {
+        let mut c = open(Path::new(":memory:")).unwrap();
+        import_demo(&mut c, "b.dem", 1, 1, &[serde_json::json!({"map":"de_b"})]).unwrap();
+        import_demo(&mut c, "a.dem", 1, 1, &[serde_json::json!({"map":"de_a"})]).unwrap();
+        let mut rows = Vec::new();
+        visit_rows(&c, false, |raw| {
+            rows.push(serde_json::from_str::<Value>(raw).unwrap());
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(rows[0]["map"], "de_a");
+        assert_eq!(rows[1]["map"], "de_b");
+    }
+
+    #[test]
     fn imports_parser_output_from_file() {
         let dir = std::env::temp_dir().join(format!(
             "nade-parser-output-{}",
