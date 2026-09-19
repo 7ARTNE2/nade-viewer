@@ -1567,24 +1567,48 @@ fn import_online_library_blocking(
     let mut reader = BufReader::with_capacity(LARGE_IO_BUFFER_SIZE, verified);
     let root_len = rmp::decode::read_map_len(&mut reader)
         .map_err(|error| online_messagepack_error(state, error))?;
-    if root_len != 2 {
+    if root_len < 2 {
         return Err(AppError::Import {
             code: "invalid_messagepack",
-            message: "Online MessagePack must contain exactly version and canonical_grenades"
-                .to_string(),
+            message: "Online MessagePack must contain version and canonical_grenades".to_string(),
         });
     }
 
-    let first_key: String = rmp_serde::from_read(&mut reader)
-        .map_err(|error| online_messagepack_error(state, error))?;
-    if first_key != "version" {
-        return Err(AppError::Import {
-            code: "invalid_messagepack",
-            message: "Online MessagePack must write version before canonical_grenades".to_string(),
-        });
+    let mut version = None;
+    let mut total = None;
+    let mut remaining_fields = 0;
+    for field_index in 0..root_len {
+        let key: String = rmp_serde::from_read(&mut reader)
+            .map_err(|error| online_messagepack_error(state, error))?;
+        match key.as_str() {
+            "version" => {
+                let parsed_version: i64 = rmp_serde::from_read(&mut reader)
+                    .map_err(|error| online_messagepack_error(state, error))?;
+                if version.replace(parsed_version).is_some() {
+                    return Err(AppError::Import {
+                        code: "invalid_messagepack",
+                        message: "Online MessagePack contains duplicate version fields".to_string(),
+                    });
+                }
+            }
+            "canonical_grenades" => {
+                total = Some(
+                    rmp::decode::read_array_len(&mut reader)
+                        .map_err(|error| online_messagepack_error(state, error))?,
+                );
+                remaining_fields = root_len - field_index - 1;
+                break;
+            }
+            _ => {
+                let _: IgnoredAny = rmp_serde::from_read(&mut reader)
+                    .map_err(|error| online_messagepack_error(state, error))?;
+            }
+        }
     }
-    let version: i64 = rmp_serde::from_read(&mut reader)
-        .map_err(|error| online_messagepack_error(state, error))?;
+    let version = version.ok_or_else(|| AppError::Import {
+        code: "invalid_messagepack",
+        message: "Online MessagePack must contain version".to_string(),
+    })?;
     if version != SUPPORTED_IMPORT_VERSION {
         return Err(AppError::Import {
             code: "unsupported_version",
@@ -1593,16 +1617,10 @@ fn import_online_library_blocking(
             ),
         });
     }
-    let second_key: String = rmp_serde::from_read(&mut reader)
-        .map_err(|error| online_messagepack_error(state, error))?;
-    if second_key != "canonical_grenades" {
-        return Err(AppError::Import {
-            code: "invalid_messagepack",
-            message: "Online MessagePack must contain canonical_grenades".to_string(),
-        });
-    }
-    let total = rmp::decode::read_array_len(&mut reader)
-        .map_err(|error| online_messagepack_error(state, error))?;
+    let total = total.ok_or_else(|| AppError::Import {
+        code: "invalid_messagepack",
+        message: "Online MessagePack must contain canonical_grenades".to_string(),
+    })?;
 
     let mut conn = open_conn(state)?;
     init_schema(&conn)?;
@@ -1698,6 +1716,18 @@ fn import_online_library_blocking(
         }
     }
     drop(insert);
+    for _ in 0..remaining_fields {
+        let key: String = rmp_serde::from_read(&mut reader)
+            .map_err(|error| online_messagepack_error(state, error))?;
+        if key == "canonical_grenades" || key == "version" {
+            return Err(AppError::Import {
+                code: "invalid_messagepack",
+                message: format!("Online MessagePack contains duplicate {key} fields"),
+            });
+        }
+        let _: IgnoredAny = rmp_serde::from_read(&mut reader)
+            .map_err(|error| online_messagepack_error(state, error))?;
+    }
     let mut trailing = [0_u8; 1];
     if reader
         .read(&mut trailing)
@@ -5413,9 +5443,11 @@ mod tests {
 
     fn online_library_fixture(root: &Path, invalid_hash: bool) -> (PathBuf, LibraryManifest) {
         let mut messagepack = Vec::new();
-        rmp::encode::write_map_len(&mut messagepack, 2).unwrap();
+        rmp::encode::write_map_len(&mut messagepack, 4).unwrap();
         rmp_serde::encode::write_named(&mut messagepack, &"version").unwrap();
         rmp::encode::write_sint(&mut messagepack, 1).unwrap();
+        rmp_serde::encode::write_named(&mut messagepack, &"updated_at").unwrap();
+        rmp_serde::encode::write_named(&mut messagepack, &"2026-09-17T00:00:00Z").unwrap();
         rmp_serde::encode::write_named(&mut messagepack, &"canonical_grenades").unwrap();
         rmp::encode::write_array_len(&mut messagepack, 1).unwrap();
         rmp_serde::encode::write_named(
@@ -5423,6 +5455,8 @@ mod tests {
             &serde_json::json!({"map": "de_test", "throw_keys": "M1+JUMP"}),
         )
         .unwrap();
+        rmp_serde::encode::write_named(&mut messagepack, &"processed_demos").unwrap();
+        rmp_serde::encode::write_named(&mut messagepack, &serde_json::json!([])).unwrap();
         let compressed = zstd::stream::encode_all(std::io::Cursor::new(&messagepack), 1).unwrap();
         let path = root.join("library.msgpack.zst");
         fs::write(&path, &compressed).unwrap();
