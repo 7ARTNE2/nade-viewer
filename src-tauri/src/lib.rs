@@ -3226,6 +3226,70 @@ fn select_import_file() -> Option<String> {
         .map(|p| p.to_string_lossy().to_string())
 }
 
+fn insert_canonical_grenade(
+    tx: &Transaction<'_>,
+    statement: &mut rusqlite::Statement<'_>,
+    state: &AppState,
+    import_id: i64,
+    source_index: i64,
+    is_core: bool,
+    grenade: &RawGrenade,
+) -> AppResult<i64> {
+    let radar = state.radars.get(&map_name_to_key(&grenade.map));
+    let project = |x: Option<f64>, y: Option<f64>| match (x, y, radar) {
+        (Some(x), Some(y), Some(radar)) => Some(game_to_map_coords(x, y, radar)),
+        _ => None,
+    };
+    let (start_map_x, start_map_y) = project(grenade.start_pos_x, grenade.start_pos_y)
+        .map_or((None, None), |(x, y)| (Some(x), Some(y)));
+    let (explode_map_x, explode_map_y) = project(grenade.explode_pos_x, grenade.explode_pos_y)
+        .map_or((None, None), |(x, y)| (Some(x), Some(y)));
+    let (trajectory_preview, trajectory_json) = trajectory_storage_json(
+        grenade.trajectory.as_ref(),
+        grenade.trajectory_preview.as_ref(),
+        radar,
+    )?;
+    statement.execute(params![
+        import_id,
+        source_index,
+        grenade.map,
+        grenade.side.as_deref().unwrap_or("Any"),
+        grenade.grenade_type.as_deref().unwrap_or("smoke"),
+        i64::from(is_core),
+        grenade.throw_keys.as_deref(),
+        grenade.coordinates.as_deref(),
+        grenade.thrower.as_deref(),
+        grenade.thrower_steamid64.as_deref(),
+        grenade.thrower_team.as_deref(),
+        grenade.airtime,
+        grenade.usage_count.unwrap_or(1),
+        serde_json::to_string(grenade.usage_throwers.as_deref().unwrap_or(&[]))?,
+        grenade.demo_filename.as_deref(),
+        grenade.throw_tick,
+        grenade.lineup_tick,
+        round_tickrate(grenade.tickrate),
+        grenade.round_time_seconds,
+        grenade.start_pos_x,
+        grenade.start_pos_y,
+        grenade.start_pos_z,
+        grenade.explode_pos_x,
+        grenade.explode_pos_y,
+        grenade.explode_pos_z,
+        start_map_x,
+        start_map_y,
+        explode_map_x,
+        explode_map_y,
+        trajectory_preview,
+        trajectory_json,
+    ])?;
+    let grenade_id = tx.last_insert_rowid();
+    for event in &grenade.usage_events {
+        insert_usage_event(tx, import_id, grenade_id, event)?;
+    }
+    add_canonical_fallback_players(tx, import_id, grenade)?;
+    Ok(grenade_id)
+}
+
 fn import_workspace_rows_blocking(
     state: &AppState,
     connection: &Connection,
@@ -3275,61 +3339,16 @@ fn import_workspace_rows_blocking(
                     Box::new(error),
                 )
             })?;
-            let radar = state.radars.get(&map_name_to_key(&grenade.map));
-            let project = |x: Option<f64>, y: Option<f64>| match (x, y, radar) {
-                (Some(x), Some(y), Some(radar)) => Some(game_to_map_coords(x, y, radar)),
-                _ => None,
-            };
-            let (start_map_x, start_map_y) = project(grenade.start_pos_x, grenade.start_pos_y)
-                .map_or((None, None), |(x, y)| (Some(x), Some(y)));
-            let (explode_map_x, explode_map_y) =
-                project(grenade.explode_pos_x, grenade.explode_pos_y)
-                    .map_or((None, None), |(x, y)| (Some(x), Some(y)));
-            let (trajectory_preview, trajectory_json) = trajectory_storage_json(
-                grenade.trajectory.as_ref(),
-                grenade.trajectory_preview.as_ref(),
-                radar,
-            )
-            .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
-            statement.execute(params![
+            insert_canonical_grenade(
+                &tx,
+                &mut statement,
+                state,
                 import_id,
                 ordinal as i64,
-                grenade.map,
-                grenade.side.as_deref().unwrap_or("Any"),
-                grenade.grenade_type.as_deref().unwrap_or("smoke"),
-                grenade.throw_keys.as_deref(),
-                grenade.coordinates.as_deref(),
-                grenade.thrower.as_deref(),
-                grenade.thrower_steamid64.as_deref(),
-                grenade.thrower_team.as_deref(),
-                grenade.airtime,
-                grenade.usage_count.unwrap_or(1),
-                serde_json::to_string(grenade.usage_throwers.as_deref().unwrap_or(&[])).unwrap(),
-                grenade.demo_filename.as_deref(),
-                grenade.throw_tick,
-                grenade.lineup_tick,
-                round_tickrate(grenade.tickrate),
-                grenade.round_time_seconds,
-                grenade.start_pos_x,
-                grenade.start_pos_y,
-                grenade.start_pos_z,
-                grenade.explode_pos_x,
-                grenade.explode_pos_y,
-                grenade.explode_pos_z,
-                start_map_x,
-                start_map_y,
-                explode_map_x,
-                explode_map_y,
-                trajectory_preview,
-                trajectory_json
-            ])?;
-            let grenade_id = tx.last_insert_rowid();
-            for event in &grenade.usage_events {
-                insert_usage_event(&tx, import_id, grenade_id, event)
-                    .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
-            }
-            add_canonical_fallback_players(&tx, import_id, &grenade)
-                .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
+                false,
+                &grenade,
+            )
+            .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
             collect_grenade_metadata(&grenade, &mut metadata);
             maps.insert(grenade.map);
             ordinal += 1;
