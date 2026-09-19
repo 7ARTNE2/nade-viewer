@@ -86,6 +86,8 @@ struct ImportStatus {
     current: u64,
     total: u64,
     message: String,
+    phase_current: u64,
+    phase_total: u64,
     error: Option<String>,
 }
 
@@ -133,6 +135,8 @@ impl Default for ImportStatus {
             current: 0,
             total: 0,
             message: "Ready".to_string(),
+            phase_current: 0,
+            phase_total: 0,
             error: None,
         }
     }
@@ -1120,7 +1124,17 @@ fn init_schema(conn: &Connection) -> AppResult<()> {
     Ok(())
 }
 
-fn defer_import_indexes(tx: &Transaction<'_>) -> AppResult<()> {
+// Conservative heuristic, to be tuned with release-build benchmarks.
+fn should_defer_import_indexes(incoming: u64, existing: u64) -> bool {
+    incoming >= 10_000 && incoming >= existing
+}
+
+fn defer_import_indexes(tx: &Transaction<'_>, incoming: u64) -> AppResult<bool> {
+    // Read actual rows: the new imports row may already contain its final count.
+    let existing: u64 = tx.query_row("SELECT COUNT(*) FROM grenades", [], |row| row.get(0))?;
+    if !should_defer_import_indexes(incoming, existing) {
+        return Ok(false);
+    }
     tx.execute_batch(
         "DROP INDEX IF EXISTS idx_grenades_filter;
          DROP INDEX IF EXISTS idx_grenades_explode;
@@ -1152,7 +1166,7 @@ fn defer_import_indexes(tx: &Transaction<'_>) -> AppResult<()> {
          DROP INDEX IF EXISTS idx_demo_metadata_tournament_demo;
          DROP INDEX IF EXISTS idx_import_map_players_scope;",
     )?;
-    Ok(())
+    Ok(true)
 }
 
 fn restore_import_indexes(tx: &Transaction<'_>) -> AppResult<()> {
@@ -1229,6 +1243,8 @@ fn set_status(state: &AppState, stage: &str, current: u64, total: u64, message: 
         status.current = current;
         status.total = total;
         status.message = message.to_string();
+        status.phase_current = current;
+        status.phase_total = total;
         if stage != "error" {
             status.error = None;
         }
@@ -1701,7 +1717,7 @@ fn import_online_library_blocking(
     let mut conn = open_conn(state)?;
     init_schema(&conn)?;
     let tx = conn.transaction()?;
-    defer_import_indexes(&tx)?;
+    let deferred_indexes = defer_import_indexes(&tx, total as u64)?;
     seed_assets(&tx, &state.resource_dir)?;
     seed_spawn_points(&tx, &state.resource_dir)?;
     let imported_at = Utc::now().to_rfc3339();
@@ -1843,7 +1859,9 @@ fn import_online_library_blocking(
     tx.execute("INSERT INTO app_meta(key, value) VALUES ('library_version', ?1) ON CONFLICT(key) DO UPDATE SET value=excluded.value", params![manifest.version])?;
     tx.execute("INSERT INTO app_meta(key, value) VALUES ('library_import_id', ?1) ON CONFLICT(key) DO UPDATE SET value=excluded.value", params![import_id.to_string()])?;
     tx.execute("INSERT INTO app_meta(key, value) VALUES ('active_import_id', ?1) ON CONFLICT(key) DO UPDATE SET value=excluded.value", params![import_id.to_string()])?;
-    restore_import_indexes(&tx)?;
+    if deferred_indexes {
+        restore_import_indexes(&tx)?;
+    }
     tx.commit()?;
     set_status(state, "done", total as u64, total as u64, "Import complete");
     Ok(ImportReport {
@@ -3352,6 +3370,8 @@ fn import_screenshot_archive_blocking(
         processed_demos: None,
     };
     let mut report = import_index_blocking(state, path, index, None)?;
+    // Keep the operation marked as running while screenshot rows and files are added.
+    set_status(state, "finalizing", total, total, "Importing screenshots");
     let screenshot_root = state
         .db_path
         .parent()
@@ -3539,7 +3559,7 @@ fn import_index_blocking(
         ],
     )?;
     let import_id = tx.last_insert_rowid();
-    defer_import_indexes(&tx)?;
+    let deferred_indexes = defer_import_indexes(&tx, total as u64)?;
 
     for map_name in &unique_maps {
         tx.execute(
@@ -3655,7 +3675,9 @@ fn import_index_blocking(
          ON CONFLICT(key) DO UPDATE SET value=excluded.value",
         params![import_id.to_string()],
     )?;
-    restore_import_indexes(&tx)?;
+    if deferred_indexes {
+        restore_import_indexes(&tx)?;
+    }
     tx.commit()?;
     set_status(state, "done", total, total, "Import complete");
     Ok(ImportReport {
@@ -4692,6 +4714,7 @@ fn import_core_nades_snapshot_blocking(
         ],
     )?;
     let import_id = tx.last_insert_rowid();
+    let deferred_indexes = defer_import_indexes(&tx, total)?;
 
     for map_name in &unique_maps {
         tx.execute(
@@ -4806,6 +4829,9 @@ fn import_core_nades_snapshot_blocking(
          ON CONFLICT(key) DO UPDATE SET value=excluded.value",
         params![import_id.to_string()],
     )?;
+    if deferred_indexes {
+        restore_import_indexes(&tx)?;
+    }
     tx.commit()?;
     set_status(state, "done", total, total, "Core Nades snapshot imported");
     Ok(ImportReport {
