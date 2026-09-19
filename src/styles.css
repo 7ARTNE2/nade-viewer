@@ -467,6 +467,8 @@ html[lang="ru"] .boot-title{font-family:Orbitron,sans-serif}
 .snapshot-menu{width:min(330px,calc(100vw - 20px));max-height:calc(100dvh - 70px);overflow-y:auto}
 .modal-scrim,.onboarding-layer{overflow:auto;overscroll-behavior:contain}
 .snapshot-delete-dialog,.onboarding-dialog{max-height:calc(100dvh - 40px);overflow:auto}
+.snapshot-delete-progress{display:flex;align-items:flex-start;gap:8px;margin-top:2px;padding:10px 12px;border:1px solid rgba(var(--blue-rgb),.22);border-radius:10px;background:rgba(var(--blue-rgb),.08);color:var(--muted);font-size:11px;line-height:1.55}
+.snapshot-delete-progress .spinner{width:14px;height:14px;flex:0 0 auto;margin-top:1px;border:2px solid rgba(var(--blue-rgb),.25);border-top-color:var(--blue);border-radius:50%;animation:spin .8s linear infinite}
 .app-tooltip{max-width:min(320px,calc(100vw - 16px));overflow-wrap:anywhere}
 .throw-preview-popover{width:min(302px,calc(100% - 24px));max-height:calc(100% - 24px);overflow-y:auto}
 

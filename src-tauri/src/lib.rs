@@ -14,6 +14,7 @@ use std::{
         atomic::{AtomicBool, Ordering},
         Arc, Mutex,
     },
+    time::{Duration as StdDuration, Instant},
 };
 
 use tauri::{AppHandle, Manager};
@@ -1430,6 +1431,8 @@ struct VerifiedLibraryReader<'a, R> {
     manifest: &'a LibraryManifest,
     hasher: Sha256,
     bytes: u64,
+    last_status_bytes: u64,
+    last_status_at: Instant,
 }
 
 impl<R: Read> Read for VerifiedLibraryReader<'_, R> {
@@ -1453,13 +1456,20 @@ impl<R: Read> Read for VerifiedLibraryReader<'_, R> {
             ));
         }
         self.hasher.update(&buffer[..read]);
-        set_status(
-            self.state,
-            "decompressing",
-            self.bytes,
-            self.manifest.uncompressed_size,
-            "Decompressing and verifying online library",
-        );
+        if self.bytes.saturating_sub(self.last_status_bytes) >= 4 * 1024 * 1024
+            || self.last_status_at.elapsed() >= StdDuration::from_millis(200)
+            || read == 0
+        {
+            set_status(
+                self.state,
+                "decompressing",
+                self.bytes,
+                self.manifest.uncompressed_size,
+                "Decompressing and verifying online library",
+            );
+            self.last_status_bytes = self.bytes;
+            self.last_status_at = Instant::now();
+        }
         Ok(read)
     }
 }
@@ -1506,17 +1516,11 @@ fn online_messagepack_error(state: &AppState, error: impl std::fmt::Display) -> 
     }
 }
 
-fn verify_online_library_reader<R: Read>(
-    mut reader: VerifiedLibraryReader<'_, R>,
+fn verify_online_library_reader<R>(
+    reader: &VerifiedLibraryReader<'_, R>,
     state: &AppState,
     manifest: &LibraryManifest,
 ) -> AppResult<()> {
-    let mut buffer = [0_u8; LARGE_IO_BUFFER_SIZE];
-    while reader
-        .read(&mut buffer)
-        .map_err(|error| online_messagepack_error(state, error))?
-        != 0
-    {}
     library_cancelled(state)?;
     if reader.bytes != manifest.uncompressed_size {
         return Err(AppError::Import {
@@ -1527,7 +1531,7 @@ fn verify_online_library_reader<R: Read>(
             ),
         });
     }
-    let digest = format!("{:x}", reader.hasher.finalize());
+    let digest = format!("{:x}", reader.hasher.clone().finalize());
     if !digest.eq_ignore_ascii_case(&manifest.uncompressed_sha256) {
         return Err(AppError::Import {
             code: "library_uncompressed_hash_mismatch",
@@ -1563,6 +1567,8 @@ fn import_online_library_blocking(
         manifest,
         hasher: Sha256::new(),
         bytes: 0,
+        last_status_bytes: 0,
+        last_status_at: Instant::now(),
     };
     let mut reader = BufReader::with_capacity(LARGE_IO_BUFFER_SIZE, verified);
     let root_len = rmp::decode::read_map_len(&mut reader)
@@ -1679,7 +1685,13 @@ fn import_online_library_blocking(
             grenade.thrower_team.as_deref(),
             grenade.airtime,
             grenade.usage_count.unwrap_or(1),
-            serde_json::to_string(grenade.usage_throwers.as_deref().unwrap_or(&[]))?,
+            grenade
+                .usage_throwers
+                .as_deref()
+                .filter(|throwers| !throwers.is_empty())
+                .map(serde_json::to_string)
+                .transpose()?
+                .unwrap_or_else(|| "[]".to_string()),
             grenade.demo_filename.as_deref(),
             grenade.throw_tick,
             grenade.lineup_tick,
@@ -1739,7 +1751,7 @@ fn import_online_library_blocking(
             message: "Online MessagePack contains trailing data".to_string(),
         });
     }
-    let verified = reader.into_inner();
+    let verified = reader.get_ref();
     verify_online_library_reader(verified, state, manifest)?;
     // Cancellation remains available through record insertion, but not once final commit begins.
     begin_library_finalization(state, total as u64)?;
@@ -2089,21 +2101,21 @@ fn insert_usage_event(
     grenade_id: i64,
     event: &GrenadeUsageEvent,
 ) -> AppResult<()> {
-    conn.execute(
+    let mut statement = conn.prepare_cached(
         "INSERT INTO grenade_usage_events(
             import_id, grenade_id, demo_filename, throw_tick, thrower,
             thrower_steamid64, thrower_team
         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-        params![
-            import_id,
-            grenade_id,
-            event.demo_filename.as_deref(),
-            event.throw_tick,
-            event.thrower.as_deref(),
-            event.thrower_steamid64.as_deref(),
-            event.thrower_team.as_deref(),
-        ],
     )?;
+    statement.execute(params![
+        import_id,
+        grenade_id,
+        event.demo_filename.as_deref(),
+        event.throw_tick,
+        event.thrower.as_deref(),
+        event.thrower_steamid64.as_deref(),
+        event.thrower_team.as_deref(),
+    ])?;
     Ok(())
 }
 
@@ -2116,19 +2128,19 @@ fn insert_import_player(conn: &Connection, import_id: i64, player: &RawPlayer) -
     if steamid64.is_empty() && player_name.is_empty() {
         return Ok(());
     }
-    conn.execute(
+    let mut statement = conn.prepare_cached(
         "INSERT OR IGNORE INTO import_players(
             import_id, demo_filename, steamid64, player_name, team_name, side
         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-        params![
-            import_id,
-            demo_filename,
-            steamid64,
-            player_name,
-            team_name,
-            side,
-        ],
     )?;
+    statement.execute(params![
+        import_id,
+        demo_filename,
+        steamid64,
+        player_name,
+        team_name,
+        side,
+    ])?;
     Ok(())
 }
 
@@ -2626,8 +2638,9 @@ fn configure_conn(conn: &Connection) -> AppResult<()> {
         PRAGMA journal_mode=WAL;
         PRAGMA synchronous=NORMAL;
         PRAGMA temp_store=MEMORY;
-        PRAGMA cache_size=-65536;
+        PRAGMA cache_size=-131072;
         PRAGMA mmap_size=268435456;
+        PRAGMA busy_timeout=5000;
         ",
     )?;
     Ok(())
@@ -3859,22 +3872,27 @@ fn update_import_label(
 }
 
 #[tauri::command]
-fn delete_import(
+async fn delete_import(
     import_id: i64,
     state: tauri::State<'_, AppState>,
 ) -> AppResult<Option<ImportSummary>> {
-    let mut conn = open_conn(&state)?;
-    let active = delete_import_from_conn(&mut conn, import_id)?;
-    let screenshot_root = state.db_path.parent().map(|directory| {
-        directory
-            .join("screenshots")
-            .join(format!("archive_{import_id}"))
-    });
-    if let Some(screenshot_root) = screenshot_root {
-        let _ = fs::remove_dir_all(screenshot_root);
-    }
-    conn.execute_batch("PRAGMA wal_checkpoint(PASSIVE); PRAGMA optimize;")?;
-    Ok(active)
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut conn = open_conn(&state)?;
+        let active = delete_import_from_conn(&mut conn, import_id)?;
+        let screenshot_root = state.db_path.parent().map(|directory| {
+            directory
+                .join("screenshots")
+                .join(format!("archive_{import_id}"))
+        });
+        if let Some(screenshot_root) = screenshot_root {
+            let _ = fs::remove_dir_all(screenshot_root);
+        }
+        conn.execute_batch("PRAGMA wal_checkpoint(PASSIVE); PRAGMA optimize;")?;
+        Ok(active)
+    })
+    .await
+    .map_err(|error| AppError::Message(format!("Snapshot deletion worker failed: {error}")))?
 }
 
 fn delete_import_from_conn(

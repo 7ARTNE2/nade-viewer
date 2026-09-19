@@ -95,6 +95,7 @@ function Shell() {
   );
   const [editingLabel, setEditingLabel] = useState('');
   const [deleteSnapshotOpen, setDeleteSnapshotOpen] = useState(false);
+  const [deleteSnapshotBusy, setDeleteSnapshotBusy] = useState(false);
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const importsRequestRef = useRef(0);
   const [operationError, setOperationError] = useState<string | null>(null);
@@ -107,7 +108,9 @@ function Shell() {
   const [libraryUpdateCancelling, setLibraryUpdateCancelling] = useState(false);
   const [libraryUpdateStatus, setLibraryUpdateStatus] =
     useState<ImportStatus | null>(null);
-  const closeDeleteModal = useCallback(() => setDeleteSnapshotOpen(false), []);
+  const closeDeleteModal = useCallback(() => {
+    if (!deleteSnapshotBusy) setDeleteSnapshotOpen(false);
+  }, [deleteSnapshotBusy]);
   const deleteDialogRef = useModalAccessibility<HTMLDivElement>(
     deleteSnapshotOpen,
     closeDeleteModal,
@@ -396,9 +399,10 @@ function Shell() {
   };
 
   const confirmDeleteSnapshot = async () => {
-    if (!activeImport) return;
+    if (!activeImport || deleteSnapshotBusy) return;
     const deletedName = snapshotDisplayName(activeImport);
     setOperationError(null);
+    setDeleteSnapshotBusy(true);
     try {
       const next = await deleteImport(activeImport.id);
       setDeleteSnapshotOpen(false);
@@ -417,6 +421,8 @@ function Shell() {
       setOperationError(
         tr('Could not delete library', 'Не удалось удалить библиотеку'),
       );
+    } finally {
+      setDeleteSnapshotBusy(false);
     }
   };
 
@@ -917,15 +923,10 @@ function Shell() {
                       'Downloading compressed library',
                       'Скачивание сжатой библиотеки',
                     )
-                  : libraryUpdateStatus?.stage === 'decompressing'
-                    ? tr(
-                        'Verifying and unpacking library',
-                        'Проверка и распаковка библиотеки',
-                      )
-                    : tr(
-                        'Importing into local storage',
-                        'Импорт в локальное хранилище',
-                      )
+                  : tr(
+                      'Importing online library into local storage',
+                      'Загрузка онлайн-библиотеки в локальное хранилище',
+                    )
                 : tr(
                     `${formatBytes(libraryUpdate.manifest.compressed_size, locale)} will be downloaded and unpacked. Your current library stays available until import succeeds.`,
                     `Будет загружено и распаковано ${formatBytes(libraryUpdate.manifest.compressed_size, locale)}. Текущая библиотека останется доступна до успешного импорта.`,
@@ -990,7 +991,9 @@ function Shell() {
         <div
           className="modal-scrim"
           role="presentation"
-          onMouseDown={() => setDeleteSnapshotOpen(false)}
+          onMouseDown={() => {
+            if (!deleteSnapshotBusy) setDeleteSnapshotOpen(false);
+          }}
         >
           <div
             ref={deleteDialogRef}
@@ -1023,19 +1026,34 @@ function Shell() {
               <span>{tr('Imported', 'Импортирована')}</span>
               <strong>{compactDate(activeImport.imported_at)}</strong>
             </div>
+            {deleteSnapshotBusy ? (
+              <div className="snapshot-delete-progress" role="status" aria-live="polite">
+                <span className="spinner" aria-hidden="true" />
+                <span>
+                  {tr(
+                    'Deleting a large library. The app may take a while, but it is still working…',
+                    'Удаляется большая библиотека. Это может занять время, приложение продолжает работать…',
+                  )}
+                </span>
+              </div>
+            ) : null}
             <div className="snapshot-delete-actions">
               <button
                 className="btn"
                 onClick={() => setDeleteSnapshotOpen(false)}
+                disabled={deleteSnapshotBusy}
               >
                 {tr('Cancel', 'Отмена')}
               </button>
               <button
                 className="btn danger-action"
                 onClick={confirmDeleteSnapshot}
+                disabled={deleteSnapshotBusy}
               >
                 <Trash2 size={15} />
-                {tr('Delete', 'Удалить')}
+                {deleteSnapshotBusy
+                  ? tr('Deleting…', 'Удаление…')
+                  : tr('Delete', 'Удалить')}
               </button>
             </div>
           </div>
