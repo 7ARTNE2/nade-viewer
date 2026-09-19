@@ -1738,71 +1738,23 @@ fn import_online_library_blocking(
             explode_pos_x, explode_pos_y, explode_pos_z, start_map_x, start_map_y,
             explode_map_x, explode_map_y, trajectory_preview_json, trajectory_json
         ) VALUES (
-            ?1, ?2, ?3, ?4, ?5, 0, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16,
-            ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30
+            ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17,
+            ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31
         )",
     )?;
     for idx in 0..total {
         library_cancelled(state)?;
         let grenade: RawGrenade = rmp_serde::from_read(&mut reader)
             .map_err(|error| online_messagepack_error(state, error))?;
-        let radar = state.radars.get(&map_name_to_key(&grenade.map));
-        let project = |x: Option<f64>, y: Option<f64>| match (x, y, radar) {
-            (Some(x), Some(y), Some(radar)) => Some(game_to_map_coords(x, y, radar)),
-            _ => None,
-        };
-        let (start_map_x, start_map_y) = project(grenade.start_pos_x, grenade.start_pos_y)
-            .map_or((None, None), |(x, y)| (Some(x), Some(y)));
-        let (explode_map_x, explode_map_y) = project(grenade.explode_pos_x, grenade.explode_pos_y)
-            .map_or((None, None), |(x, y)| (Some(x), Some(y)));
-        let (trajectory_preview, trajectory_json) = trajectory_storage_json(
-            grenade.trajectory.as_ref(),
-            grenade.trajectory_preview.as_ref(),
-            radar,
-        )?;
-        insert.execute(params![
+        insert_canonical_grenade(
+            &tx,
+            &mut insert,
+            state,
             import_id,
             idx as i64,
-            grenade.map,
-            grenade.side.as_deref().unwrap_or("Any"),
-            grenade.grenade_type.as_deref().unwrap_or("smoke"),
-            grenade.throw_keys.as_deref(),
-            grenade.coordinates.as_deref(),
-            grenade.thrower.as_deref(),
-            grenade.thrower_steamid64.as_deref(),
-            grenade.thrower_team.as_deref(),
-            grenade.airtime,
-            grenade.usage_count.unwrap_or(1),
-            grenade
-                .usage_throwers
-                .as_deref()
-                .filter(|throwers| !throwers.is_empty())
-                .map(serde_json::to_string)
-                .transpose()?
-                .unwrap_or_else(|| "[]".to_string()),
-            grenade.demo_filename.as_deref(),
-            grenade.throw_tick,
-            grenade.lineup_tick,
-            round_tickrate(grenade.tickrate),
-            grenade.round_time_seconds,
-            grenade.start_pos_x,
-            grenade.start_pos_y,
-            grenade.start_pos_z,
-            grenade.explode_pos_x,
-            grenade.explode_pos_y,
-            grenade.explode_pos_z,
-            start_map_x,
-            start_map_y,
-            explode_map_x,
-            explode_map_y,
-            trajectory_preview,
-            trajectory_json,
-        ])?;
-        let grenade_id = tx.last_insert_rowid();
-        for event in &grenade.usage_events {
-            insert_usage_event(&tx, import_id, grenade_id, event)?;
-        }
-        add_canonical_fallback_players(&tx, import_id, &grenade)?;
+            false,
+            &grenade,
+        )?;
         collect_grenade_metadata(&grenade, &mut metadata);
         maps.insert(grenade.map);
         if idx % 500 == 0 {
