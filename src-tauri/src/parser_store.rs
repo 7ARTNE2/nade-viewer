@@ -71,6 +71,30 @@ pub(crate) fn all(c: &Connection) -> rusqlite::Result<Vec<Value>> {
         .collect()
 }
 
+/// Visits workspace rows from one consistent read snapshot without materializing
+/// the complete workspace in memory. The callback receives the stored raw JSON.
+#[allow(dead_code)]
+pub(crate) fn visit_rows<F>(c: &Connection, canonical: bool, mut visit: F) -> rusqlite::Result<()>
+where
+    F: FnMut(&str) -> rusqlite::Result<()>,
+{
+    let tx = c.unchecked_transaction()?;
+    let sql = if canonical {
+        "SELECT raw_json FROM dedup ORDER BY ordinal"
+    } else {
+        "SELECT raw_json FROM throws ORDER BY demo_path, ordinal"
+    };
+    {
+        let mut statement = tx.prepare(sql)?;
+        let rows = statement.query_map([], |row| row.get::<_, String>(0))?;
+        for row in rows {
+            let raw = row?;
+            visit(&raw)?;
+        }
+    }
+    tx.rollback()
+}
+
 pub(crate) fn counts(c: &Connection) -> rusqlite::Result<(i64, i64, i64)> {
     Ok((
         c.query_row("SELECT count(*) FROM throws", [], |r| r.get(0))?,
