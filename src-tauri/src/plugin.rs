@@ -533,11 +533,14 @@ fn workspace_path(app: &AppHandle) -> Result<PathBuf, String> {
         .join("parser-workspace.sqlite"))
 }
 
-fn workspace_connection(app: &AppHandle) -> Result<rusqlite::Connection, String> {
+pub(crate) fn workspace_connection(app: &AppHandle) -> Result<rusqlite::Connection, String> {
     parser_store::open(&workspace_path(app)?).map_err(|e| e.to_string())
 }
 
-fn ensure_dataset_ready(c: &rusqlite::Connection, canonical: bool) -> Result<(), String> {
+pub(crate) fn ensure_dataset_ready(
+    c: &rusqlite::Connection,
+    canonical: bool,
+) -> Result<(), String> {
     let (raw, _, _) = parser_store::counts(c).map_err(|e| e.to_string())?;
     if raw == 0 {
         return Err("Parser workspace is empty. Parse demos first.".into());

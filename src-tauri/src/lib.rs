@@ -703,6 +703,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             select_import_file,
             import_json,
+            import_parser_workspace,
             plugin::install_nade_parser,
             plugin::uninstall_nade_parser,
             plugin::get_nade_parser_info,
@@ -3223,6 +3224,56 @@ fn select_import_file() -> Option<String> {
         )
         .pick_file()
         .map(|p| p.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+async fn import_parser_workspace(
+    app: AppHandle,
+    source: String,
+    state: tauri::State<'_, AppState>,
+) -> AppResult<JsonImportReport> {
+    let state = state.inner().clone();
+    try_begin_import(&state.import_status)?;
+    let canonical = source == "canonical";
+    let worker_state = state.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let connection = plugin::workspace_connection(&app).map_err(AppError::Message)?;
+        plugin::ensure_dataset_ready(&connection, canonical).map_err(AppError::Message)?;
+        let mut grenades = Vec::new();
+        parser_store::visit_rows(&connection, canonical, |raw| {
+            let grenade = serde_json::from_str::<RawGrenade>(raw).map_err(|error| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    raw.len(),
+                    rusqlite::types::Type::Text,
+                    Box::new(error),
+                )
+            })?;
+            grenades.push(grenade);
+            Ok(())
+        })?;
+        let index = ParserIndex {
+            version: Some(SUPPORTED_IMPORT_VERSION),
+            updated_at: Some(Utc::now().to_rfc3339()),
+            core_nades: Some(false),
+            canonical_grenades: grenades,
+            players: Vec::new(),
+            processed_demos: None,
+        };
+        import_index_blocking(&worker_state, "parser-workspace", index, None)
+            .map(JsonImportReport::from)
+    })
+    .await;
+    match result {
+        Ok(Ok(report)) => Ok(report),
+        Ok(Err(error)) => {
+            set_error(&state, &error.to_string());
+            Err(error)
+        }
+        Err(error) => {
+            set_error(&state, &error.to_string());
+            Err(AppError::Message(error.to_string()))
+        }
+    }
 }
 
 #[tauri::command]

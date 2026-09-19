@@ -26,7 +26,7 @@ import {
   X,
   XCircle,
 } from 'lucide-react';
-import { importJson } from '../lib/tauri';
+import { importParserWorkspace } from '../lib/tauri';
 import { useI18n } from '../i18n';
 import DestructiveConfirmDialog from './DestructiveConfirmDialog';
 import WorkersSelect from './WorkersSelect';
@@ -885,10 +885,7 @@ export default function NadeParserTool({ refreshImports }: Props) {
               disabled={locked || !counts[0]}
               onClick={() =>
                 void action(async () => {
-                  const p = await invoke<string>('prepare_parser_import', {
-                    source,
-                  });
-                  await importJson(p);
+                  await importParserWorkspace(source);
                   await refreshImports?.();
                   setMessage(
                     tr('Imported into Viewer', 'Импортировано в Viewer'),
