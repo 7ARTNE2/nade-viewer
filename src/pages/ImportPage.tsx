@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import {
@@ -17,6 +17,12 @@ import {
   selectImportFile,
 } from '../lib/tauri';
 import { compactDate, formatNumber } from '../lib/format';
+import {
+  IMPORT_STATUS_IDLE,
+  importProgressPercent,
+  isImportFailure,
+} from '../lib/importStatus';
+import { useImportStatusPolling } from '../lib/useImportStatusPolling';
 import type { ImportStatus, ImportSummary } from '../types/domain';
 import { useI18n } from '../i18n';
 import { useToast } from '../components/Toast';
@@ -31,49 +37,60 @@ export default function ImportPage({ onImported, lastImport }: Props) {
   const { showToast } = useToast();
   const navigate = useNavigate();
   const [path, setPath] = useState('');
-  const [status, setStatus] = useState<ImportStatus>({
-    running: false,
-    stage: 'idle',
-    current: 0,
-    total: 0,
-    message: 'Ready',
-    phase_current: 0,
-    phase_total: 0,
-  });
+  const [status, setStatus] = useState<ImportStatus>(IMPORT_STATUS_IDLE);
   const [busy, setBusy] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const busyRef = useRef(false);
+  const runTokenRef = useRef(0);
+  const runHandledRef = useRef(false);
   const runImportRef = useRef<(nextPath?: string) => Promise<void>>(
     async () => undefined,
   );
   const progress = useMemo(
-    () =>
-      status.total > 0
-        ? Math.min(100, Math.round((status.current / status.total) * 100))
-        : busy
-          ? 8
-          : 0,
+    () => Math.round(importProgressPercent(status, busy ? 8 : 0)),
     [busy, status],
   );
 
-  useEffect(() => {
-    if (!busy) return;
-    const timer = window.setInterval(() => {
-      getImportStatus()
-        .then(setStatus)
-        .catch((error) => {
-          console.error('Unable to read import progress', error);
-          setStatus((current) => ({
-            ...current,
-            message: tr(
-              'Unable to read import progress',
-              'Не удалось получить ход импорта',
-            ),
-          }));
-        });
-    }, 350);
-    return () => window.clearInterval(timer);
-  }, [busy, locale]);
+  const handleTerminalFailure = useCallback(
+    (terminal: ImportStatus) => {
+      if (runHandledRef.current) return;
+      runHandledRef.current = true;
+      const cancelled = terminal.stage === 'cancelled';
+      const summary = cancelled
+        ? tr('Import cancelled', 'Импорт отменён')
+        : terminal.error?.trim() ||
+          terminal.message?.trim() ||
+          tr('Import failed', 'Ошибка импорта');
+      setMessage(summary);
+      showToast(summary, {
+        tone: cancelled ? 'info' : 'error',
+        duration: 4600,
+      });
+      busyRef.current = false;
+      setBusy(false);
+    },
+    [showToast, tr],
+  );
+
+  useImportStatusPolling({
+    enabled: busy,
+    onStatus: setStatus,
+    onTerminal: (terminal) => {
+      if (terminal.stage === 'done') return;
+      if (isImportFailure(terminal)) handleTerminalFailure(terminal);
+    },
+    onError: (error) => {
+      console.error('Unable to read import progress', error);
+      setStatus((current) => ({
+        ...current,
+        message: tr(
+          'Unable to read import progress',
+          'Не удалось получить ход импорта',
+        ),
+      }));
+    },
+  });
 
   const choose = async () => {
     try {
@@ -91,11 +108,16 @@ export default function ImportPage({ onImported, lastImport }: Props) {
   };
 
   const runImport = async (nextPath = path) => {
-    if (!nextPath.trim()) return;
+    const trimmed = nextPath.trim();
+    if (!trimmed || busyRef.current) return;
+    const token = ++runTokenRef.current;
+    busyRef.current = true;
+    runHandledRef.current = false;
     setBusy(true);
     setMessage(null);
     try {
-      const report = await importJson(nextPath.trim());
+      const report = await importJson(trimmed);
+      if (token !== runTokenRef.current) return;
       setStatus(await getImportStatus());
       await onImported();
       if (report.kind === 'core_nades') {
@@ -208,7 +230,10 @@ export default function ImportPage({ onImported, lastImport }: Props) {
         showToast(summary, { tone: 'error' });
       }
     } finally {
-      setBusy(false);
+      if (token === runTokenRef.current) {
+        busyRef.current = false;
+        setBusy(false);
+      }
     }
   };
   runImportRef.current = runImport;

@@ -37,10 +37,11 @@ import {
   completeOnboarding,
   checkLibraryUpdate,
   cancelLibraryDownload,
-  getImportStatus,
   importLibraryUpdate,
 } from './lib/tauri';
 import { compactDate, formatNumber } from './lib/format';
+import { importProgressPercent } from './lib/importStatus';
+import { useImportStatusPolling } from './lib/useImportStatusPolling';
 import { startWindowActiveTracking } from './lib/windowActive';
 import type {
   ImportStatus,
@@ -334,17 +335,12 @@ function Shell() {
     return () => window.clearTimeout(timer);
   }, [checkForLibraryUpdate]);
 
-  useEffect(() => {
-    if (!libraryUpdateBusy) return;
-    const timer = window.setInterval(() => {
-      getImportStatus()
-        .then(setLibraryUpdateStatus)
-        .catch((error) =>
-          console.error('Unable to read library update progress', error),
-        );
-    }, 350);
-    return () => window.clearInterval(timer);
-  }, [libraryUpdateBusy]);
+  useImportStatusPolling({
+    enabled: libraryUpdateBusy,
+    onStatus: setLibraryUpdateStatus,
+    onError: (error) =>
+      console.error('Unable to read library update progress', error),
+  });
 
   useEffect(() => {
     if (!coreTransferStatus && !operationError) return;
@@ -938,7 +934,7 @@ function Shell() {
               <div className="library-update-progress" aria-hidden="true">
                 <span
                   style={{
-                    width: `${libraryUpdateStatus?.total ? Math.min(100, (libraryUpdateStatus.current / libraryUpdateStatus.total) * 100) : 4}%`,
+                    width: `${importProgressPercent(libraryUpdateStatus, 4)}%`,
                   }}
                 />
               </div>
