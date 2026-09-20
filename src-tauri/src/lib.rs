@@ -1969,9 +1969,11 @@ fn import_online_library_blocking(
             state,
             import_id,
             idx as i64,
-            CanonicalWriteMode::Canonical,
             &grenade,
-            None,
+            CanonicalGrenadeWrite {
+                mode: CanonicalWriteMode::Canonical,
+                fallback_map_coordinates: None,
+            },
         )?;
         collect_grenade_metadata(&grenade, &mut metadata);
         maps.insert(grenade.map);
@@ -3409,29 +3411,46 @@ enum CanonicalWriteMode {
     Core,
 }
 
+#[derive(Clone, Copy)]
+struct MapCoordinates {
+    start_x: Option<f64>,
+    start_y: Option<f64>,
+    explode_x: Option<f64>,
+    explode_y: Option<f64>,
+}
+
+#[derive(Clone, Copy)]
+struct CanonicalGrenadeWrite {
+    mode: CanonicalWriteMode,
+    fallback_map_coordinates: Option<MapCoordinates>,
+}
+
 fn insert_canonical_grenade(
     tx: &Transaction<'_>,
     statement: &mut rusqlite::Statement<'_>,
     state: &AppState,
     import_id: i64,
     source_index: i64,
-    mode: CanonicalWriteMode,
     grenade: &RawGrenade,
-    fallback_map_coordinates: Option<(Option<f64>, Option<f64>, Option<f64>, Option<f64>)>,
+    write: CanonicalGrenadeWrite,
 ) -> AppResult<i64> {
     let radar = state.radars.get(&map_name_to_key(&grenade.map));
     let project = |x: Option<f64>, y: Option<f64>| match (x, y, radar) {
         (Some(x), Some(y), Some(radar)) => Some(game_to_map_coords(x, y, radar)),
         _ => None,
     };
-    let (fallback_start_x, fallback_start_y, fallback_explode_x, fallback_explode_y) =
-        fallback_map_coordinates.unwrap_or((None, None, None, None));
+    let fallback = write.fallback_map_coordinates.unwrap_or(MapCoordinates {
+        start_x: None,
+        start_y: None,
+        explode_x: None,
+        explode_y: None,
+    });
     let (start_map_x, start_map_y) = project(grenade.start_pos_x, grenade.start_pos_y)
-        .map_or((fallback_start_x, fallback_start_y), |(x, y)| {
+        .map_or((fallback.start_x, fallback.start_y), |(x, y)| {
             (Some(x), Some(y))
         });
     let (explode_map_x, explode_map_y) = project(grenade.explode_pos_x, grenade.explode_pos_y)
-        .map_or((fallback_explode_x, fallback_explode_y), |(x, y)| {
+        .map_or((fallback.explode_x, fallback.explode_y), |(x, y)| {
             (Some(x), Some(y))
         });
     let (trajectory_preview, trajectory_json) = trajectory_storage_json(
@@ -3445,7 +3464,7 @@ fn insert_canonical_grenade(
         grenade.map,
         grenade.side.as_deref().unwrap_or("Any"),
         grenade.grenade_type.as_deref().unwrap_or("smoke"),
-        match mode {
+        match write.mode {
             CanonicalWriteMode::Canonical => 0,
             CanonicalWriteMode::Core => 1,
         },
@@ -3529,15 +3548,17 @@ fn import_workspace_rows_blocking(
                 state,
                 import_id,
                 ordinal as i64,
-                CanonicalWriteMode::Canonical,
                 &grenade,
-                None,
+                CanonicalGrenadeWrite {
+                    mode: CanonicalWriteMode::Canonical,
+                    fallback_map_coordinates: None,
+                },
             )
             .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
             collect_grenade_metadata(&grenade, &mut metadata);
             maps.insert(grenade.map);
             ordinal += 1;
-            if ordinal % 500 == 0 {
+            if ordinal.is_multiple_of(500) {
                 set_status(
                     state,
                     "importing",
@@ -4039,21 +4060,23 @@ impl<'a, 'b> ImportWriter<'a, 'b> {
         } else {
             self.ordinal as i64
         };
-        let fallback = self.core_snapshot.then_some((
-            grenade.start_map_x,
-            grenade.start_map_y,
-            grenade.explode_map_x,
-            grenade.explode_map_y,
-        ));
+        let fallback = self.core_snapshot.then_some(MapCoordinates {
+            start_x: grenade.start_map_x,
+            start_y: grenade.start_map_y,
+            explode_x: grenade.explode_map_x,
+            explode_y: grenade.explode_map_y,
+        });
         insert_canonical_grenade(
             self.tx,
             &mut self.statement,
             self.state,
             self.import_id,
             source_index,
-            self.format.write_mode(),
             &grenade,
-            fallback,
+            CanonicalGrenadeWrite {
+                mode: self.format.write_mode(),
+                fallback_map_coordinates: fallback,
+            },
         )?;
         collect_grenade_metadata(&grenade, &mut self.metadata);
         self.maps.insert(grenade.map.clone());
