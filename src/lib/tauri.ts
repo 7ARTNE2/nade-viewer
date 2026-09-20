@@ -21,6 +21,9 @@ import type {
 
 export const isTauri = '__TAURI_INTERNALS__' in window;
 
+/** Event the backend broadcasts with a serialized `ImportStatus` snapshot. */
+export const IMPORT_STATUS_EVENT = 'import-status';
+
 export function assetUrl(path?: string | null) {
   if (!path) return '';
   if (!isTauri) return path;

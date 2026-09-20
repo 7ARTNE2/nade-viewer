@@ -20,7 +20,7 @@ use std::{
     time::{Duration as StdDuration, Instant},
 };
 
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 use thiserror::Error;
 mod dedup;
 mod parser_store;
@@ -28,6 +28,8 @@ mod plugin;
 
 const WORLD: f64 = 1024.0;
 const SUPPORTED_IMPORT_VERSION: i64 = 1;
+/// Event name the frontend listens on for live import progress snapshots.
+const IMPORT_STATUS_EVENT: &str = "import-status";
 const DEFAULT_LIBRARY_MANIFEST_URL: &str =
     "https://github.com/7ARTNE2/nade-viewer/releases/download/library/library-manifest.json";
 const LARGE_IO_BUFFER_SIZE: usize = 1024 * 1024;
@@ -73,6 +75,13 @@ impl serde::Serialize for AppError {
 
 type AppResult<T> = Result<T, AppError>;
 
+/// Pushes an `ImportStatus` snapshot to the frontend.
+///
+/// Deliberately type-erased: keeping a concrete `AppHandle` out of `AppState`
+/// (which is `Clone` and shared with tests) stops test builds from linking the
+/// Tauri runtime just to clone or drop the state.
+type ImportStatusEmitter = Arc<dyn Fn(&ImportStatus) + Send + Sync>;
+
 #[derive(Clone)]
 struct AppState {
     db_path: PathBuf,
@@ -81,6 +90,12 @@ struct AppState {
     import_status: Arc<Mutex<ImportStatus>>,
     library_download_cancelled: Arc<AtomicBool>,
     manual_import: Arc<ManualImportControl>,
+    /// Emitter used to push `import-status` snapshots to the frontend.
+    ///
+    /// Set once the app handle is available in `setup`; `None` in tests and any
+    /// other context without a running Tauri app, where status updates are only
+    /// observable through `get_import_status`.
+    emitter: Option<ImportStatusEmitter>,
 }
 
 /// Cancellation token shared by the manual file imports (JSON/MessagePack/ZIP).
@@ -850,6 +865,14 @@ fn init_state(app: &AppHandle) -> Result<AppState, Box<dyn std::error::Error>> {
     allow_asset_directories(app, &resource_dir, &app_dir)?;
     let db_path = app_dir.join("nadeviewer.sqlite");
     let radars = Arc::new(load_radars(&resource_dir)?);
+    let emitter: ImportStatusEmitter = {
+        let app = app.clone();
+        Arc::new(move |status: &ImportStatus| {
+            if let Err(error) = app.emit(IMPORT_STATUS_EVENT, status) {
+                eprintln!("Unable to emit import status: {error}");
+            }
+        })
+    };
     let state = AppState {
         db_path,
         resource_dir,
@@ -857,6 +880,7 @@ fn init_state(app: &AppHandle) -> Result<AppState, Box<dyn std::error::Error>> {
         import_status: Arc::new(Mutex::new(ImportStatus::default())),
         library_download_cancelled: Arc::new(AtomicBool::new(false)),
         manual_import: Arc::new(ManualImportControl::default()),
+        emitter: Some(emitter),
     };
     let conn = open_conn(&state)?;
     init_schema(&conn)?;
@@ -1328,8 +1352,23 @@ fn migrate_grenade_columns(conn: &Connection) -> AppResult<()> {
     Ok(())
 }
 
+/// Pushes a status snapshot to the frontend.
+///
+/// Emission is best-effort: a missing emitter (tests, headless contexts) or a
+/// serialization/transport failure is logged and never panics, because the
+/// frontend keeps `get_import_status` as a polling fallback.
+fn emit_import_status(state: &AppState, status: &ImportStatus) {
+    let Some(emitter) = state.emitter.as_ref() else {
+        return;
+    };
+    emitter(status);
+}
+
 fn set_status(state: &AppState, stage: &str, current: u64, total: u64, message: &str) {
-    if let Ok(mut status) = state.import_status.lock() {
+    let snapshot = {
+        let Ok(mut status) = state.import_status.lock() else {
+            return;
+        };
         status.running = !matches!(stage, "done" | "error" | "idle" | "cancelled");
         status.stage = stage.to_string();
         status.current = current;
@@ -1340,10 +1379,16 @@ fn set_status(state: &AppState, stage: &str, current: u64, total: u64, message: 
         if stage != "error" {
             status.error = None;
         }
-    }
+        status.clone()
+    };
+    emit_import_status(state, &snapshot);
 }
 
-fn try_begin_import(status: &Mutex<ImportStatus>) -> AppResult<()> {
+/// Arms a fresh import on the shared status slot.
+///
+/// Returns the snapshot to broadcast, or an error when a run is already active
+/// (or the state is poisoned). Callers emit the returned snapshot themselves.
+fn try_begin_import(status: &Mutex<ImportStatus>) -> AppResult<ImportStatus> {
     let mut status = status.lock().map_err(|_| AppError::Import {
         code: "import_state_unavailable",
         message: "Import state is unavailable".to_string(),
@@ -1360,7 +1405,7 @@ fn try_begin_import(status: &Mutex<ImportStatus>) -> AppResult<()> {
     status.total = 0;
     status.message = "Reading import".to_string();
     status.error = None;
-    Ok(())
+    Ok(status.clone())
 }
 
 #[cfg(test)]
@@ -1679,20 +1724,24 @@ fn is_manual_import_cancel_error(error: &AppError) -> bool {
 }
 
 fn begin_library_finalization(state: &AppState, total: u64) -> AppResult<()> {
-    let mut status = state.import_status.lock().map_err(|_| AppError::Import {
-        code: "import_state_unavailable",
-        message: "Import state is unavailable".to_string(),
-    })?;
-    if state.library_download_cancelled.load(Ordering::Relaxed) {
-        return Err(AppError::Import {
-            code: "library_download_cancelled",
-            message: "Library update was cancelled".to_string(),
-        });
-    }
-    status.stage = "finalizing".to_string();
-    status.current = total;
-    status.total = total;
-    status.message = "Finalizing verified library update".to_string();
+    let snapshot = {
+        let mut status = state.import_status.lock().map_err(|_| AppError::Import {
+            code: "import_state_unavailable",
+            message: "Import state is unavailable".to_string(),
+        })?;
+        if state.library_download_cancelled.load(Ordering::Relaxed) {
+            return Err(AppError::Import {
+                code: "library_download_cancelled",
+                message: "Library update was cancelled".to_string(),
+            });
+        }
+        status.stage = "finalizing".to_string();
+        status.current = total;
+        status.total = total;
+        status.message = "Finalizing verified library update".to_string();
+        status.clone()
+    };
+    emit_import_status(state, &snapshot);
     Ok(())
 }
 
@@ -2494,12 +2543,17 @@ fn add_canonical_fallback_players(
 }
 
 fn set_error(state: &AppState, message: &str) {
-    if let Ok(mut status) = state.import_status.lock() {
+    let snapshot = {
+        let Ok(mut status) = state.import_status.lock() else {
+            return;
+        };
         status.running = false;
         status.stage = "error".to_string();
         status.message = message.to_string();
         status.error = Some(message.to_string());
-    }
+        status.clone()
+    };
+    emit_import_status(state, &snapshot);
 }
 
 fn resource_string(path: &Path) -> String {
@@ -3487,7 +3541,7 @@ async fn import_parser_workspace(
     state: tauri::State<'_, AppState>,
 ) -> AppResult<JsonImportReport> {
     let state = state.inner().clone();
-    try_begin_import(&state.import_status)?;
+    emit_import_status(&state, &try_begin_import(&state.import_status)?);
     let canonical = source == "canonical";
     let worker_state = state.clone();
     let result = tauri::async_runtime::spawn_blocking(move || {
@@ -3516,7 +3570,7 @@ async fn import_json(
     state: tauri::State<'_, AppState>,
 ) -> AppResult<JsonImportReport> {
     let state = state.inner().clone();
-    try_begin_import(&state.import_status)?;
+    emit_import_status(&state, &try_begin_import(&state.import_status)?);
     state.manual_import.begin();
 
     let import_path = path.clone();
@@ -3553,7 +3607,7 @@ fn cancel_import(state: tauri::State<'_, AppState>) -> bool {
 #[tauri::command]
 async fn import_library_update(state: tauri::State<'_, AppState>) -> AppResult<JsonImportReport> {
     let state = state.inner().clone();
-    try_begin_import(&state.import_status)?;
+    emit_import_status(&state, &try_begin_import(&state.import_status)?);
     state
         .library_download_cancelled
         .store(false, Ordering::Relaxed);
@@ -5613,6 +5667,7 @@ mod tests {
                 import_status: Arc::new(Mutex::new(ImportStatus::default())),
                 library_download_cancelled: Arc::new(AtomicBool::new(false)),
                 manual_import: Arc::new(ManualImportControl::default()),
+                emitter: None,
             },
             root,
         )
