@@ -13,6 +13,18 @@ use std::{
 };
 use tauri::{AppHandle, Manager};
 
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+fn hide_console(command: &mut Command) -> &mut Command {
+    #[cfg(windows)]
+    command.creation_flags(CREATE_NO_WINDOW);
+    command
+}
+
 #[derive(Serialize, Clone)]
 pub(crate) struct PluginInfo {
     pub installed: bool,
@@ -212,7 +224,8 @@ fn terminate_process(pid: u32) {
 }
 
 fn parser_supports_stdout(executable: &Path) -> bool {
-    Command::new(executable)
+    let mut command = Command::new(executable);
+    hide_console(&mut command)
         .arg("--plugin-info")
         .output()
         .ok()
@@ -224,7 +237,8 @@ fn parser_supports_stdout(executable: &Path) -> bool {
 #[tauri::command]
 pub(crate) fn get_nade_parser_info(app: AppHandle) -> PluginInfo {
     let p = exe(&app);
-    let version = Command::new(&p)
+    let mut command = Command::new(&p);
+    let version = hide_console(&mut command)
         .arg("--plugin-info")
         .output()
         .ok()
@@ -432,7 +446,7 @@ fn run_parser_job(
         let stderr = File::create(&stderr_path)
             .map_err(|error| format!("{}: stderr: {error}", job.file.display()))?;
         let mut command = Command::new(executable);
-        command
+        hide_console(&mut command)
             .arg("--parse")
             .arg("--demo")
             .arg(&job.file)
