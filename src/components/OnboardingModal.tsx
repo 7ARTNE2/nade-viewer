@@ -4,6 +4,7 @@ import {
   CircleHelp,
   ClipboardCheck,
   Database,
+  Eye,
   Layers3,
   Map,
   ScanLine,
@@ -62,6 +63,12 @@ const steps: TourStep[] = [
     copy: 'Combine filters for type, side, tournament, team, player, or search. Reset to see the full library again.',
   },
   {
+    selector: '[data-tour="visibility-rules"]',
+    icon: Eye,
+    title: 'Tune what stays visible',
+    copy: 'Raise the minimum usage to hide one-off throws and keep only proven lineups on the radar. Lower it to inspect the full library.',
+  },
+  {
     selector: '[data-tour="map-canvas"]',
     icon: ScanLine,
     title: 'Read the radar at a glance',
@@ -93,6 +100,7 @@ const russianTitles = [
   'Переключайте карты быстро',
   'Управляйте видом радара',
   'Отсейте лишнее',
+  'Настройте видимость',
   'Читайте радар с первого взгляда',
   'Разберитесь в обозначениях',
   'Начните с кластера',
@@ -105,6 +113,7 @@ const russianCopies = [
   'Откройте селектор карты, чтобы быстро перейти на другую доступную карту, не возвращаясь в библиотеку.',
   'Кнопки здесь управляют радаром: «Фокус» скрывает боковую панель, «Значки» меняет вид маркеров, «Избранные» и «Инста» фильтруют раскидки, «Спавны» показывает точки появления, а «Бросок» группирует по позиции броска.',
   'Комбинируйте фильтры типа, стороны, турнира, команды, игрока и поиска. Сбросьте их, чтобы увидеть всю библиотеку.',
+  'Ползунком «Правила видимости» задайте минимальный порог использований. Повышайте его, чтобы скрыть разовые броски и оставить только проверенные, понижайте — чтобы изучить всю библиотеку.',
   'Приближайте колесом, перемещайте карту перетаскиванием, затем выберите маркер или кластер.',
   'Легенда объясняет стороны, типы гранат, точки спавна и траектории. При необходимости сбросьте масштаб.',
   'Близкие позиции приземления или броска объединены в группы. Выберите кластер здесь или прямо на радаре.',
@@ -162,12 +171,12 @@ export default function OnboardingModal({
   }, [started, step]);
 
   useEffect(() => {
-    if (!started || step !== 6) return;
+    if (!started || step !== 7) return;
     const advanceAfterClusterSelection = (event: MouseEvent) => {
       if (
         (event.target as Element | null)?.closest('[data-tour="cluster-list"]')
       ) {
-        setStep(7);
+        setStep(8);
       }
     };
     window.addEventListener('click', advanceAfterClusterSelection, true);

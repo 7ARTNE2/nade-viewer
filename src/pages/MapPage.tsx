@@ -1297,7 +1297,7 @@ export default function MapPage({ activeImportId }: MapPageProps) {
           </div>
         </div>
 
-        <div className="panel-section inspector-visibility">
+        <div className="panel-section inspector-visibility" data-tour="visibility-rules">
           <button
             className="section-title section-toggle"
             type="button"
