@@ -1306,7 +1306,12 @@ export default function MapPage({ activeImportId }: MapPageProps) {
           >
             <span>{tr('Visibility rules', 'Правила видимости')}</span>
             <span className="section-toggle-meta">
-              {tr(`Min. ${siteValue}`, `Мин. ${siteValue}`)}
+              {!visibilityRulesOpen ? (
+                <>
+                  <span>{tr('Min.', 'Мин.')}</span>
+                  <strong className="visibility-rule-count">{siteValue}</strong>
+                </>
+              ) : null}
               {visibilityRulesOpen ? (
                 <ChevronUp size={14} />
               ) : (
@@ -1318,7 +1323,7 @@ export default function MapPage({ activeImportId }: MapPageProps) {
             <div className="setting-card">
               <div className="setting-row">
                 <span>{tr('Public min usage', 'Минимум использований')}</span>
-                <strong>{siteValue}</strong>
+                <strong className="visibility-setting-value">{siteValue}</strong>
               </div>
               <input
                 className="range"
