@@ -220,16 +220,6 @@
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .tactical-filter-menu,
-  .workers-select-menu,
-  .tactical-filter-select.is-loading .tactical-filter-trigger::after,
-  .tactical-filter-loading-mark svg,
-  .tactical-filter-loading-copy i {
-    animation: none;
-  }
-}
-
 .tactical-filter-trigger > svg {
   flex: none;
   color: var(--dim);
@@ -1643,9 +1633,11 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .nade-parser *,
-  .nade-parser *::before,
-  .nade-parser *::after {
+  .nade-parser *:not(.tactical-filter-loading):not(.tactical-filter-loading *),
+  .nade-parser
+    *:not(.tactical-filter-loading):not(.tactical-filter-loading *)::before,
+  .nade-parser
+    *:not(.tactical-filter-loading):not(.tactical-filter-loading *)::after {
     animation: none !important;
     transition: none !important;
   }
