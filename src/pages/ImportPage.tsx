@@ -2,11 +2,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import {
+  AlertTriangle,
   CheckCircle2,
   Database,
   FileJson,
   FolderOpen,
   History,
+  Info,
+  Map,
+  RotateCw,
   ShieldCheck,
   Upload,
   X,
@@ -24,8 +28,18 @@ import {
   importProgressPercent,
   isImportFailure,
 } from '../lib/importStatus';
+import {
+  importErrorCode,
+  importErrorDetail,
+  importErrorLabel,
+  importStatusMessage,
+} from '../lib/importMessages';
 import { useImportStatusPolling } from '../lib/useImportStatusPolling';
-import type { ImportStatus, ImportSummary } from '../types/domain';
+import type {
+  ImportStatus,
+  ImportSummary,
+  JsonImportReport,
+} from '../types/domain';
 import { useI18n } from '../i18n';
 import { useToast } from '../components/Toast';
 
@@ -34,8 +48,19 @@ type Props = {
   lastImport: ImportSummary | null;
 };
 
+/** Inline outcome shown under the drop zone after a run settles. */
+type ImportOutcome = {
+  tone: 'error' | 'cancelled' | 'info';
+  title: string;
+  detail?: string;
+};
+
+function sourceFileName(path: string) {
+  return path.split(/[\\/]/).filter(Boolean).pop() || path;
+}
+
 export default function ImportPage({ onImported, lastImport }: Props) {
-  const { locale, tr } = useI18n();
+  const { locale, tr, count } = useI18n();
   const { showToast } = useToast();
   const navigate = useNavigate();
   const [path, setPath] = useState('');
@@ -43,7 +68,8 @@ export default function ImportPage({ onImported, lastImport }: Props) {
   const [busy, setBusy] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [dragging, setDragging] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
+  const [outcome, setOutcome] = useState<ImportOutcome | null>(null);
+  const [completion, setCompletion] = useState<JsonImportReport | null>(null);
   const busyRef = useRef(false);
   const runTokenRef = useRef(0);
   const runHandledRef = useRef(false);
@@ -54,22 +80,35 @@ export default function ImportPage({ onImported, lastImport }: Props) {
     () => Math.round(importProgressPercent(status, busy ? 8 : 0)),
     [busy, status],
   );
+  const progressText = tr(`${progress}% complete`, `Выполнено ${progress}%`);
+  const busyLabel =
+    importStatusMessage(status, tr) ?? tr('Importing…', 'Импорт…');
 
   const handleTerminalFailure = useCallback(
     (terminal: ImportStatus) => {
       if (runHandledRef.current) return;
       runHandledRef.current = true;
-      const cancelled = terminal.stage === 'cancelled';
-      const summary = cancelled
-        ? tr('Import cancelled', 'Импорт отменён')
-        : terminal.error?.trim() ||
-          terminal.message?.trim() ||
-          tr('Import failed', 'Ошибка импорта');
-      setMessage(summary);
-      showToast(summary, {
-        tone: cancelled ? 'info' : 'error',
-        duration: 4600,
-      });
+      if (terminal.stage === 'cancelled') {
+        setOutcome({
+          tone: 'cancelled',
+          title: tr('Import cancelled', 'Импорт отменён'),
+        });
+        showToast(tr('Import cancelled', 'Импорт отменён'), {
+          tone: 'info',
+          duration: 4600,
+        });
+      } else {
+        const detail = terminal.error?.trim() || undefined;
+        const title = detail
+          ? tr('Import failed', 'Ошибка импорта')
+          : (importStatusMessage(terminal, tr) ??
+            tr('Import failed', 'Ошибка импорта'));
+        setOutcome({ tone: 'error', title, detail });
+        showToast(detail ? `${title}: ${detail}` : title, {
+          tone: 'error',
+          duration: 4600,
+        });
+      }
       busyRef.current = false;
       setBusy(false);
       setCancelling(false);
@@ -104,10 +143,12 @@ export default function ImportPage({ onImported, lastImport }: Props) {
       await runImportRef.current(selected);
     } catch (error) {
       console.error(error);
-      showToast(
-        tr('Unable to open the file picker', 'Не удалось открыть выбор файла'),
-        { tone: 'error' },
+      const title = tr(
+        'Unable to open the file picker',
+        'Не удалось открыть выбор файла',
       );
+      setOutcome({ tone: 'error', title });
+      showToast(title, { tone: 'error' });
     }
   };
 
@@ -119,7 +160,8 @@ export default function ImportPage({ onImported, lastImport }: Props) {
     runHandledRef.current = false;
     setBusy(true);
     setCancelling(false);
-    setMessage(null);
+    setCompletion(null);
+    setOutcome(null);
     try {
       const report = await importJson(trimmed);
       if (token !== runTokenRef.current) return;
@@ -141,108 +183,40 @@ export default function ImportPage({ onImported, lastImport }: Props) {
           ),
           { tone: 'success', duration: 1960 },
         );
+      } else {
+        showToast(
+          tr(
+            `Imported ${formatNumber(report.grenade_count)} lineups`,
+            `Импортировано ${formatNumber(report.grenade_count)} раскидок`,
+          ),
+          { tone: 'success', duration: 1960 },
+        );
       }
-      navigate('/maps', { replace: true });
+      setCompletion(report);
     } catch (error) {
       // A newer run started, or the polling loop already reported this outcome.
       if (token !== runTokenRef.current || runHandledRef.current) return;
       runHandledRef.current = true;
-      const importError =
-        typeof error === 'object' && error !== null && 'code' in error
-          ? (error as { code: string; message?: string })
-          : null;
-      if (importError?.code === 'import_cancelled') {
-        const summary = tr('Import cancelled', 'Импорт отменён');
-        setMessage(summary);
-        showToast(summary, { tone: 'info', duration: 4600 });
+      const code = importErrorCode(error);
+      if (code === 'import_cancelled') {
+        setOutcome({
+          tone: 'cancelled',
+          title: tr('Import cancelled', 'Импорт отменён'),
+        });
+        showToast(tr('Import cancelled', 'Импорт отменён'), {
+          tone: 'info',
+          duration: 4600,
+        });
         return;
       }
-      const translated: Record<string, string> = {
-        import_already_running: tr(
-          'An import is already running',
-          'Импорт уже выполняется',
-        ),
-        import_state_unavailable: tr(
-          'Import state is unavailable',
-          'Состояние импорта недоступно',
-        ),
-        file_unavailable: tr(
-          'The library file cannot be opened',
-          'Не удалось открыть файл библиотеки',
-        ),
-        invalid_json: tr(
-          'The JSON file is invalid',
-          'JSON-файл содержит некорректные данные',
-        ),
-        invalid_messagepack: tr(
-          'The MessagePack file is invalid',
-          'MessagePack-файл содержит некорректные данные',
-        ),
-        invalid_top_level: tr(
-          'The top-level JSON or MessagePack value must be an object',
-          'Верхний уровень JSON или MessagePack должен быть объектом',
-        ),
-        ambiguous_format: tr(
-          'The file mixes two import formats',
-          'В файле смешаны два формата импорта',
-        ),
-        unsupported_format: tr(
-          'Expected grenade_index, Core Nades JSON/MessagePack, or a Nadegrid screenshot ZIP',
-          'Ожидается grenade_index, JSON/MessagePack Core Nades или ZIP-архив скриншотов Nadegrid',
-        ),
-        missing_version: tr(
-          'Core Nades JSON or MessagePack requires version 1',
-          'Для Core Nades JSON или MessagePack требуется версия 1',
-        ),
-        invalid_version: tr(
-          'The top-level version must be an integer',
-          'Версия верхнего уровня должна быть целым числом',
-        ),
-        unsupported_version: tr(
-          'This JSON or MessagePack version is not supported',
-          'Эта версия JSON или MessagePack не поддерживается',
-        ),
-        invalid_canonical_format: tr(
-          'Invalid grenade_index structure',
-          'Некорректная структура grenade_index',
-        ),
-        invalid_core_format: tr(
-          'Invalid Core Nades structure',
-          'Некорректная структура Core Nades',
-        ),
-        library_manifest_unavailable: tr(
-          'The online library manifest is unavailable',
-          'Манифест онлайн-библиотеки недоступен',
-        ),
-        library_update_invalid: tr(
-          'The online library manifest is invalid',
-          'Манифест онлайн-библиотеки содержит ошибку',
-        ),
-        library_download_failed: tr(
-          'The online library could not be downloaded',
-          'Не удалось скачать онлайн-библиотеку',
-        ),
-        library_size_mismatch: tr(
-          'The downloaded library size is incorrect',
-          'Размер скачанной библиотеки не совпадает',
-        ),
-        library_hash_mismatch: tr(
-          'The downloaded library failed its integrity check',
-          'Проверка целостности скачанной библиотеки не пройдена',
-        ),
-      };
-      if (importError) {
-        const summary =
-          translated[importError.code] ?? tr('Import failed', 'Ошибка импорта');
-        const detail = importError.message?.trim();
-        const visibleMessage = detail ? `${summary}: ${detail}` : summary;
-        setMessage(visibleMessage);
-        showToast(visibleMessage, { tone: 'error', duration: 4600 });
-      } else {
-        const summary = tr('Import failed', 'Ошибка импорта');
-        setMessage(summary);
-        showToast(summary, { tone: 'error' });
-      }
+      const title =
+        importErrorLabel(code, tr) ?? tr('Import failed', 'Ошибка импорта');
+      const detail = importErrorDetail(error)?.trim() || undefined;
+      setOutcome({ tone: 'error', title, detail });
+      showToast(detail ? `${title}: ${detail}` : title, {
+        tone: 'error',
+        duration: 4600,
+      });
     } finally {
       if (token === runTokenRef.current) {
         busyRef.current = false;
@@ -252,6 +226,13 @@ export default function ImportPage({ onImported, lastImport }: Props) {
     }
   };
   runImportRef.current = runImport;
+
+  const startAnotherImport = () => {
+    setCompletion(null);
+    setOutcome(null);
+    setPath('');
+    setStatus(IMPORT_STATUS_IDLE);
+  };
 
   const cancelRun = async () => {
     if (!busyRef.current || cancelling) return;
@@ -292,17 +273,17 @@ export default function ImportPage({ onImported, lastImport }: Props) {
             setPath(droppedPath);
             runImportRef.current(droppedPath).catch((error) => {
               console.error('Unable to import dropped file', error);
-              const summary = tr('Import failed', 'Ошибка импорта');
-              setMessage(summary);
-              showToast(summary, { tone: 'error' });
+              const title = tr('Import failed', 'Ошибка импорта');
+              setOutcome({ tone: 'error', title });
+              showToast(title, { tone: 'error' });
             });
           } else {
-            const summary = tr(
+            const title = tr(
               'Drop a JSON, MessagePack, or Nadegrid ZIP file',
               'Перетащите JSON-, MessagePack- или ZIP-файл Nadegrid',
             );
-            setMessage(summary);
-            showToast(summary, { tone: 'info' });
+            setOutcome({ tone: 'info', title });
+            showToast(title, { tone: 'info' });
           }
         }
       })
@@ -312,12 +293,12 @@ export default function ImportPage({ onImported, lastImport }: Props) {
       })
       .catch((error) => {
         console.error('Unable to listen for file drops', error);
-        const summary = tr(
+        const title = tr(
           'File drop is unavailable',
           'Перетаскивание файлов недоступно',
         );
-        setMessage(summary);
-        showToast(summary, { tone: 'error' });
+        setOutcome({ tone: 'error', title });
+        showToast(title, { tone: 'error' });
       });
     return () => {
       disposed = true;
@@ -355,102 +336,214 @@ export default function ImportPage({ onImported, lastImport }: Props) {
         </div>
 
         <div className="import-action-card">
-          <div
-            className={`drop-zone ${busy ? 'working' : ''} ${dragging ? 'dragging' : ''}`}
-          >
-            <Database size={24} />
-            <strong>
-              {busy
-                ? status.message
-                : dragging
-                  ? tr(
-                      'Release to import the library',
-                      'Отпустите для импорта библиотеки',
-                    )
-                  : (message ??
-                    tr(
-                      'Drop a library file here',
-                      'Перетащите файл библиотеки сюда',
-                    ))}
-            </strong>
-            <span>
-              {busy
-                ? tr(`${progress}% complete`, `Выполнено ${progress}%`)
-                : tr(
-                    'grenade_index.json, Core Nades JSON/MessagePack, or Nadegrid Screenshot ZIP',
-                    'grenade_index.json, JSON/MessagePack Core Nades или ZIP скриншотов Nadegrid',
-                  )}
-            </span>
-          </div>
-
-          {busy ? (
-            <div className="progress-shell">
+          {completion ? (
+            <div className="import-complete">
+              <div className="import-complete-mark">
+                <CheckCircle2 size={26} />
+              </div>
+              <div className="eyebrow">
+                {tr('Import complete', 'Импорт завершён')}
+              </div>
+              <h2>{tr('Your library is ready', 'Библиотека готова')}</h2>
+              <p className="muted">{sourceFileName(completion.source_path)}</p>
+              <div className="import-complete-counts">
+                <div>
+                  <b>{formatNumber(completion.grenade_count)}</b>
+                  <span>
+                    {count(
+                      completion.grenade_count,
+                      'grenade',
+                      'grenades',
+                      'граната',
+                      'гранаты',
+                      'гранат',
+                    ).replace(/^\d+[\s\u00a0]*/, '')}
+                  </span>
+                </div>
+                <div>
+                  <b>{formatNumber(completion.map_count)}</b>
+                  <span>
+                    {count(
+                      completion.map_count,
+                      'map',
+                      'maps',
+                      'карта',
+                      'карты',
+                      'карт',
+                    ).replace(/^\d+[\s\u00a0]*/, '')}
+                  </span>
+                </div>
+                {completion.kind === 'screenshot_archive' ? (
+                  <div>
+                    <b>{formatNumber(completion.screenshot_count)}</b>
+                    <span>
+                      {count(
+                        completion.screenshot_count,
+                        'screenshot',
+                        'screenshots',
+                        'скриншот',
+                        'скриншота',
+                        'скриншотов',
+                      ).replace(/^\d+[\s\u00a0]*/, '')}
+                    </span>
+                  </div>
+                ) : null}
+              </div>
+              <div className="import-complete-actions">
+                <button
+                  className="btn primary"
+                  onClick={() => navigate('/maps', { replace: true })}
+                >
+                  <Map size={17} />
+                  {tr('View maps', 'К картам')}
+                </button>
+                <button className="btn" onClick={startAnotherImport}>
+                  <Upload size={17} />
+                  {tr('Import another', 'Импортировать ещё')}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
               <div
-                className="progress-bar"
-                style={{ width: `${Math.max(progress, 6)}%` }}
-              />
-            </div>
-          ) : null}
-
-          {busy ? (
-            <div className="import-cancel-row">
-              <button
-                className={`btn danger-action import-cancel ${cancelling ? 'is-cancelling' : ''}`}
-                onClick={cancelRun}
-                disabled={cancelling}
+                className={`drop-zone ${busy ? 'working' : ''} ${dragging ? 'dragging' : ''}`}
               >
-                <X size={17} />
-                {cancelling
-                  ? tr('Cancelling…', 'Отмена…')
-                  : tr('Cancel import', 'Отменить импорт')}
-              </button>
-            </div>
-          ) : null}
+                <Database size={24} />
+                <strong>
+                  {busy
+                    ? busyLabel
+                    : dragging
+                      ? tr(
+                          'Release to import the library',
+                          'Отпустите для импорта библиотеки',
+                        )
+                      : tr(
+                          'Drop a library file here',
+                          'Перетащите файл библиотеки сюда',
+                        )}
+                </strong>
+                <span>
+                  {busy
+                    ? progressText
+                    : tr(
+                        'grenade_index.json, Core Nades JSON/MessagePack, or Nadegrid Screenshot ZIP',
+                        'grenade_index.json, JSON/MessagePack Core Nades или ZIP скриншотов Nadegrid',
+                      )}
+                </span>
+              </div>
 
-          <div className="file-picker-row">
-            <button
-              className="btn primary"
-              data-tour="import-choose-file"
-              onClick={choose}
-              disabled={busy}
-            >
-              <FolderOpen size={17} />
-              {tr('Choose file', 'Выбрать файл')}
-            </button>
-            <input
-              value={path}
-              onChange={(event) => setPath(event.target.value)}
-              placeholder={tr(
-                'Path to JSON or MessagePack file',
-                'Путь к JSON- или MessagePack-файлу',
-              )}
-              disabled={busy}
-            />
-            <button
-              className="btn"
-              onClick={() => runImport()}
-              disabled={busy || !path.trim()}
-            >
-              <Upload size={17} />
-              {tr('Import', 'Импорт')}
-            </button>
-          </div>
+              {busy ? (
+                <div
+                  className="progress-shell"
+                  role="progressbar"
+                  aria-label={tr('Import progress', 'Ход импорта')}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={progress}
+                  aria-valuetext={progressText}
+                >
+                  <div
+                    className="progress-bar"
+                    style={{ width: `${Math.max(progress, 6)}%` }}
+                  />
+                </div>
+              ) : null}
 
-          {lastImport ? (
-            <button
-              className="last-import"
-              onClick={() => setPath(lastImport.source_path)}
-              disabled={busy}
-            >
-              <History size={15} />
-              <span>{tr('Use recent source', 'Недавний источник')}</span>
-              <strong>
-                {formatNumber(lastImport.grenade_count)}{' '}
-                {tr('lineups', 'раскидок')}
-              </strong>
-              <small>{compactDate(lastImport.imported_at)}</small>
-            </button>
-          ) : null}
+              <div className="sr-only" role="status" aria-live="polite">
+                {busy ? busyLabel : ''}
+              </div>
+
+              {busy ? (
+                <div className="import-cancel-row">
+                  <button
+                    className={`btn danger-action import-cancel ${cancelling ? 'is-cancelling' : ''}`}
+                    onClick={cancelRun}
+                    disabled={cancelling}
+                  >
+                    <X size={17} />
+                    {cancelling
+                      ? tr('Cancelling…', 'Отмена…')
+                      : tr('Cancel import', 'Отменить импорт')}
+                  </button>
+                </div>
+              ) : null}
+
+              {outcome ? (
+                <div
+                  className={`import-inline-status ${outcome.tone}`}
+                  role={outcome.tone === 'error' ? 'alert' : 'status'}
+                >
+                  <span className="import-inline-icon" aria-hidden="true">
+                    {outcome.tone === 'error' ? (
+                      <AlertTriangle size={16} />
+                    ) : outcome.tone === 'cancelled' ? (
+                      <X size={16} />
+                    ) : (
+                      <Info size={16} />
+                    )}
+                  </span>
+                  <div className="import-inline-copy">
+                    <strong>{outcome.title}</strong>
+                    {outcome.detail ? <span>{outcome.detail}</span> : null}
+                  </div>
+                  {outcome.tone === 'error' && path.trim() && !busy ? (
+                    <button
+                      className="btn import-inline-retry"
+                      onClick={() => runImport()}
+                    >
+                      <RotateCw size={15} />
+                      {tr('Retry', 'Повторить')}
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
+
+              <div className="file-picker-row">
+                <button
+                  className="btn primary"
+                  data-tour="import-choose-file"
+                  onClick={choose}
+                  disabled={busy}
+                >
+                  <FolderOpen size={17} />
+                  {tr('Choose file', 'Выбрать файл')}
+                </button>
+                <input
+                  value={path}
+                  onChange={(event) => setPath(event.target.value)}
+                  placeholder={tr(
+                    'Path to JSON or MessagePack file',
+                    'Путь к JSON- или MessagePack-файлу',
+                  )}
+                  disabled={busy}
+                />
+                <button
+                  className="btn"
+                  onClick={() => runImport()}
+                  disabled={busy || !path.trim()}
+                >
+                  <Upload size={17} />
+                  {tr('Import', 'Импорт')}
+                </button>
+              </div>
+
+              {lastImport ? (
+                <button
+                  className="last-import"
+                  onClick={() => setPath(lastImport.source_path)}
+                  disabled={busy}
+                >
+                  <History size={15} />
+                  <span>{tr('Use recent source', 'Недавний источник')}</span>
+                  <strong>
+                    {formatNumber(lastImport.grenade_count)}{' '}
+                    {tr('lineups', 'раскидок')}
+                  </strong>
+                  <small>{compactDate(lastImport.imported_at)}</small>
+                </button>
+              ) : null}
+            </>
+          )}
         </div>
       </section>
     </div>

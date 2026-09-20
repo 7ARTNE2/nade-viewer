@@ -41,6 +41,12 @@ import {
 } from './lib/tauri';
 import { compactDate, formatNumber } from './lib/format';
 import { importProgressPercent } from './lib/importStatus';
+import {
+  importErrorCode,
+  importErrorDetail,
+  importErrorLabel,
+  importStatusMessage,
+} from './lib/importMessages';
 import { useImportStatusPolling } from './lib/useImportStatusPolling';
 import { startWindowActiveTracking } from './lib/windowActive';
 import type {
@@ -109,6 +115,11 @@ function Shell() {
   const [libraryUpdateCancelling, setLibraryUpdateCancelling] = useState(false);
   const [libraryUpdateStatus, setLibraryUpdateStatus] =
     useState<ImportStatus | null>(null);
+  const [libraryUpdateError, setLibraryUpdateError] = useState<{
+    tone: 'error' | 'cancelled';
+    title: string;
+    detail?: string;
+  } | null>(null);
   const closeDeleteModal = useCallback(() => {
     if (!deleteSnapshotBusy) setDeleteSnapshotOpen(false);
   }, [deleteSnapshotBusy]);
@@ -237,6 +248,7 @@ function Shell() {
       try {
         const update = await checkLibraryUpdate();
         setLibraryUpdate(update);
+        setLibraryUpdateError(null);
         if (manual && !update)
           showToast(
             tr(
@@ -262,6 +274,7 @@ function Shell() {
   const installLibraryUpdate = async () => {
     if (!libraryUpdate) return;
     setLibraryUpdateBusy(true);
+    setLibraryUpdateError(null);
     setLibraryUpdateStatus({
       running: true,
       stage: 'checking_update',
@@ -285,18 +298,26 @@ function Shell() {
       navigate('/maps', { replace: true });
     } catch (error) {
       console.error(error);
-      const cancelled =
-        typeof error === 'object' &&
-        error !== null &&
-        'code' in error &&
-        error.code === 'library_download_cancelled';
-      showToast(
-        cancelled
+      const code = importErrorCode(error);
+      const cancelled = code === 'library_download_cancelled';
+      const title =
+        importErrorLabel(code, tr) ??
+        (cancelled
           ? tr('Library download cancelled', 'Скачивание библиотеки отменено')
           : tr(
               'Library update failed. The previous library is unchanged.',
               'Не удалось обновить библиотеку. Предыдущая библиотека не изменена.',
-            ),
+            ));
+      const detail = cancelled
+        ? undefined
+        : importErrorDetail(error)?.trim() || undefined;
+      setLibraryUpdateError({
+        tone: cancelled ? 'cancelled' : 'error',
+        title,
+        detail,
+      });
+      showToast(
+        detail ? `${title}: ${detail}` : title,
         cancelled ? undefined : { tone: 'error', duration: 4200 },
       );
     } finally {
@@ -916,15 +937,11 @@ function Shell() {
             </strong>
             <span>
               {libraryUpdateBusy
-                ? libraryUpdateStatus?.stage === 'downloading'
-                  ? tr(
-                      'Downloading compressed library',
-                      'Скачивание сжатой библиотеки',
-                    )
-                  : tr(
-                      'Importing online library into local storage',
-                      'Загрузка онлайн-библиотеки в локальное хранилище',
-                    )
+                ? (importStatusMessage(libraryUpdateStatus, tr) ??
+                  tr(
+                    'Importing online library into local storage',
+                    'Загрузка онлайн-библиотеки в локальное хранилище',
+                  ))
                 : tr(
                     `${formatBytes(libraryUpdate.manifest.compressed_size, locale)} will be downloaded and unpacked. Your current library stays available until import succeeds.`,
                     `Будет загружено и распаковано ${formatBytes(libraryUpdate.manifest.compressed_size, locale)}. Текущая библиотека останется доступна до успешного импорта.`,
@@ -937,6 +954,26 @@ function Shell() {
                     width: `${importProgressPercent(libraryUpdateStatus, 4)}%`,
                   }}
                 />
+              </div>
+            ) : null}
+            {!libraryUpdateBusy && libraryUpdateError ? (
+              <div
+                className={`library-update-error ${libraryUpdateError.tone}`}
+                role={libraryUpdateError.tone === 'error' ? 'alert' : 'status'}
+              >
+                <span className="library-update-error-icon" aria-hidden="true">
+                  {libraryUpdateError.tone === 'error' ? (
+                    <AlertTriangle size={14} />
+                  ) : (
+                    <X size={14} />
+                  )}
+                </span>
+                <span className="library-update-error-copy">
+                  <strong>{libraryUpdateError.title}</strong>
+                  {libraryUpdateError.detail ? (
+                    <small>{libraryUpdateError.detail}</small>
+                  ) : null}
+                </span>
               </div>
             ) : null}
           </div>
@@ -959,6 +996,15 @@ function Shell() {
                   : tr('Cancel update', 'Отменить обновление')}
               </span>
             </button>
+          ) : libraryUpdateError ? (
+            <button
+              className="btn primary library-update-retry"
+              type="button"
+              onClick={() => void installLibraryUpdate()}
+            >
+              <RotateCw size={15} />
+              {tr('Retry update', 'Повторить обновление')}
+            </button>
           ) : (
             <button
               className="btn primary"
@@ -976,7 +1022,10 @@ function Shell() {
             <button
               className="icon-btn"
               type="button"
-              onClick={() => setLibraryUpdate(null)}
+              onClick={() => {
+                setLibraryUpdate(null);
+                setLibraryUpdateError(null);
+              }}
               aria-label={tr('Later', 'Позже')}
             >
               <X size={15} />
@@ -1025,7 +1074,11 @@ function Shell() {
               <strong>{compactDate(activeImport.imported_at)}</strong>
             </div>
             {deleteSnapshotBusy ? (
-              <div className="snapshot-delete-progress" role="status" aria-live="polite">
+              <div
+                className="snapshot-delete-progress"
+                role="status"
+                aria-live="polite"
+              >
                 <span className="spinner" aria-hidden="true" />
                 <span>
                   {tr(
