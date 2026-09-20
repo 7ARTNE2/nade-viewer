@@ -3514,16 +3514,7 @@ fn import_workspace_rows_blocking(
     let mut metadata = BTreeMap::new();
     let mut ordinal = 0_u64;
     {
-        let mut statement = tx.prepare(
-            "INSERT INTO grenades(
-                import_id, source_index, map, side, grenade_type, is_core, throw_keys, coordinates,
-                thrower, thrower_steamid64, thrower_team, airtime, usage_count, usage_throwers_json, demo_filename, throw_tick,
-                lineup_tick, tickrate, round_time_seconds, start_pos_x, start_pos_y, start_pos_z,
-                explode_pos_x, explode_pos_y, explode_pos_z, start_map_x, start_map_y,
-                explode_map_x, explode_map_y, trajectory_preview_json, trajectory_json
-            ) VALUES (?1, ?2, ?3, ?4, ?5, 0, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14,
-                      ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30)",
-        )?;
+        let mut statement = tx.prepare(GRENADE_INSERT_SQL)?;
         parser_store::visit_rows(connection, canonical, |raw| {
             let grenade: RawGrenade = serde_json::from_str(raw).map_err(|error| {
                 rusqlite::Error::FromSqlConversionFailure(
