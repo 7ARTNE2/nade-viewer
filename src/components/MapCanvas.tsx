@@ -591,7 +591,11 @@ export default function MapCanvas({
           <RotateCcw size={14} />
         </button>
       </div>
-      <details className="map-legend" data-map-control="1">
+      <details
+        className="map-legend"
+        data-map-control="1"
+        data-tour="map-legend"
+      >
         <summary
           aria-label={tr('Map legend', 'Легенда карты')}
           data-tip={tr('Map legend', 'Легенда карты')}

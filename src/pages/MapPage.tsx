@@ -1417,6 +1417,7 @@ export default function MapPage({ activeImportId }: MapPageProps) {
 
         <div
           className={`panel-section grenade-panel inspector-grenades ${selectedCluster ? 'has-selection' : ''}`}
+          data-tour="grenade-list"
         >
           <div className="section-title">
             <span>

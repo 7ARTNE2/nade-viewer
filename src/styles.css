@@ -261,12 +261,25 @@ button:focus-visible,[role="button"]:focus-visible,[role="link"]:focus-visible{o
 .usage-throwers-block .thrower-list>button:hover,.usage-throwers-block .thrower-list>button:focus-visible{border-color:rgba(var(--acid-rgb),.38);background:rgba(var(--acid-rgb),.09);color:var(--acid)}
 .onboarding-layer{position:fixed;z-index:500;inset:0;display:grid;place-items:center;padding:20px;background:rgba(3,5,7,.78)}
 .onboarding-layer.tour-active{display:block;padding:0;background:rgba(3,5,7,.28);pointer-events:none}
-.onboarding-dialog{position:relative;width:min(520px,100%);padding:28px;border:1px solid rgba(var(--acid-rgb),.26);border-radius:16px;background:radial-gradient(circle at 100% 0,rgba(var(--acid-rgb),.12),transparent 34%),var(--surface);box-shadow:0 30px 100px rgba(0,0,0,.7)}
-.tour-active .onboarding-dialog{position:fixed;width:min(400px,calc(100vw - 32px));padding:20px;pointer-events:auto}
+.onboarding-dialog{position:relative;width:min(560px,100%);padding:32px;border:1px solid rgba(var(--acid-rgb),.26);border-radius:16px;background:linear-gradient(145deg,rgba(200,244,61,.08),transparent 34%),var(--surface);box-shadow:0 30px 100px rgba(0,0,0,.7),0 0 0 1px rgba(255,255,255,.025) inset}
+.tour-active .onboarding-dialog{position:fixed;width:min(440px,calc(100vw - 32px));max-height:calc(100dvh - 32px);padding:24px;pointer-events:auto;overflow:auto;animation:onboarding-in .24s cubic-bezier(.22,1,.36,1)}
 .onboarding-highlight{position:fixed;z-index:1;border:2px solid var(--acid);border-radius:10px;box-shadow:0 0 0 9999px rgba(3,5,7,.24),0 0 22px rgba(var(--acid-rgb),.45);pointer-events:none}
-.onboarding-icon{display:grid;width:46px;height:46px;margin-bottom:18px;place-items:center;border:1px solid rgba(var(--acid-rgb),.24);border-radius:12px;background:rgba(var(--acid-rgb),.09);color:var(--acid)}
-.onboarding-dialog h1{margin:10px 0 13px;font:600 22px Orbitron;letter-spacing:-.04em}
-.onboarding-dialog p{max-width:410px;margin:0;color:var(--muted);font-size:12px;line-height:1.7}
+.onboarding-icon,.onboarding-step-icon{display:grid;width:48px;height:48px;margin:20px 0 18px;place-items:center;border:1px solid rgba(var(--acid-rgb),.28);border-radius:14px;background:rgba(var(--acid-rgb),.08);color:var(--acid);box-shadow:0 10px 26px rgba(0,0,0,.18),inset 0 1px 0 rgba(255,255,255,.08)}
+.onboarding-step-icon{margin-top:22px;background:linear-gradient(145deg,rgba(var(--acid-rgb),.18),rgba(var(--acid-rgb),.035));}
+.onboarding-dialog h1{max-width:14ch;margin:0 0 14px;font:600 clamp(23px,2vw,28px) Orbitron;letter-spacing:-.04em;line-height:1.12}
+.onboarding-dialog p{max-width:48ch;margin:0;color:var(--muted);font-size:13px;line-height:1.65}
+.onboarding-stepbar{display:flex;align-items:center;gap:10px;min-height:16px;color:var(--dim);font-size:9px;font-weight:800;letter-spacing:.1em;text-transform:uppercase}
+.onboarding-stage{color:var(--acid)}
+.onboarding-progress{margin:0 0 0 auto;color:var(--text);font-size:10px;font-variant-numeric:tabular-nums;letter-spacing:.02em}
+.onboarding-progress-track{display:flex;flex:1;gap:3px;height:3px}
+.onboarding-progress-track i{display:block;flex:1;border-radius:99px;background:var(--line)}
+.onboarding-progress-track i.active{background:var(--acid);box-shadow:0 0 7px rgba(var(--acid-rgb),.45)}
+.onboarding-dialog .btn.primary{min-width:104px;box-shadow:0 8px 22px rgba(var(--acid-rgb),.13)}
+.onboarding-dialog .btn.primary:hover{box-shadow:0 10px 28px rgba(var(--acid-rgb),.24)}
+.onboarding-dialog .btn.primary svg{transition:transform .2s ease}
+.onboarding-dialog .btn.primary:hover svg{transform:translateX(2px)}
+.onboarding-dialog::after{position:absolute;right:24px;bottom:24px;width:64px;height:1px;background:linear-gradient(90deg,transparent,rgba(var(--acid-rgb),.45));content:"";pointer-events:none}
+@keyframes onboarding-in{from{opacity:0;transform:translateY(7px) scale(.985)}to{opacity:1;transform:none}}
 .onboarding-error{margin-top:18px;color:#ff9ca3;font-size:10px}
 .onboarding-actions{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:28px}
 .onboarding-actions-right{display:flex;gap:8px}
@@ -307,7 +320,11 @@ button:focus-visible,[role="button"]:focus-visible,[role="link"]:focus-visible{o
   .language-switch button{padding:0 5px}
   .active-library-trigger{max-width:150px}
   .active-library-trigger .active-library-id,.active-library-trigger .active-library-count{display:none}
-  .onboarding-dialog{padding:22px}
+  .onboarding-dialog{width:min(560px,calc(100vw - 24px));padding:24px}
+  .tour-active .onboarding-dialog{width:calc(100vw - 24px);max-height:calc(100dvh - 24px);padding:20px}
+  .onboarding-stepbar{gap:7px;font-size:8px}
+  .onboarding-dialog h1{max-width:18ch;font-size:22px}
+  .onboarding-dialog p{font-size:12px;line-height:1.6}
   .onboarding-actions{align-items:flex-end;flex-direction:column-reverse}
   .onboarding-actions-right{width:100%}
   .onboarding-actions-right .btn{flex:1}

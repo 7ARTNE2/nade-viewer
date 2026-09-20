@@ -1,4 +1,16 @@
-import { ArrowRight, Check, Database } from 'lucide-react';
+import {
+  ArrowRight,
+  Check,
+  CircleHelp,
+  ClipboardCheck,
+  Database,
+  Layers3,
+  Map,
+  ScanLine,
+  SlidersHorizontal,
+  Upload,
+  type LucideIcon,
+} from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useState } from 'react';
 import { useI18n } from '../i18n';
 import { useModalAccessibility } from '../lib/useModalAccessibility';
@@ -13,7 +25,7 @@ type OnboardingModalProps = {
 
 type TourStep = {
   selector: string;
-  eyebrow: string;
+  icon: LucideIcon;
   title: string;
   copy: string;
 };
@@ -21,34 +33,74 @@ type TourStep = {
 const steps: TourStep[] = [
   {
     selector: '[data-tour="import-choose-file"]',
-    eyebrow: 'Step 1: import',
-    title: 'Choose your grenade library',
-    copy: 'Select grenade_index.json or a Core Nades JSON file. The import stays local on this device.',
+    icon: Upload,
+    title: 'Bring in your playbook',
+    copy: 'Load a grenade_index.json or Core Nades file. Everything stays local to this device.',
   },
   {
     selector: '[data-tour="map-target"]',
-    eyebrow: 'Step 2: map',
-    title: 'Open a map',
-    copy: 'Select the first available map to continue. The walkthrough works with any map in your library.',
+    icon: Map,
+    title: 'Pick a map to explore',
+    copy: 'Choose a map and move from the library into the tactical workspace.',
+  },
+  {
+    selector: '[data-tour="map-workspace-toolbar"]',
+    icon: ScanLine,
+    title: 'Shape the view around the task',
+    copy: 'Switch maps, focus the radar, change marker styles, or narrow the view to Core and instant throws.',
   },
   {
     selector: '[data-tour="map-filters"]',
-    eyebrow: 'Step 3: filters',
-    title: 'Narrow down lineups',
-    copy: 'Filter by grenade type and side, or search for a thrower, demo, or console command.',
+    icon: SlidersHorizontal,
+    title: 'Cut through the noise',
+    copy: 'Combine filters for type, side, tournament, team, player, or search. Reset to see the full library again.',
   },
   {
     selector: '[data-tour="map-canvas"]',
-    eyebrow: 'Step 4: tactical map',
-    title: 'Read the map',
-    copy: 'Scroll to zoom and drag to pan. The Map legend explains marker colors, trajectories, and spawn points.',
+    icon: ScanLine,
+    title: 'Read the radar at a glance',
+    copy: 'Scroll to zoom, drag to pan, then select a marker or cluster to reveal the throws behind it.',
+  },
+  {
+    selector: '[data-tour="map-legend"]',
+    icon: CircleHelp,
+    title: 'Make every mark count',
+    copy: 'Use the legend to decode sides, grenade types, spawns, and trajectory lines. Reset the zoom when needed.',
   },
   {
     selector: '[data-tour="cluster-list"]',
-    eyebrow: 'Step 5: lineups',
-    title: 'Select a cluster',
-    copy: 'Choose a landing or throw cluster to load its individual grenades. Open any grenade from the list for full details.',
+    icon: Layers3,
+    title: 'Start with a cluster',
+    copy: 'Nearby landing or throw positions are grouped together. Select one here or directly on the radar.',
   },
+  {
+    selector: '[data-tour="grenade-list"]',
+    icon: ClipboardCheck,
+    title: 'Turn a find into a setup',
+    copy: 'Open a lineup for its thrower, landing point, and command. Copy it for practice or save it to Core.',
+  },
+];
+
+const russianTitles = [
+  'Загрузите свой плейбук',
+  'Выберите карту для изучения',
+  'Настройте рабочий вид',
+  'Отсейте лишнее',
+  'Читайте радар с первого взгляда',
+  'Разберитесь в обозначениях',
+  'Начните с кластера',
+  'Превратите находку в готовый сетап',
+];
+
+const russianCopies = [
+  'Загрузите grenade_index.json или файл Core Nades. Все данные останутся на этом устройстве.',
+  'Выберите карту и перейдите из библиотеки в тактическое рабочее пространство.',
+  'Меняйте карту, фокусируйтесь на радаре, переключайте маркеры или оставляйте только Core и инста-броски.',
+  'Комбинируйте фильтры типа, стороны, турнира, команды, игрока и поиска. Сбросьте их, чтобы увидеть всю библиотеку.',
+  'Приближайте колесом, перемещайте карту перетаскиванием, затем выберите маркер или кластер.',
+  'Легенда объясняет стороны, типы гранат, точки спавна и траектории. При необходимости сбросьте масштаб.',
+  'Близкие позиции приземления или броска объединены в группы. Выберите кластер здесь или прямо на радаре.',
+  'Откройте раскидку, чтобы увидеть игрока, точку приземления и команду. Скопируйте ее для тренировки или добавьте в Core.',
 ];
 
 export default function OnboardingModal({
@@ -64,9 +116,14 @@ export default function OnboardingModal({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [rect, setRect] = useState<DOMRect | null>(null);
+  const [dialogPosition, setDialogPosition] = useState<{
+    left: number;
+    top: number;
+  } | null>(null);
   const [mapTargetAvailable, setMapTargetAvailable] = useState(false);
   const [mapSelectionPending, setMapSelectionPending] = useState(false);
   const target = started ? steps[step] : null;
+  const StepIcon = target?.icon;
   const close = useCallback(() => {
     if (!busy) void onComplete();
   }, [busy, onComplete]);
@@ -96,24 +153,96 @@ export default function OnboardingModal({
       window.removeEventListener('click', advanceAfterMapSelection, true);
   }, [started, step]);
 
+  useEffect(() => {
+    if (!started || step !== 6) return;
+    const advanceAfterClusterSelection = (event: MouseEvent) => {
+      if (
+        (event.target as Element | null)?.closest('[data-tour="cluster-list"]')
+      ) {
+        setStep(7);
+      }
+    };
+    window.addEventListener('click', advanceAfterClusterSelection, true);
+    return () =>
+      window.removeEventListener('click', advanceAfterClusterSelection, true);
+  }, [started, step]);
+
   useLayoutEffect(() => {
     if (!target) return;
     const update = () => {
       const element = document.querySelector(target.selector);
-      setRect(element?.getBoundingClientRect() ?? null);
+      const nextRect = element?.getBoundingClientRect() ?? null;
+      setRect(nextRect);
       if (step === 1) setMapTargetAvailable(Boolean(element));
+      if (!nextRect || !dialogRef.current) {
+        setDialogPosition(null);
+        return;
+      }
+
+      const dialog = dialogRef.current.getBoundingClientRect();
+      const margin = 16;
+      const gap = 14;
+      const viewportWidth = window.innerWidth;
+      const viewportHeight = window.innerHeight;
+      const fitsBelow =
+        nextRect.bottom + gap + dialog.height <= viewportHeight - margin;
+      const fitsAbove = nextRect.top - gap - dialog.height >= margin;
+      const fitsRight =
+        nextRect.right + gap + dialog.width <= viewportWidth - margin;
+      const fitsLeft = nextRect.left - gap - dialog.width >= margin;
+      const preferSidePlacement =
+        step === 5 &&
+        element instanceof HTMLElement &&
+        element.hasAttribute('open');
+      let top = fitsBelow
+        ? nextRect.bottom + gap
+        : fitsAbove
+          ? nextRect.top - dialog.height - gap
+          : Math.max(margin, (viewportHeight - dialog.height) / 2);
+      let left = Math.min(
+        Math.max(margin, nextRect.left),
+        Math.max(margin, viewportWidth - dialog.width - margin),
+      );
+      if (preferSidePlacement && fitsRight) {
+        left = nextRect.right + gap;
+        top = nextRect.top;
+      } else if (preferSidePlacement && fitsLeft) {
+        left = nextRect.left - dialog.width - gap;
+        top = nextRect.top;
+      } else if (!fitsBelow && !fitsAbove && fitsRight)
+        left = nextRect.right + gap;
+      else if (!fitsBelow && !fitsAbove && fitsLeft)
+        left = nextRect.left - dialog.width - gap;
+      if (
+        !preferSidePlacement &&
+        !fitsBelow &&
+        !fitsAbove &&
+        (fitsRight || fitsLeft)
+      ) {
+        top = nextRect.bottom - dialog.height;
+      }
+      top = Math.min(
+        Math.max(margin, top),
+        Math.max(margin, viewportHeight - dialog.height - margin),
+      );
+      setDialogPosition({ left, top });
     };
     update();
     window.addEventListener('resize', update);
     window.addEventListener('scroll', update, true);
     const observer = new MutationObserver(update);
+    const element = document.querySelector(target.selector);
     observer.observe(document.body, { childList: true, subtree: true });
+    if (element) observer.observe(element, { attributes: true });
+    const resizeObserver = element ? new ResizeObserver(update) : null;
+    if (element) resizeObserver?.observe(element);
     return () => {
       window.removeEventListener('resize', update);
       window.removeEventListener('scroll', update, true);
       observer.disconnect();
+      resizeObserver?.disconnect();
     };
-  }, [target]);
+  }, [dialogRef, step, target]);
 
   const run = async (action: () => Promise<void>) => {
     setBusy(true);
@@ -153,52 +282,47 @@ export default function OnboardingModal({
         aria-modal="true"
         aria-labelledby="onboarding-title"
         style={
-          started && rect
+          started && dialogPosition
             ? {
-                left: Math.min(
-                  Math.max(16, rect.left),
-                  window.innerWidth - 420,
-                ),
-                top: Math.min(rect.bottom + 14, window.innerHeight - 250),
+                left: dialogPosition.left,
+                top: dialogPosition.top,
               }
             : undefined
         }
       >
-        {!started ? (
+        {started ? (
+          <div className="onboarding-stepbar">
+            <span className="onboarding-stage">
+              {tr('TUTORIAL', 'ТУТОРИАЛ')}
+            </span>
+            <div className="onboarding-progress-track" aria-hidden="true">
+              {steps.map((tourStep, index) => (
+                <i
+                  className={index <= step ? 'active' : ''}
+                  key={tourStep.selector}
+                />
+              ))}
+            </div>
+            <span className="onboarding-progress" aria-live="polite">
+              {tr(
+                `${step + 1} / ${steps.length}`,
+                `${step + 1} / ${steps.length}`,
+              )}
+            </span>
+          </div>
+        ) : null}
+        {started && StepIcon ? (
+          <div className="onboarding-step-icon" aria-hidden="true">
+            <StepIcon size={22} strokeWidth={1.8} />
+          </div>
+        ) : (
           <div className="onboarding-icon">
             <Database size={23} />
           </div>
-        ) : null}
-        <div className="eyebrow">
-          {started && locale === 'ru'
-            ? [
-                'Шаг 1: импорт',
-                'Шаг 2: карта',
-                'Шаг 3: фильтры',
-                'Шаг 4: тактическая карта',
-                'Шаг 5: раскидки',
-              ][step]
-            : started
-              ? target?.eyebrow
-              : tr('Your local playbook', 'Ваш локальный плейбук')}
-        </div>
-        {started ? (
-          <div className="onboarding-progress" aria-live="polite">
-            {tr(
-              `Step ${step + 1} of ${steps.length}`,
-              `Шаг ${step + 1} из ${steps.length}`,
-            )}
-          </div>
-        ) : null}
+        )}
         <h1 id="onboarding-title">
           {started && locale === 'ru'
-            ? [
-                'Выберите библиотеку гранат',
-                'Откройте карту',
-                'Настройте фильтры',
-                'Изучите карту',
-                'Выберите кластер',
-              ][step]
+            ? russianTitles[step]
             : started
               ? target?.title
               : tr('Welcome to Nade Viewer', 'Добро пожаловать в Nade Viewer')}
@@ -210,13 +334,7 @@ export default function OnboardingModal({
                 'В этой библиотеке пока нет карт. Импортируйте непустую библиотеку гранат, чтобы продолжить обучение, или пропустите его.',
               )
             : started && locale === 'ru'
-              ? [
-                  'Выберите grenade_index.json или JSON Core Nades. Данные останутся на устройстве.',
-                  'Выберите первую доступную карту, чтобы продолжить обучение.',
-                  'Фильтруйте по типу гранаты и стороне или ищите игрока, демо и команду.',
-                  'Колесо меняет масштаб, перетаскивание двигает карту. Легенда объясняет маркеры и траектории.',
-                  'Выберите кластер броска или приземления, затем откройте гранату для подробностей.',
-                ][step]
+              ? russianCopies[step]
               : started
                 ? target?.copy
                 : activeImport
