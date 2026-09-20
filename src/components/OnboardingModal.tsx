@@ -44,10 +44,16 @@ const steps: TourStep[] = [
     copy: 'Choose a map and move from the library into the tactical workspace.',
   },
   {
-    selector: '[data-tour="map-workspace-toolbar"]',
+    selector: '[data-tour="map-selector"]',
+    icon: Map,
+    title: 'Switch maps quickly',
+    copy: 'Open the map selector to jump between available maps without returning to the library.',
+  },
+  {
+    selector: '[data-tour="map-toolbar-actions"]',
     icon: ScanLine,
-    title: 'Shape the view around the task',
-    copy: 'Switch maps, focus the radar, change marker styles, or narrow the view to Core and instant throws.',
+    title: 'Control the radar view',
+    copy: 'Use Focus to hide the side panel, Icons to change marker style, Core and Insta to filter throws, Spawns to show spawn points, and Throw to group by throw position.',
   },
   {
     selector: '[data-tour="map-filters"]',
@@ -84,7 +90,8 @@ const steps: TourStep[] = [
 const russianTitles = [
   'Загрузите свой плейбук',
   'Выберите карту для изучения',
-  'Настройте рабочий вид',
+  'Переключайте карты быстро',
+  'Управляйте видом радара',
   'Отсейте лишнее',
   'Читайте радар с первого взгляда',
   'Разберитесь в обозначениях',
@@ -95,7 +102,8 @@ const russianTitles = [
 const russianCopies = [
   'Загрузите grenade_index.json или файл Core Nades. Все данные останутся на этом устройстве.',
   'Выберите карту и перейдите из библиотеки в тактическое рабочее пространство.',
-  'Меняйте карту, фокусируйтесь на радаре, переключайте маркеры или оставляйте только Core и инста-броски.',
+  'Откройте селектор карты, чтобы быстро перейти на другую доступную карту, не возвращаясь в библиотеку.',
+  'Кнопки здесь управляют радаром: «Фокус» скрывает боковую панель, «Значки» меняет вид маркеров, «Избранные» и «Инста» фильтруют раскидки, «Спавны» показывает точки появления, а «Бросок» группирует по позиции броска.',
   'Комбинируйте фильтры типа, стороны, турнира, команды, игрока и поиска. Сбросьте их, чтобы увидеть всю библиотеку.',
   'Приближайте колесом, перемещайте карту перетаскиванием, затем выберите маркер или кластер.',
   'Легенда объясняет стороны, типы гранат, точки спавна и траектории. При необходимости сбросьте масштаб.',
@@ -191,9 +199,13 @@ export default function OnboardingModal({
         nextRect.right + gap + dialog.width <= viewportWidth - margin;
       const fitsLeft = nextRect.left - gap - dialog.width >= margin;
       const preferSidePlacement =
-        step === 5 &&
+        ((step === 2 &&
+          element instanceof HTMLElement &&
+          element.querySelector('[aria-expanded="true"]')) ||
+          step === 5) &&
         element instanceof HTMLElement &&
-        element.hasAttribute('open');
+        (element.hasAttribute('open') ||
+          Boolean(element.querySelector('[aria-expanded="true"]')));
       let top = fitsBelow
         ? nextRect.bottom + gap
         : fitsAbove

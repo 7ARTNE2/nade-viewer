@@ -627,6 +627,29 @@ html[lang="ru"] .boot-title{font-family:Orbitron,sans-serif}
 @container map-panel (max-width:1100px){.map-main-panel>.map-toolbar{gap:5px;padding-inline:8px}.map-toolbar-actions{gap:5px}.map-toolbar-actions .toggle{width:34px;min-width:34px;gap:0;padding:0;font-size:0}.map-toolbar-actions .toggle svg{margin:0}.map-toolbar-actions .inspector-toggle{min-width:34px}.map-main-panel .radar-switch button{min-width:58px;padding-inline:8px}}
 @container map-panel (max-width:600px){.map-main-panel>.map-toolbar.has-radar-switch{grid-template-columns:auto minmax(0,164px) minmax(0,1fr) auto;grid-template-rows:54px 38px;padding-bottom:4px}.map-main-panel .map-toolbar.has-radar-switch .radar-switch{grid-column:1/-1;grid-row:2;justify-self:end}.map-main-panel .map-toolbar.has-radar-switch .radar-switch button{min-width:52px}}
 @media(max-width:920px){.map-workspace{grid-template-columns:minmax(0,1fr);grid-template-rows:clamp(340px,58dvh,520px) max-content;overflow-x:hidden;overflow-y:auto;scrollbar-gutter:stable;overscroll-behavior:contain}.map-workspace>.map-main-panel{min-height:0}.map-workspace>.inspector{overflow:visible;scrollbar-gutter:auto;border-top:1px solid var(--line-soft);border-left:0}.map-workspace.inspector-hidden{grid-template-rows:minmax(0,1fr);overflow:hidden}.map-workspace.inspector-hidden>.map-main-panel{min-height:0;height:auto}}
+
+/* Map tools read as one compact control deck, with clear mode states. */
+.map-toolbar-actions{padding:4px;border:1px solid rgba(255,255,255,.07);border-radius:11px;background:rgba(8,10,13,.72);box-shadow:0 8px 18px rgba(0,0,0,.18)}
+.map-toolbar-actions .toggle{position:relative;height:34px;min-width:78px;padding:0 10px;border-color:transparent;border-radius:7px;background:transparent;color:var(--muted);font-size:10px;letter-spacing:.01em;transition:background 150ms ease,border-color 150ms ease,color 150ms ease,transform 150ms ease}
+.map-toolbar-actions .toggle:hover{border-color:var(--line);background:var(--surface-2);color:var(--text);transform:translateY(-1px)}
+.map-toolbar-actions .toggle:active{transform:translateY(0)}
+.map-toolbar-actions .toggle.active{border-color:color-mix(in srgb,currentColor 32%,transparent);background:color-mix(in srgb,currentColor 12%,transparent);box-shadow:inset 0 0 0 1px color-mix(in srgb,currentColor 8%,transparent)}
+.map-toolbar-actions .toggle.active::after{position:absolute;right:10px;bottom:3px;left:10px;height:2px;border-radius:2px;background:currentColor;content:"";opacity:.9}
+.map-toolbar-actions .toggle svg{width:14px;height:14px;stroke-width:2.2}
+.map-toolbar-actions .inspector-toggle{min-width:82px}
+.map-toolbar .inspector-toggle{color:var(--blue)}
+.map-toolbar .map-appearance-toggle{color:#75dfef}
+.map-toolbar .core-toolbar-toggle{color:#ffd160}
+.map-toolbar .insta-toolbar-toggle{color:#ff9877}
+.map-toolbar .spawns-toolbar-toggle{color:#54ddb2}
+.map-toolbar .throw-toolbar-toggle{color:var(--orange)}
+.map-toolbar .inspector-toggle.active{color:#8fc0ff}
+.map-toolbar .map-appearance-toggle.active{color:#a8ecf5}
+.map-toolbar .core-toolbar-toggle.active{color:#ffdf8f}
+.map-toolbar .insta-toolbar-toggle.active{color:#ffa083}
+.map-toolbar .spawns-toolbar-toggle.active{color:#8ff0d2}
+.map-toolbar .throw-toolbar-toggle.active{color:#ffa083}
+@container map-panel (max-width:1100px){.map-toolbar-actions{padding:3px}.map-toolbar-actions .toggle{min-width:34px;width:34px;height:32px;gap:0;padding:0;font-size:0}.map-toolbar-actions .toggle svg{margin:0}}
 @media(max-width:920px){.grenade-detail{grid-template-columns:minmax(0,1fr);grid-template-rows:clamp(340px,58dvh,520px) max-content;overflow-x:hidden;overflow-y:auto;scrollbar-gutter:stable;overscroll-behavior:contain}.grenade-detail>.detail-map-panel{min-height:0}.grenade-detail>.detail-inspector{overflow:visible;scrollbar-gutter:auto;border-top:1px solid var(--line-soft);border-left:0}}
 @media(max-width:520px){.map-workspace,.grenade-detail{grid-template-rows:clamp(320px,55dvh,460px) max-content}}
 @media(max-width:920px) and (max-height:620px){.map-workspace,.grenade-detail{grid-template-rows:330px max-content}}

@@ -831,7 +831,11 @@ export default function MapPage({ activeImportId }: MapPageProps) {
             <ArrowLeft size={16} />
           </button>
           <div className="map-heading">
-            <div className="map-selector" ref={mapSelectorRef}>
+            <div
+              className="map-selector"
+              ref={mapSelectorRef}
+              data-tour="map-selector"
+            >
               <button
                 className="map-selector-trigger"
                 type="button"
@@ -899,11 +903,15 @@ export default function MapPage({ activeImportId }: MapPageProps) {
             </div>
           </div>
           <div className="toolbar-spacer" />
-          <div className="map-toolbar-actions">
+          <div
+            className="map-toolbar-actions"
+            data-tour="map-toolbar-actions"
+          >
             <button
               className="toggle inspector-toggle"
               type="button"
               onClick={() => setInspectorVisible((visible) => !visible)}
+              aria-pressed={!inspectorVisible}
               data-tip={
                 inspectorVisible
                   ? tr('Focus on map', 'Сфокусироваться на карте')
@@ -924,6 +932,8 @@ export default function MapPage({ activeImportId }: MapPageProps) {
             </button>
             <button
               className={`toggle map-appearance-toggle ${iconTheme === 'asset' ? 'active' : ''}`}
+              type="button"
+              aria-pressed={iconTheme === 'asset'}
               onClick={() =>
                 setIconTheme((theme) => (theme === 'base' ? 'asset' : 'base'))
               }
@@ -989,11 +999,12 @@ export default function MapPage({ activeImportId }: MapPageProps) {
               {tr('Spawns', 'Спавны')}
             </button>
             <button
-              aria-pressed={grenadeMode === 'throw'}
               className={`toggle throw-toolbar-toggle ${grenadeMode === 'throw' ? 'active' : ''}`}
+              type="button"
               onClick={() =>
                 switchGrenadeMode(grenadeMode === 'throw' ? 'landing' : 'throw')
               }
+              aria-pressed={grenadeMode === 'throw'}
               data-tip={tr(
                 'Group by throw position',
                 'Группировать по позиции броска',
