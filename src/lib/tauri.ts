@@ -35,6 +35,10 @@ export function importJson(path: string) {
   return invoke<JsonImportReport>('import_json', { path });
 }
 
+export function cancelImport() {
+  return invoke<boolean>('cancel_import');
+}
+
 export function importParserWorkspace(source: string) {
   return invoke<JsonImportReport>('import_parser_workspace', { source });
 }

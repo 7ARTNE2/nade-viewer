@@ -9,8 +9,10 @@ import {
   History,
   ShieldCheck,
   Upload,
+  X,
 } from 'lucide-react';
 import {
+  cancelImport,
   getImportStatus,
   importJson,
   isTauri,
@@ -39,6 +41,7 @@ export default function ImportPage({ onImported, lastImport }: Props) {
   const [path, setPath] = useState('');
   const [status, setStatus] = useState<ImportStatus>(IMPORT_STATUS_IDLE);
   const [busy, setBusy] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const busyRef = useRef(false);
@@ -69,6 +72,7 @@ export default function ImportPage({ onImported, lastImport }: Props) {
       });
       busyRef.current = false;
       setBusy(false);
+      setCancelling(false);
     },
     [showToast, tr],
   );
@@ -114,6 +118,7 @@ export default function ImportPage({ onImported, lastImport }: Props) {
     busyRef.current = true;
     runHandledRef.current = false;
     setBusy(true);
+    setCancelling(false);
     setMessage(null);
     try {
       const report = await importJson(trimmed);
@@ -139,10 +144,19 @@ export default function ImportPage({ onImported, lastImport }: Props) {
       }
       navigate('/maps', { replace: true });
     } catch (error) {
+      // A newer run started, or the polling loop already reported this outcome.
+      if (token !== runTokenRef.current || runHandledRef.current) return;
+      runHandledRef.current = true;
       const importError =
         typeof error === 'object' && error !== null && 'code' in error
           ? (error as { code: string; message?: string })
           : null;
+      if (importError?.code === 'import_cancelled') {
+        const summary = tr('Import cancelled', 'Импорт отменён');
+        setMessage(summary);
+        showToast(summary, { tone: 'info', duration: 4600 });
+        return;
+      }
       const translated: Record<string, string> = {
         import_already_running: tr(
           'An import is already running',
@@ -233,10 +247,31 @@ export default function ImportPage({ onImported, lastImport }: Props) {
       if (token === runTokenRef.current) {
         busyRef.current = false;
         setBusy(false);
+        setCancelling(false);
       }
     }
   };
   runImportRef.current = runImport;
+
+  const cancelRun = async () => {
+    if (!busyRef.current || cancelling) return;
+    const token = runTokenRef.current;
+    setCancelling(true);
+    try {
+      const accepted = await cancelImport();
+      // The run may have already finished (or a new one started) meanwhile.
+      if (!accepted || token !== runTokenRef.current || !busyRef.current) {
+        setCancelling(false);
+      }
+    } catch (error) {
+      console.error('Unable to cancel the import', error);
+      setCancelling(false);
+      showToast(
+        tr('Could not cancel the import', 'Не удалось отменить импорт'),
+        { tone: 'error' },
+      );
+    }
+  };
 
   useEffect(() => {
     if (!isTauri) return;
@@ -354,6 +389,21 @@ export default function ImportPage({ onImported, lastImport }: Props) {
                 className="progress-bar"
                 style={{ width: `${Math.max(progress, 6)}%` }}
               />
+            </div>
+          ) : null}
+
+          {busy ? (
+            <div className="import-cancel-row">
+              <button
+                className={`btn danger-action import-cancel ${cancelling ? 'is-cancelling' : ''}`}
+                onClick={cancelRun}
+                disabled={cancelling}
+              >
+                <X size={17} />
+                {cancelling
+                  ? tr('Cancelling…', 'Отмена…')
+                  : tr('Cancel import', 'Отменить импорт')}
+              </button>
             </div>
           ) : null}
 

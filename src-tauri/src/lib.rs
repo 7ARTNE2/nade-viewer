@@ -80,6 +80,46 @@ struct AppState {
     radars: Arc<HashMap<String, RadarParams>>,
     import_status: Arc<Mutex<ImportStatus>>,
     library_download_cancelled: Arc<AtomicBool>,
+    manual_import: Arc<ManualImportControl>,
+}
+
+/// Cancellation token shared by the manual file imports (JSON/MessagePack/ZIP).
+///
+/// The token is only armed while a manual import is streaming, so cancelling a
+/// manual import can never disturb an online library download (which keeps using
+/// its own `library_download_cancelled` flag).
+#[derive(Default)]
+struct ManualImportControl {
+    active: AtomicBool,
+    cancelled: AtomicBool,
+}
+
+impl ManualImportControl {
+    /// Arms the token for a fresh manual import and clears any stale request.
+    fn begin(&self) {
+        self.cancelled.store(false, Ordering::Release);
+        self.active.store(true, Ordering::Release);
+    }
+
+    /// Disarms the token once the manual import has settled.
+    fn finish(&self) {
+        self.active.store(false, Ordering::Release);
+        self.cancelled.store(false, Ordering::Release);
+    }
+
+    /// Requests cancellation; returns `false` when no manual import is running.
+    fn cancel(&self) -> bool {
+        if self.active.load(Ordering::Acquire) {
+            self.cancelled.store(true, Ordering::Release);
+            true
+        } else {
+            false
+        }
+    }
+
+    fn is_cancelled(&self) -> bool {
+        self.cancelled.load(Ordering::Acquire)
+    }
 }
 
 #[derive(Clone, Serialize)]
@@ -752,6 +792,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             select_import_file,
             import_json,
+            cancel_import,
             import_parser_workspace,
             plugin::install_nade_parser,
             plugin::uninstall_nade_parser,
@@ -815,6 +856,7 @@ fn init_state(app: &AppHandle) -> Result<AppState, Box<dyn std::error::Error>> {
         radars,
         import_status: Arc::new(Mutex::new(ImportStatus::default())),
         library_download_cancelled: Arc::new(AtomicBool::new(false)),
+        manual_import: Arc::new(ManualImportControl::default()),
     };
     let conn = open_conn(&state)?;
     init_schema(&conn)?;
@@ -1620,6 +1662,22 @@ fn library_cancelled(state: &AppState) -> AppResult<()> {
     Ok(())
 }
 
+/// Fails with a cancellation error once a manual import has been cancelled.
+fn manual_import_cancelled(state: &AppState) -> AppResult<()> {
+    if state.manual_import.is_cancelled() {
+        return Err(AppError::Import {
+            code: "import_cancelled",
+            message: "Import was cancelled".to_string(),
+        });
+    }
+    Ok(())
+}
+
+/// True when an error was produced by a manual import cancellation request.
+fn is_manual_import_cancel_error(error: &AppError) -> bool {
+    matches!(error, AppError::Import { code, .. } if *code == "import_cancelled")
+}
+
 fn begin_library_finalization(state: &AppState, total: u64) -> AppResult<()> {
     let mut status = state.import_status.lock().map_err(|_| AppError::Import {
         code: "import_state_unavailable",
@@ -1973,6 +2031,9 @@ fn import_stream_blocking(
     let messagepack = is_messagepack_path(&source_path);
     let shape = read_import_shape(&source_path, messagepack)?;
     validate_import_shape(&shape)?;
+    // Inspecting the envelope can take a while on huge files, so honour a
+    // cancel request that arrived during that pass before streaming begins.
+    manual_import_cancelled(state)?;
 
     if shape.canonical_grenades {
         let payload = StreamedCanonical {
@@ -3456,6 +3517,7 @@ async fn import_json(
 ) -> AppResult<JsonImportReport> {
     let state = state.inner().clone();
     try_begin_import(&state.import_status)?;
+    state.manual_import.begin();
 
     let import_path = path.clone();
     let import_state = state.clone();
@@ -3464,17 +3526,28 @@ async fn import_json(
     })
     .await;
 
-    match result {
+    let outcome = match result {
         Ok(Ok(report)) => Ok(report),
         Ok(Err(err)) => {
-            set_error(&state, &err.to_string());
+            if is_manual_import_cancel_error(&err) {
+                set_status(&state, "cancelled", 0, 0, "Import cancelled");
+            } else {
+                set_error(&state, &err.to_string());
+            }
             Err(err)
         }
         Err(err) => {
             set_error(&state, &err.to_string());
             Err(AppError::Message(err.to_string()))
         }
-    }
+    };
+    state.manual_import.finish();
+    outcome
+}
+
+#[tauri::command]
+fn cancel_import(state: tauri::State<'_, AppState>) -> bool {
+    state.manual_import.cancel()
 }
 
 #[tauri::command]
@@ -3579,6 +3652,7 @@ fn import_screenshot_archive_blocking(
             "Screenshot archive contains no grenades".to_string(),
         ));
     }
+    manual_import_cancelled(state)?;
 
     let total = manifest.grenades.len() as u64;
     let index = ParserIndex {
@@ -3620,6 +3694,7 @@ fn import_screenshot_archive_blocking(
             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
         )?;
         for (index, record) in manifest.grenades.iter().enumerate() {
+            manual_import_cancelled(state)?;
             if index % 100 == 0 {
                 set_status(
                     state,
@@ -3851,6 +3926,7 @@ impl<'a, 'b> ImportWriter<'a, 'b> {
     }
 
     fn push_grenade(&mut self, grenade: RawGrenade) -> AppResult<()> {
+        manual_import_cancelled(self.state)?;
         self.maybe_defer_indexes()?;
         let source_index = if self.core_snapshot {
             grenade.source_index.unwrap_or(self.ordinal as i64)
@@ -3893,6 +3969,7 @@ impl<'a, 'b> ImportWriter<'a, 'b> {
     }
 
     fn push_player(&mut self, player: RawPlayer) -> AppResult<()> {
+        manual_import_cancelled(self.state)?;
         insert_import_player(self.tx, self.import_id, &player)?;
         collect_player_metadata(&player, &mut self.metadata);
         Ok(())
@@ -3914,6 +3991,8 @@ fn run_import<P: ImportPayload>(
     payload: P,
     library_version: Option<&str>,
 ) -> AppResult<ImportReport> {
+    // A cancel request can arrive while the envelope is still being inspected.
+    manual_import_cancelled(state)?;
     let envelope = payload.envelope();
     let core_snapshot = envelope.core_snapshot;
     let (preparing_message, done_message) = if core_snapshot {
@@ -3952,6 +4031,9 @@ fn run_import<P: ImportPayload>(
     let metadata = std::mem::take(&mut writer.metadata);
     // Release the prepared statement before committing the transaction.
     drop(writer);
+    // Cancellation stays available through streaming, but not once the final
+    // commit of this transaction begins.
+    manual_import_cancelled(state)?;
 
     insert_demo_metadata(&tx, import_id, &metadata)?;
     populate_import_map_players(&tx, import_id)?;
@@ -5530,6 +5612,7 @@ mod tests {
                 radars: Arc::new(HashMap::new()),
                 import_status: Arc::new(Mutex::new(ImportStatus::default())),
                 library_download_cancelled: Arc::new(AtomicBool::new(false)),
+                manual_import: Arc::new(ManualImportControl::default()),
             },
             root,
         )
@@ -6081,6 +6164,102 @@ mod tests {
             "unexpected error: {error}"
         );
         assert_previous_import_survived(&state);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn manual_import_control_only_cancels_while_armed() {
+        let control = ManualImportControl::default();
+        // Idle: nothing to cancel, and an online download is unaffected.
+        assert!(!control.cancel());
+        assert!(!control.is_cancelled());
+
+        control.begin();
+        assert!(control.cancel());
+        assert!(control.is_cancelled());
+
+        control.finish();
+        assert!(!control.is_cancelled());
+        assert!(!control.cancel());
+    }
+
+    fn cancellable_grenade(map: &str) -> RawGrenade {
+        RawGrenade {
+            source_index: None,
+            map: map.to_string(),
+            side: Some("T".to_string()),
+            grenade_type: Some("smoke".to_string()),
+            throw_keys: None,
+            usage_count: None,
+            usage_throwers: None,
+            coordinates: None,
+            demo_filename: None,
+            throw_tick: None,
+            lineup_tick: None,
+            tickrate: None,
+            round_time_seconds: None,
+            start_pos_x: None,
+            start_pos_y: None,
+            start_pos_z: None,
+            explode_pos_x: None,
+            explode_pos_y: None,
+            explode_pos_z: None,
+            start_map_x: None,
+            start_map_y: None,
+            explode_map_x: None,
+            explode_map_y: None,
+            trajectory: None,
+            trajectory_preview: None,
+            thrower: None,
+            thrower_steamid64: None,
+            thrower_team: None,
+            airtime: None,
+            usage_events: Vec::new(),
+            tournament: None,
+        }
+    }
+
+    /// Streams two records, requests cancellation, then tries a third record.
+    struct CancellingPayload;
+
+    impl ImportPayload for CancellingPayload {
+        fn envelope(&self) -> ImportEnvelope {
+            ImportEnvelope {
+                format: ImportFormat::GrenadeIndex,
+                core_snapshot: false,
+                version: Some(SUPPORTED_IMPORT_VERSION),
+                updated_at: Some("2026-01-01T00:00:00Z".to_string()),
+            }
+        }
+
+        fn stream(self, writer: &mut ImportWriter<'_, '_>) -> AppResult<()> {
+            writer.begin_grenades(Some(3))?;
+            writer.push_grenade(cancellable_grenade("de_first"))?;
+            writer.push_grenade(cancellable_grenade("de_second"))?;
+            assert!(writer.state.manual_import.cancel());
+            // The next record observes the cancel request and aborts the stream.
+            writer.push_grenade(cancellable_grenade("de_third"))?;
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn cancel_during_streaming_rolls_back_the_import() {
+        let (state, root) = temporary_test_state("manual-cancel-rollback");
+        seed_previous_import(&state);
+        state.manual_import.begin();
+
+        let error = match run_import(&state, "cancelled.json", CancellingPayload, None) {
+            Ok(_) => panic!("expected the cancelled import to fail"),
+            Err(error) => error,
+        };
+        assert!(
+            is_manual_import_cancel_error(&error),
+            "unexpected error: {error}"
+        );
+        // The half-written import never commits: the previous import survives.
+        assert_previous_import_survived(&state);
+        state.manual_import.finish();
         fs::remove_dir_all(root).unwrap();
     }
 
