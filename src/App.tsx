@@ -17,7 +17,6 @@ import {
   Map,
   Pencil,
   RotateCw,
-  Sparkles,
   Trash2,
   GraduationCap,
   Upload,
@@ -38,6 +37,7 @@ import {
   checkLibraryUpdate,
   cancelLibraryDownload,
   importLibraryUpdate,
+  initializeApplication,
 } from './lib/tauri';
 import { compactDate, formatNumber } from './lib/format';
 import { importProgressPercent } from './lib/importStatus';
@@ -62,6 +62,7 @@ import GrenadePage from './pages/GrenadePage';
 import ToolsPage from './pages/ToolsPage';
 import Tooltip from './components/Tooltip';
 import OnboardingModal from './components/OnboardingModal';
+import BootScreen from './components/BootScreen';
 import { useI18n } from './i18n';
 import { useModalAccessibility } from './lib/useModalAccessibility';
 import { ToastViewport, useToast } from './components/Toast';
@@ -91,6 +92,9 @@ function Shell() {
   const [activeImport, setActive] = useState<ImportSummary | null>(null);
   const [imports, setImports] = useState<ImportSummary[]>([]);
   const [loading, setLoading] = useState(true);
+  const [bootVisible, setBootVisible] = useState(true);
+  const [bootError, setBootError] = useState<string | null>(null);
+  const finishBoot = useCallback(() => setBootVisible(false), []);
   const [coreTransferBusy, setCoreTransferBusy] = useState(false);
   const [coreTransferStatus, setCoreTransferStatus] = useState<string | null>(
     null,
@@ -135,6 +139,12 @@ function Shell() {
 
   const refreshImports = useCallback(async () => {
     const requestId = ++importsRequestRef.current;
+    try {
+      await initializeApplication();
+    } catch (error) {
+      if (importsRequestRef.current === requestId) setBootError(String(error));
+      return;
+    }
     try {
       const [active, all, onboarding] = await Promise.allSettled([
         getActiveImport(),
@@ -343,18 +353,20 @@ function Shell() {
   };
 
   useEffect(() => {
+    if (loading) return;
     const timer = window.setTimeout(() => {
       void checkForUpdate();
     }, 1500);
     return () => window.clearTimeout(timer);
-  }, [checkForUpdate]);
+  }, [loading, checkForUpdate]);
 
   useEffect(() => {
+    if (loading) return;
     const timer = window.setTimeout(() => {
       void checkForLibraryUpdate();
     }, 2400);
     return () => window.clearTimeout(timer);
-  }, [checkForLibraryUpdate]);
+  }, [loading, checkForLibraryUpdate]);
 
   useImportStatusPolling({
     enabled: libraryUpdateBusy,
@@ -364,14 +376,14 @@ function Shell() {
   });
 
   useEffect(() => {
-    if (!coreTransferStatus && !operationError) return;
+    if (bootVisible || (!coreTransferStatus && !operationError)) return;
     showToast(operationError ?? coreTransferStatus!, {
       tone: operationError ? 'error' : 'success',
       duration: operationError ? 3260 : 1960,
     });
     setCoreTransferStatus(null);
     setOperationError(null);
-  }, [coreTransferStatus, operationError, showToast]);
+  }, [bootVisible, coreTransferStatus, operationError, showToast]);
 
   const switchImport = async (id: number) => {
     const isMapWorkspace = location.pathname.startsWith('/map/');
@@ -477,653 +489,683 @@ function Shell() {
   const importRouteActive = location.pathname === '/import';
   const toolsRouteActive = location.pathname.startsWith('/tools');
 
-  if (loading) {
-    return (
-      <div className="boot-screen viewer-boot">
-        <div className="viewer-loader">
-          <Sparkles size={20} />
-        </div>
-        <div className="boot-title">
-          Nade Viewer <span className="boot-version">v{version}</span>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="app-shell viewer-shell topnav-shell">
-      <main className="app-main viewer-main">
-        <header className="viewer-topbar">
-          <div className="topbar-navigation">
-            <button
-              className="topbar-brand"
-              onClick={() => navigate('/maps')}
-              aria-label={tr('Nade Viewer home', 'Главная Nade Viewer')}
-            >
-              <span className="viewer-brand-mark">NV</span>
-              <span className="topbar-brand-copy">
-                <strong>Nade Viewer</strong>
-                <small>v{version}</small>
-              </span>
-            </button>
-            <span className="topbar-divider" />
-            <button
-              className={`topbar-nav-link ${mapsRouteActive ? 'active' : ''}`}
-              onClick={() => navigate('/maps')}
-            >
-              <Map size={16} />
-              <span>{tr('Maps', 'Карты')}</span>
-            </button>
-            <button
-              className={`topbar-nav-link ${importRouteActive ? 'active' : ''}`}
-              onClick={() => navigate('/import')}
-            >
-              <Download size={16} />
-              <span>{tr('Import library', 'Импорт')}</span>
-            </button>
-            <button
-              className="topbar-nav-link"
-              onClick={() =>
-                restartTutorial().catch((error) => {
-                  console.error(error);
-                  setOperationError(
-                    tr(
-                      'Could not restart tutorial',
-                      'Не удалось перезапустить обучение',
-                    ),
-                  );
-                })
-              }
-            >
-              <GraduationCap size={16} />
-              <span>{tr('Tutorial', 'Обучение')}</span>
-            </button>
-            <button
-              className={`topbar-nav-link ${toolsRouteActive ? 'active' : ''}`}
-              onClick={() => navigate('/tools')}
-            >
-              <Wrench size={16} />
-              <span>{tr('Tools', 'Инструменты')}</span>
-            </button>
-            <div
-              className="language-switch"
-              aria-label={tr('Language', 'Язык')}
-            >
+    <>
+      {bootVisible ? (
+        <BootScreen
+          ready={!loading}
+          error={bootError}
+          onComplete={finishBoot}
+        />
+      ) : null}
+      {!loading ? (
+        <div
+          className="app-shell viewer-shell topnav-shell"
+          {...{ inert: bootVisible ? '' : undefined }}
+          aria-hidden={bootVisible || undefined}
+        >
+          <main className="app-main viewer-main">
+            <header className="viewer-topbar">
+              <div className="topbar-navigation">
+                <button
+                  className="topbar-brand"
+                  onClick={() => navigate('/maps')}
+                  aria-label={tr('Nade Viewer home', 'Главная Nade Viewer')}
+                >
+                  <span className="viewer-brand-mark">NV</span>
+                  <span className="topbar-brand-copy">
+                    <strong>Nade Viewer</strong>
+                    <small>v{version}</small>
+                  </span>
+                </button>
+                <span className="topbar-divider" />
+                <button
+                  className={`topbar-nav-link ${mapsRouteActive ? 'active' : ''}`}
+                  onClick={() => navigate('/maps')}
+                >
+                  <Map size={16} />
+                  <span>{tr('Maps', 'Карты')}</span>
+                </button>
+                <button
+                  className={`topbar-nav-link ${importRouteActive ? 'active' : ''}`}
+                  onClick={() => navigate('/import')}
+                >
+                  <Download size={16} />
+                  <span>{tr('Import library', 'Импорт')}</span>
+                </button>
+                <button
+                  className="topbar-nav-link"
+                  onClick={() =>
+                    restartTutorial().catch((error) => {
+                      console.error(error);
+                      setOperationError(
+                        tr(
+                          'Could not restart tutorial',
+                          'Не удалось перезапустить обучение',
+                        ),
+                      );
+                    })
+                  }
+                >
+                  <GraduationCap size={16} />
+                  <span>{tr('Tutorial', 'Обучение')}</span>
+                </button>
+                <button
+                  className={`topbar-nav-link ${toolsRouteActive ? 'active' : ''}`}
+                  onClick={() => navigate('/tools')}
+                >
+                  <Wrench size={16} />
+                  <span>{tr('Tools', 'Инструменты')}</span>
+                </button>
+                <div
+                  className="language-switch"
+                  aria-label={tr('Language', 'Язык')}
+                >
+                  <button
+                    className={locale === 'en' ? 'active' : ''}
+                    onClick={() => setLocale('en')}
+                    aria-pressed={locale === 'en'}
+                  >
+                    EN
+                  </button>
+                  <button
+                    className={locale === 'ru' ? 'active' : ''}
+                    onClick={() => setLocale('ru')}
+                    aria-pressed={locale === 'ru'}
+                  >
+                    RU
+                  </button>
+                </div>
+              </div>
+              <ToastViewport />
+              <div className="topbar-actions">
+                {activeImport ? (
+                  <div
+                    className="snapshot-picker"
+                    onBlur={(event) => {
+                      if (
+                        !event.currentTarget.contains(
+                          event.relatedTarget as Node | null,
+                        )
+                      )
+                        setSnapshotMenuOpen(false);
+                    }}
+                  >
+                    <button
+                      className={`snapshot-trigger active-library-trigger ${snapshotMenuOpen ? 'active' : ''}`}
+                      onClick={() => setSnapshotMenuOpen((open) => !open)}
+                      aria-expanded={snapshotMenuOpen}
+                      aria-haspopup="dialog"
+                      aria-controls="library-picker-popover"
+                      data-tip={activeImport.source_path}
+                      data-tip-pos="bottom"
+                    >
+                      <Database size={14} />
+                      <span className="active-library-id">
+                        {tr('Library', 'Библиотека')} #{activeImport.id}
+                      </span>
+                      <strong>{snapshotDisplayName(activeImport)}</strong>
+                      <span className="active-library-count">
+                        <b>{formatNumber(activeImport.grenade_count)}</b>
+                        <small>
+                          {count(
+                            activeImport.grenade_count,
+                            'grenade',
+                            'grenades',
+                            'граната',
+                            'гранаты',
+                            'гранат',
+                          ).replace(/^\d+[\s\u00a0]*/, '')}
+                        </small>
+                      </span>
+                      <ChevronDown size={14} />
+                    </button>
+                    {snapshotMenuOpen ? (
+                      <div
+                        className="snapshot-menu"
+                        id="library-picker-popover"
+                        role="dialog"
+                        aria-label={tr(
+                          'Choose or rename library',
+                          'Выбрать или переименовать библиотеку',
+                        )}
+                      >
+                        {imports.map((item) => {
+                          const isEditing = editingSnapshotId === item.id;
+                          return (
+                            <div
+                              key={item.id}
+                              className={`snapshot-option ${item.id === activeImport.id ? 'active' : ''} ${isEditing ? 'editing' : ''}`}
+                            >
+                              <span className="snapshot-id">#{item.id}</span>
+                              {isEditing ? (
+                                <form
+                                  className="snapshot-edit-row"
+                                  onSubmit={(event) => {
+                                    event.preventDefault();
+                                    void saveSnapshotLabel(item);
+                                  }}
+                                >
+                                  <input
+                                    className="snapshot-edit-input"
+                                    value={editingLabel}
+                                    onChange={(event) =>
+                                      setEditingLabel(event.target.value)
+                                    }
+                                    placeholder={importFileName(
+                                      item.source_path,
+                                    )}
+                                    aria-label={tr(
+                                      `Library name for ${snapshotDisplayName(item)}`,
+                                      `Название библиотеки ${snapshotDisplayName(item)}`,
+                                    )}
+                                    autoFocus
+                                  />
+                                  <button
+                                    className="snapshot-edit-action"
+                                    type="submit"
+                                    aria-label={tr(
+                                      'Save library name',
+                                      'Сохранить название библиотеки',
+                                    )}
+                                  >
+                                    <Check size={14} />
+                                  </button>
+                                  <button
+                                    className="snapshot-edit-action"
+                                    type="button"
+                                    onClick={() => setEditingSnapshotId(null)}
+                                    aria-label={tr(
+                                      'Cancel renaming',
+                                      'Отменить переименование',
+                                    )}
+                                  >
+                                    <X size={14} />
+                                  </button>
+                                </form>
+                              ) : (
+                                <>
+                                  <button
+                                    className="snapshot-option-main"
+                                    type="button"
+                                    onClick={() =>
+                                      item.id === activeImport.id
+                                        ? setSnapshotMenuOpen(false)
+                                        : switchImport(item.id)
+                                    }
+                                  >
+                                    <span className="snapshot-main">
+                                      <strong>
+                                        {snapshotDisplayName(item)}
+                                      </strong>
+                                      <small>
+                                        {count(
+                                          item.grenade_count,
+                                          'grenade',
+                                          'grenades',
+                                          'граната',
+                                          'гранаты',
+                                          'гранат',
+                                        )}
+                                      </small>
+                                    </span>
+                                    {item.id === activeImport.id ? (
+                                      <span className="snapshot-current">
+                                        {tr('Active', 'Активна')}
+                                      </span>
+                                    ) : null}
+                                  </button>
+                                  <button
+                                    className="snapshot-rename-btn"
+                                    type="button"
+                                    onClick={() => {
+                                      setEditingSnapshotId(item.id);
+                                      setEditingLabel(item.label?.trim() || '');
+                                    }}
+                                    aria-label={tr(
+                                      `Rename ${snapshotDisplayName(item)}`,
+                                      `Переименовать ${snapshotDisplayName(item)}`,
+                                    )}
+                                  >
+                                    <Pencil size={13} />
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : (
+                  <button
+                    className="btn primary"
+                    onClick={() => navigate('/import')}
+                  >
+                    <FolderOpen size={16} />
+                    {tr('Import data', 'Импортировать')}
+                  </button>
+                )}
+                <div
+                  className="library-actions-menu"
+                  onBlur={(event) => {
+                    if (
+                      !event.currentTarget.contains(
+                        event.relatedTarget as Node | null,
+                      )
+                    )
+                      setLibraryActionsOpen(false);
+                  }}
+                >
+                  <button
+                    className={`icon-btn ${libraryActionsOpen ? 'active' : ''}`}
+                    type="button"
+                    onClick={() => setLibraryActionsOpen((open) => !open)}
+                    aria-expanded={libraryActionsOpen}
+                    aria-label={tr('Library actions', 'Действия с библиотекой')}
+                    data-tip={tr('Library actions', 'Действия с библиотекой')}
+                  >
+                    <Ellipsis size={17} />
+                  </button>
+                  {libraryActionsOpen ? (
+                    <div className="library-actions-popover">
+                      {activeImport ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setLibraryActionsOpen(false);
+                            void handleCoreExport();
+                          }}
+                          disabled={coreTransferBusy}
+                        >
+                          <Upload size={15} />
+                          {coreTransferBusy
+                            ? tr(
+                                'Exporting Core Nades',
+                                'Экспорт избранных гранат',
+                              )
+                            : tr(
+                                'Export Core Nades',
+                                'Экспорт избранных гранат',
+                              )}
+                        </button>
+                      ) : null}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setLibraryActionsOpen(false);
+                          void checkForLibraryUpdate(true);
+                        }}
+                        disabled={libraryUpdateBusy}
+                      >
+                        <Database size={15} />
+                        {tr(
+                          'Check online library',
+                          'Проверить онлайн-библиотеку',
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => window.location.reload()}
+                      >
+                        <RotateCw size={15} />
+                        {tr(
+                          'Refresh application page',
+                          'Обновить страницу приложения',
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void checkForUpdate(true)}
+                        disabled={updateBusy}
+                      >
+                        <Download size={15} />
+                        {updateBusy
+                          ? tr('Checking for updates', 'Проверка обновлений')
+                          : tr('Check for updates', 'Проверить обновления')}
+                      </button>
+                      {activeImport ? (
+                        <button
+                          className="danger"
+                          type="button"
+                          onClick={() => {
+                            setLibraryActionsOpen(false);
+                            setDeleteSnapshotOpen(true);
+                          }}
+                        >
+                          <Trash2 size={15} />
+                          {tr(
+                            'Delete active library',
+                            'Удалить активную библиотеку',
+                          )}
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            </header>
+
+            <div className="view-frame viewer-frame">
+              <Routes>
+                <Route
+                  path="/"
+                  element={
+                    <Navigate to={activeImport ? '/maps' : '/import'} replace />
+                  }
+                />
+                <Route
+                  path="/maps"
+                  element={
+                    activeImport ? (
+                      <HomePage activeImportId={activeImport.id} />
+                    ) : (
+                      <Navigate to="/import" replace />
+                    )
+                  }
+                />
+                <Route
+                  path="/import"
+                  element={
+                    <ImportPage
+                      onImported={refreshImports}
+                      lastImport={imports[0] ?? null}
+                    />
+                  }
+                />
+                <Route
+                  path="/tools"
+                  element={<ToolsPage refreshImports={refreshImports} />}
+                />
+                <Route
+                  path="/tools/:pluginId"
+                  element={<ToolsPage refreshImports={refreshImports} />}
+                />
+                <Route
+                  path="/map/:mapName"
+                  element={
+                    activeImport ? (
+                      <MapPage activeImportId={activeImport.id} />
+                    ) : (
+                      <Navigate to="/import" replace />
+                    )
+                  }
+                />
+                <Route
+                  path="/grenade/:id"
+                  element={
+                    activeImport ? (
+                      <GrenadePage />
+                    ) : (
+                      <Navigate to="/import" replace />
+                    )
+                  }
+                />
+                <Route
+                  path="*"
+                  element={
+                    <Navigate to={activeImport ? '/maps' : '/import'} replace />
+                  }
+                />
+              </Routes>
+            </div>
+          </main>
+
+          {availableUpdate ? (
+            <div className="app-update-notice" role="status">
+              <div>
+                <strong>
+                  {tr(
+                    `Version ${availableUpdate.version} is ready`,
+                    `Доступна версия ${availableUpdate.version}`,
+                  )}
+                </strong>
+                <span>
+                  {tr(
+                    'The app will close while Windows installs the update.',
+                    'Приложение закроется, пока Windows устанавливает обновление.',
+                  )}
+                </span>
+              </div>
               <button
-                className={locale === 'en' ? 'active' : ''}
-                onClick={() => setLocale('en')}
-                aria-pressed={locale === 'en'}
+                className="btn primary"
+                type="button"
+                onClick={() => void installUpdate()}
+                disabled={updateBusy}
               >
-                EN
+                <Download size={15} />
+                {updateBusy
+                  ? tr('Installing', 'Установка')
+                  : tr('Install update', 'Установить')}
               </button>
               <button
-                className={locale === 'ru' ? 'active' : ''}
-                onClick={() => setLocale('ru')}
-                aria-pressed={locale === 'ru'}
+                className="icon-btn"
+                type="button"
+                onClick={() => setAvailableUpdate(null)}
+                aria-label={tr('Later', 'Позже')}
               >
-                RU
+                <X size={15} />
               </button>
             </div>
-          </div>
-          <ToastViewport />
-          <div className="topbar-actions">
-            {activeImport ? (
-              <div
-                className="snapshot-picker"
-                onBlur={(event) => {
-                  if (
-                    !event.currentTarget.contains(
-                      event.relatedTarget as Node | null,
-                    )
-                  )
-                    setSnapshotMenuOpen(false);
-                }}
-              >
-                <button
-                  className={`snapshot-trigger active-library-trigger ${snapshotMenuOpen ? 'active' : ''}`}
-                  onClick={() => setSnapshotMenuOpen((open) => !open)}
-                  aria-expanded={snapshotMenuOpen}
-                  aria-haspopup="dialog"
-                  aria-controls="library-picker-popover"
-                  data-tip={activeImport.source_path}
-                  data-tip-pos="bottom"
-                >
-                  <Database size={14} />
-                  <span className="active-library-id">
-                    {tr('Library', 'Библиотека')} #{activeImport.id}
-                  </span>
-                  <strong>{snapshotDisplayName(activeImport)}</strong>
-                  <span className="active-library-count">
-                    <b>{formatNumber(activeImport.grenade_count)}</b>
-                    <small>
-                      {count(
-                        activeImport.grenade_count,
-                        'grenade',
-                        'grenades',
-                        'граната',
-                        'гранаты',
-                        'гранат',
-                      ).replace(/^\d+[\s\u00a0]*/, '')}
-                    </small>
-                  </span>
-                  <ChevronDown size={14} />
-                </button>
-                {snapshotMenuOpen ? (
+          ) : null}
+
+          {libraryUpdate ? (
+            <div
+              className="library-update-notice"
+              role="status"
+              aria-live="polite"
+            >
+              <div className="library-update-copy">
+                <strong>
+                  {libraryUpdateBusy
+                    ? tr(
+                        'Updating online library',
+                        'Обновление онлайн-библиотеки',
+                      )
+                    : tr(
+                        `Library ${libraryUpdate.manifest.version} is available`,
+                        `Доступна библиотека ${libraryUpdate.manifest.version}`,
+                      )}
+                </strong>
+                <span>
+                  {libraryUpdateBusy
+                    ? (importStatusMessage(libraryUpdateStatus, tr) ??
+                      tr(
+                        'Importing online library into local storage',
+                        'Загрузка онлайн-библиотеки в локальное хранилище',
+                      ))
+                    : tr(
+                        `${formatBytes(libraryUpdate.manifest.compressed_size, locale)} will be downloaded and unpacked. Your current library stays available until import succeeds.`,
+                        `Будет загружено и распаковано ${formatBytes(libraryUpdate.manifest.compressed_size, locale)}. Текущая библиотека останется доступна до успешного импорта.`,
+                      )}
+                </span>
+                {libraryUpdateBusy ? (
+                  <div className="library-update-progress" aria-hidden="true">
+                    <span
+                      style={{
+                        width: `${importProgressPercent(libraryUpdateStatus, 4)}%`,
+                      }}
+                    />
+                  </div>
+                ) : null}
+                {!libraryUpdateBusy && libraryUpdateError ? (
                   <div
-                    className="snapshot-menu"
-                    id="library-picker-popover"
-                    role="dialog"
-                    aria-label={tr(
-                      'Choose or rename library',
-                      'Выбрать или переименовать библиотеку',
-                    )}
+                    className={`library-update-error ${libraryUpdateError.tone}`}
+                    role={
+                      libraryUpdateError.tone === 'error' ? 'alert' : 'status'
+                    }
                   >
-                    {imports.map((item) => {
-                      const isEditing = editingSnapshotId === item.id;
-                      return (
-                        <div
-                          key={item.id}
-                          className={`snapshot-option ${item.id === activeImport.id ? 'active' : ''} ${isEditing ? 'editing' : ''}`}
-                        >
-                          <span className="snapshot-id">#{item.id}</span>
-                          {isEditing ? (
-                            <form
-                              className="snapshot-edit-row"
-                              onSubmit={(event) => {
-                                event.preventDefault();
-                                void saveSnapshotLabel(item);
-                              }}
-                            >
-                              <input
-                                className="snapshot-edit-input"
-                                value={editingLabel}
-                                onChange={(event) =>
-                                  setEditingLabel(event.target.value)
-                                }
-                                placeholder={importFileName(item.source_path)}
-                                aria-label={tr(
-                                  `Library name for ${snapshotDisplayName(item)}`,
-                                  `Название библиотеки ${snapshotDisplayName(item)}`,
-                                )}
-                                autoFocus
-                              />
-                              <button
-                                className="snapshot-edit-action"
-                                type="submit"
-                                aria-label={tr(
-                                  'Save library name',
-                                  'Сохранить название библиотеки',
-                                )}
-                              >
-                                <Check size={14} />
-                              </button>
-                              <button
-                                className="snapshot-edit-action"
-                                type="button"
-                                onClick={() => setEditingSnapshotId(null)}
-                                aria-label={tr(
-                                  'Cancel renaming',
-                                  'Отменить переименование',
-                                )}
-                              >
-                                <X size={14} />
-                              </button>
-                            </form>
-                          ) : (
-                            <>
-                              <button
-                                className="snapshot-option-main"
-                                type="button"
-                                onClick={() =>
-                                  item.id === activeImport.id
-                                    ? setSnapshotMenuOpen(false)
-                                    : switchImport(item.id)
-                                }
-                              >
-                                <span className="snapshot-main">
-                                  <strong>{snapshotDisplayName(item)}</strong>
-                                  <small>
-                                    {count(
-                                      item.grenade_count,
-                                      'grenade',
-                                      'grenades',
-                                      'граната',
-                                      'гранаты',
-                                      'гранат',
-                                    )}
-                                  </small>
-                                </span>
-                                {item.id === activeImport.id ? (
-                                  <span className="snapshot-current">
-                                    {tr('Active', 'Активна')}
-                                  </span>
-                                ) : null}
-                              </button>
-                              <button
-                                className="snapshot-rename-btn"
-                                type="button"
-                                onClick={() => {
-                                  setEditingSnapshotId(item.id);
-                                  setEditingLabel(item.label?.trim() || '');
-                                }}
-                                aria-label={tr(
-                                  `Rename ${snapshotDisplayName(item)}`,
-                                  `Переименовать ${snapshotDisplayName(item)}`,
-                                )}
-                              >
-                                <Pencil size={13} />
-                              </button>
-                            </>
-                          )}
-                        </div>
-                      );
-                    })}
+                    <span
+                      className="library-update-error-icon"
+                      aria-hidden="true"
+                    >
+                      {libraryUpdateError.tone === 'error' ? (
+                        <AlertTriangle size={14} />
+                      ) : (
+                        <X size={14} />
+                      )}
+                    </span>
+                    <span className="library-update-error-copy">
+                      <strong>{libraryUpdateError.title}</strong>
+                      {libraryUpdateError.detail ? (
+                        <small>{libraryUpdateError.detail}</small>
+                      ) : null}
+                    </span>
                   </div>
                 ) : null}
               </div>
-            ) : (
-              <button
-                className="btn primary"
-                onClick={() => navigate('/import')}
-              >
-                <FolderOpen size={16} />
-                {tr('Import data', 'Импортировать')}
-              </button>
-            )}
-            <div
-              className="library-actions-menu"
-              onBlur={(event) => {
-                if (
-                  !event.currentTarget.contains(
-                    event.relatedTarget as Node | null,
-                  )
-                )
-                  setLibraryActionsOpen(false);
-              }}
-            >
-              <button
-                className={`icon-btn ${libraryActionsOpen ? 'active' : ''}`}
-                type="button"
-                onClick={() => setLibraryActionsOpen((open) => !open)}
-                aria-expanded={libraryActionsOpen}
-                aria-label={tr('Library actions', 'Действия с библиотекой')}
-                data-tip={tr('Library actions', 'Действия с библиотекой')}
-              >
-                <Ellipsis size={17} />
-              </button>
-              {libraryActionsOpen ? (
-                <div className="library-actions-popover">
-                  {activeImport ? (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setLibraryActionsOpen(false);
-                        void handleCoreExport();
-                      }}
-                      disabled={coreTransferBusy}
-                    >
-                      <Upload size={15} />
-                      {coreTransferBusy
-                        ? tr('Exporting Core Nades', 'Экспорт избранных гранат')
-                        : tr('Export Core Nades', 'Экспорт избранных гранат')}
-                    </button>
-                  ) : null}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setLibraryActionsOpen(false);
-                      void checkForLibraryUpdate(true);
-                    }}
-                    disabled={libraryUpdateBusy}
+              {libraryUpdateBusy &&
+              ['downloading', 'decompressing', 'importing'].includes(
+                libraryUpdateStatus?.stage ?? '',
+              ) ? (
+                <button
+                  className={`btn library-download-cancel ${libraryUpdateCancelling ? 'is-cancelling' : ''}`}
+                  type="button"
+                  onClick={() => void cancelCurrentLibraryDownload()}
+                  disabled={libraryUpdateCancelling}
+                >
+                  <span
+                    className="library-download-cancel-icon"
+                    aria-hidden="true"
                   >
-                    <Database size={15} />
-                    {tr('Check online library', 'Проверить онлайн-библиотеку')}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => window.location.reload()}
-                  >
-                    <RotateCw size={15} />
-                    {tr(
-                      'Refresh application page',
-                      'Обновить страницу приложения',
-                    )}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void checkForUpdate(true)}
-                    disabled={updateBusy}
-                  >
-                    <Download size={15} />
-                    {updateBusy
-                      ? tr('Checking for updates', 'Проверка обновлений')
-                      : tr('Check for updates', 'Проверить обновления')}
-                  </button>
-                  {activeImport ? (
-                    <button
-                      className="danger"
-                      type="button"
-                      onClick={() => {
-                        setLibraryActionsOpen(false);
-                        setDeleteSnapshotOpen(true);
-                      }}
-                    >
-                      <Trash2 size={15} />
-                      {tr(
-                        'Delete active library',
-                        'Удалить активную библиотеку',
-                      )}
-                    </button>
-                  ) : null}
-                </div>
+                    <X size={15} />
+                  </span>
+                  <span>
+                    {libraryUpdateCancelling
+                      ? tr('Cancelling', 'Отмена...')
+                      : tr('Cancel update', 'Отменить обновление')}
+                  </span>
+                </button>
+              ) : libraryUpdateError ? (
+                <button
+                  className="btn primary library-update-retry"
+                  type="button"
+                  onClick={() => void installLibraryUpdate()}
+                >
+                  <RotateCw size={15} />
+                  {tr('Retry update', 'Повторить обновление')}
+                </button>
+              ) : (
+                <button
+                  className="btn primary"
+                  type="button"
+                  onClick={() => void installLibraryUpdate()}
+                  disabled={libraryUpdateBusy}
+                >
+                  <Download size={15} />
+                  {libraryUpdateBusy
+                    ? tr('Updating', 'Обновление')
+                    : tr('Download and install', 'Скачать и установить')}
+                </button>
+              )}
+              {!libraryUpdateBusy ? (
+                <button
+                  className="icon-btn"
+                  type="button"
+                  onClick={() => {
+                    setLibraryUpdate(null);
+                    setLibraryUpdateError(null);
+                  }}
+                  aria-label={tr('Later', 'Позже')}
+                >
+                  <X size={15} />
+                </button>
               ) : null}
             </div>
-          </div>
-        </header>
-
-        <div className="view-frame viewer-frame">
-          <Routes>
-            <Route
-              path="/"
-              element={
-                <Navigate to={activeImport ? '/maps' : '/import'} replace />
-              }
-            />
-            <Route
-              path="/maps"
-              element={
-                activeImport ? (
-                  <HomePage activeImportId={activeImport.id} />
-                ) : (
-                  <Navigate to="/import" replace />
-                )
-              }
-            />
-            <Route
-              path="/import"
-              element={
-                <ImportPage
-                  onImported={refreshImports}
-                  lastImport={imports[0] ?? null}
-                />
-              }
-            />
-            <Route
-              path="/tools"
-              element={<ToolsPage refreshImports={refreshImports} />}
-            />
-            <Route
-              path="/tools/:pluginId"
-              element={<ToolsPage refreshImports={refreshImports} />}
-            />
-            <Route
-              path="/map/:mapName"
-              element={
-                activeImport ? (
-                  <MapPage activeImportId={activeImport.id} />
-                ) : (
-                  <Navigate to="/import" replace />
-                )
-              }
-            />
-            <Route
-              path="/grenade/:id"
-              element={
-                activeImport ? (
-                  <GrenadePage />
-                ) : (
-                  <Navigate to="/import" replace />
-                )
-              }
-            />
-            <Route
-              path="*"
-              element={
-                <Navigate to={activeImport ? '/maps' : '/import'} replace />
-              }
-            />
-          </Routes>
-        </div>
-      </main>
-
-      {availableUpdate ? (
-        <div className="app-update-notice" role="status">
-          <div>
-            <strong>
-              {tr(
-                `Version ${availableUpdate.version} is ready`,
-                `Доступна версия ${availableUpdate.version}`,
-              )}
-            </strong>
-            <span>
-              {tr(
-                'The app will close while Windows installs the update.',
-                'Приложение закроется, пока Windows устанавливает обновление.',
-              )}
-            </span>
-          </div>
-          <button
-            className="btn primary"
-            type="button"
-            onClick={() => void installUpdate()}
-            disabled={updateBusy}
-          >
-            <Download size={15} />
-            {updateBusy
-              ? tr('Installing', 'Установка')
-              : tr('Install update', 'Установить')}
-          </button>
-          <button
-            className="icon-btn"
-            type="button"
-            onClick={() => setAvailableUpdate(null)}
-            aria-label={tr('Later', 'Позже')}
-          >
-            <X size={15} />
-          </button>
-        </div>
-      ) : null}
-
-      {libraryUpdate ? (
-        <div className="library-update-notice" role="status" aria-live="polite">
-          <div className="library-update-copy">
-            <strong>
-              {libraryUpdateBusy
-                ? tr('Updating online library', 'Обновление онлайн-библиотеки')
-                : tr(
-                    `Library ${libraryUpdate.manifest.version} is available`,
-                    `Доступна библиотека ${libraryUpdate.manifest.version}`,
-                  )}
-            </strong>
-            <span>
-              {libraryUpdateBusy
-                ? (importStatusMessage(libraryUpdateStatus, tr) ??
-                  tr(
-                    'Importing online library into local storage',
-                    'Загрузка онлайн-библиотеки в локальное хранилище',
-                  ))
-                : tr(
-                    `${formatBytes(libraryUpdate.manifest.compressed_size, locale)} will be downloaded and unpacked. Your current library stays available until import succeeds.`,
-                    `Будет загружено и распаковано ${formatBytes(libraryUpdate.manifest.compressed_size, locale)}. Текущая библиотека останется доступна до успешного импорта.`,
-                  )}
-            </span>
-            {libraryUpdateBusy ? (
-              <div className="library-update-progress" aria-hidden="true">
-                <span
-                  style={{
-                    width: `${importProgressPercent(libraryUpdateStatus, 4)}%`,
-                  }}
-                />
-              </div>
-            ) : null}
-            {!libraryUpdateBusy && libraryUpdateError ? (
-              <div
-                className={`library-update-error ${libraryUpdateError.tone}`}
-                role={libraryUpdateError.tone === 'error' ? 'alert' : 'status'}
-              >
-                <span className="library-update-error-icon" aria-hidden="true">
-                  {libraryUpdateError.tone === 'error' ? (
-                    <AlertTriangle size={14} />
-                  ) : (
-                    <X size={14} />
-                  )}
-                </span>
-                <span className="library-update-error-copy">
-                  <strong>{libraryUpdateError.title}</strong>
-                  {libraryUpdateError.detail ? (
-                    <small>{libraryUpdateError.detail}</small>
-                  ) : null}
-                </span>
-              </div>
-            ) : null}
-          </div>
-          {libraryUpdateBusy &&
-          ['downloading', 'decompressing', 'importing'].includes(
-            libraryUpdateStatus?.stage ?? '',
-          ) ? (
-            <button
-              className={`btn library-download-cancel ${libraryUpdateCancelling ? 'is-cancelling' : ''}`}
-              type="button"
-              onClick={() => void cancelCurrentLibraryDownload()}
-              disabled={libraryUpdateCancelling}
-            >
-              <span className="library-download-cancel-icon" aria-hidden="true">
-                <X size={15} />
-              </span>
-              <span>
-                {libraryUpdateCancelling
-                  ? tr('Cancelling', 'Отмена...')
-                  : tr('Cancel update', 'Отменить обновление')}
-              </span>
-            </button>
-          ) : libraryUpdateError ? (
-            <button
-              className="btn primary library-update-retry"
-              type="button"
-              onClick={() => void installLibraryUpdate()}
-            >
-              <RotateCw size={15} />
-              {tr('Retry update', 'Повторить обновление')}
-            </button>
-          ) : (
-            <button
-              className="btn primary"
-              type="button"
-              onClick={() => void installLibraryUpdate()}
-              disabled={libraryUpdateBusy}
-            >
-              <Download size={15} />
-              {libraryUpdateBusy
-                ? tr('Updating', 'Обновление')
-                : tr('Download and install', 'Скачать и установить')}
-            </button>
-          )}
-          {!libraryUpdateBusy ? (
-            <button
-              className="icon-btn"
-              type="button"
-              onClick={() => {
-                setLibraryUpdate(null);
-                setLibraryUpdateError(null);
-              }}
-              aria-label={tr('Later', 'Позже')}
-            >
-              <X size={15} />
-            </button>
           ) : null}
-        </div>
-      ) : null}
 
-      {deleteSnapshotOpen && activeImport ? (
-        <div
-          className="modal-scrim"
-          role="presentation"
-          onMouseDown={() => {
-            if (!deleteSnapshotBusy) setDeleteSnapshotOpen(false);
-          }}
-        >
-          <div
-            ref={deleteDialogRef}
-            className="snapshot-delete-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="delete-library-title"
-            onMouseDown={(event) => event.stopPropagation()}
-          >
-            <div className="snapshot-delete-mark">
-              <AlertTriangle size={19} />
-            </div>
-            <div className="snapshot-delete-copy">
-              <div className="eyebrow">
-                {tr('Delete library', 'Удаление библиотеки')}
-              </div>
-              <h2 id="delete-library-title">
-                {snapshotDisplayName(activeImport)}
-              </h2>
-              <p>
-                {tr(
-                  `Library #${activeImport.id} and ${formatNumber(activeImport.grenade_count)} grenade rows will be removed.`,
-                  `Библиотека #${activeImport.id} и ${formatNumber(activeImport.grenade_count)} записей будут удалены.`,
-                )}
-              </p>
-            </div>
-            <div className="snapshot-delete-meta">
-              <span>{tr('Source', 'Источник')}</span>
-              <strong>{importFileName(activeImport.source_path)}</strong>
-              <span>{tr('Imported', 'Импортирована')}</span>
-              <strong>{compactDate(activeImport.imported_at)}</strong>
-            </div>
-            {deleteSnapshotBusy ? (
+          {deleteSnapshotOpen && activeImport ? (
+            <div
+              className="modal-scrim"
+              role="presentation"
+              onMouseDown={() => {
+                if (!deleteSnapshotBusy) setDeleteSnapshotOpen(false);
+              }}
+            >
               <div
-                className="snapshot-delete-progress"
-                role="status"
-                aria-live="polite"
+                ref={deleteDialogRef}
+                className="snapshot-delete-dialog"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="delete-library-title"
+                onMouseDown={(event) => event.stopPropagation()}
               >
-                <span className="spinner" aria-hidden="true" />
-                <span>
-                  {tr(
-                    'Deleting a large library. The app may take a while, but it is still working…',
-                    'Удаляется большая библиотека. Это может занять время, приложение продолжает работать…',
-                  )}
-                </span>
+                <div className="snapshot-delete-mark">
+                  <AlertTriangle size={19} />
+                </div>
+                <div className="snapshot-delete-copy">
+                  <div className="eyebrow">
+                    {tr('Delete library', 'Удаление библиотеки')}
+                  </div>
+                  <h2 id="delete-library-title">
+                    {snapshotDisplayName(activeImport)}
+                  </h2>
+                  <p>
+                    {tr(
+                      `Library #${activeImport.id} and ${formatNumber(activeImport.grenade_count)} grenade rows will be removed.`,
+                      `Библиотека #${activeImport.id} и ${formatNumber(activeImport.grenade_count)} записей будут удалены.`,
+                    )}
+                  </p>
+                </div>
+                <div className="snapshot-delete-meta">
+                  <span>{tr('Source', 'Источник')}</span>
+                  <strong>{importFileName(activeImport.source_path)}</strong>
+                  <span>{tr('Imported', 'Импортирована')}</span>
+                  <strong>{compactDate(activeImport.imported_at)}</strong>
+                </div>
+                {deleteSnapshotBusy ? (
+                  <div
+                    className="snapshot-delete-progress"
+                    role="status"
+                    aria-live="polite"
+                  >
+                    <span className="spinner" aria-hidden="true" />
+                    <span>
+                      {tr(
+                        'Deleting a large library. The app may take a while, but it is still working…',
+                        'Удаляется большая библиотека. Это может занять время, приложение продолжает работать…',
+                      )}
+                    </span>
+                  </div>
+                ) : null}
+                <div className="snapshot-delete-actions">
+                  <button
+                    className="btn"
+                    onClick={() => setDeleteSnapshotOpen(false)}
+                    disabled={deleteSnapshotBusy}
+                  >
+                    {tr('Cancel', 'Отмена')}
+                  </button>
+                  <button
+                    className="btn danger-action"
+                    onClick={confirmDeleteSnapshot}
+                    disabled={deleteSnapshotBusy}
+                  >
+                    <Trash2 size={15} />
+                    {deleteSnapshotBusy
+                      ? tr('Deleting…', 'Удаление…')
+                      : tr('Delete', 'Удалить')}
+                  </button>
+                </div>
               </div>
-            ) : null}
-            <div className="snapshot-delete-actions">
-              <button
-                className="btn"
-                onClick={() => setDeleteSnapshotOpen(false)}
-                disabled={deleteSnapshotBusy}
-              >
-                {tr('Cancel', 'Отмена')}
-              </button>
-              <button
-                className="btn danger-action"
-                onClick={confirmDeleteSnapshot}
-                disabled={deleteSnapshotBusy}
-              >
-                <Trash2 size={15} />
-                {deleteSnapshotBusy
-                  ? tr('Deleting…', 'Удаление…')
-                  : tr('Delete', 'Удалить')}
-              </button>
             </div>
-          </div>
+          ) : null}
+          {onboardingOpen && !bootVisible ? (
+            <OnboardingModal
+              onComplete={async () => {
+                await completeOnboarding();
+                setOnboardingOpen(false);
+              }}
+              onShowImport={() => navigate('/import')}
+              onShowMaps={() => navigate('/maps')}
+              activeImport={Boolean(activeImport)}
+              pathname={location.pathname}
+            />
+          ) : null}
+          <Tooltip />
         </div>
       ) : null}
-      {onboardingOpen ? (
-        <OnboardingModal
-          onComplete={async () => {
-            await completeOnboarding();
-            setOnboardingOpen(false);
-          }}
-          onShowImport={() => navigate('/import')}
-          onShowMaps={() => navigate('/maps')}
-          activeImport={Boolean(activeImport)}
-          pathname={location.pathname}
-        />
-      ) : null}
-      <Tooltip />
-    </div>
+    </>
   );
 }
 

@@ -1,0 +1,202 @@
+.startup-screen {
+  position: fixed;
+  z-index: 2000;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 32px;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  opacity: 1;
+  transition: opacity 280ms ease-out;
+}
+
+.startup-screen.is-leaving {
+  opacity: 0;
+}
+
+.startup-composition {
+  width: min(100%, 480px);
+  margin-top: -28px;
+  text-align: center;
+}
+
+.startup-trajectory {
+  display: block;
+  width: min(100%, 440px);
+  margin: 0 auto 28px;
+  overflow: visible;
+  stroke-width: 1.5;
+}
+
+.startup-guides {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+
+.startup-flight-base {
+  stroke: var(--line);
+  stroke-dasharray: 3 6;
+}
+
+.startup-flight {
+  stroke: var(--acid);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-dasharray: 1;
+  animation: startup-draw 650ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.startup-origin {
+  fill: var(--bg);
+  stroke: var(--acid);
+}
+
+.startup-impact {
+  fill: var(--acid);
+  animation: startup-arrive 650ms ease-out both;
+}
+
+.startup-impact-ring {
+  stroke: var(--acid);
+  opacity: 0.35;
+  transform-origin: 360px 132px;
+  animation: startup-impact 900ms ease-out both;
+}
+
+.startup-name {
+  margin: 0;
+  font:
+    800 clamp(28px, 5vw, 44px) / 1.15 Orbitron,
+    sans-serif;
+  letter-spacing: -0.04em;
+}
+
+.startup-name span {
+  font-weight: 600;
+}
+
+.startup-description {
+  margin: 14px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.startup-loading {
+  width: min(100%, 300px);
+  margin: 44px auto 0;
+}
+
+.startup-track {
+  height: 2px;
+  overflow: hidden;
+  background: var(--line);
+}
+
+.startup-track span {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: var(--acid);
+  transform-origin: left;
+  animation: startup-wait 1800ms ease-in-out infinite;
+}
+
+.is-leaving .startup-track span {
+  animation: none;
+  transform: scaleX(1);
+}
+
+.startup-status {
+  min-height: 36px;
+  margin: 14px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.startup-footer {
+  position: absolute;
+  right: 32px;
+  bottom: 24px;
+  left: 32px;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.startup-version {
+  font-variant-numeric: tabular-nums;
+}
+
+.startup-track.has-error span {
+  animation: none;
+  background: var(--red);
+}
+
+.startup-error p {
+  max-height: 80px;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+@keyframes startup-draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes startup-arrive {
+  0%,
+  65% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes startup-impact {
+  0%,
+  55% {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  75% {
+    opacity: 0.6;
+  }
+  100% {
+    opacity: 0.35;
+    transform: scale(1);
+  }
+}
+
+@keyframes startup-wait {
+  0% {
+    transform: translateX(-35%) scaleX(0.35);
+  }
+  100% {
+    transform: translateX(100%) scaleX(0.35);
+  }
+}
+
+@media (max-height: 480px) {
+  .startup-trajectory {
+    width: 260px;
+    margin-bottom: 12px;
+  }
+  .startup-loading {
+    margin-top: 24px;
+  }
+}

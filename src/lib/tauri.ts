@@ -21,6 +21,16 @@ import type {
 
 export const isTauri = '__TAURI_INTERNALS__' in window;
 
+let initialization: Promise<void> | undefined;
+
+export function initializeApplication() {
+  initialization ??= new Promise<void>((resolve) => {
+    // Let the browser paint the boot screen before starting native work.
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+  }).then(() => (isTauri ? invoke<void>('initialize_application') : undefined));
+  return initialization;
+}
+
 /** Event the backend broadcasts with a serialized `ImportStatus` snapshot. */
 export const IMPORT_STATUS_EVENT = 'import-status';
 

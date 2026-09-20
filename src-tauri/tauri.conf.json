@@ -5,7 +5,7 @@
   "identifier": "app.nadeviewer.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
-    "devUrl": "http://localhost:1420",
+    "devUrl": "http://127.0.0.1:1420",
     "beforeBuildCommand": "npm run build",
     "frontendDist": "../dist"
   },
@@ -18,12 +18,13 @@
         "minWidth": 760,
         "minHeight": 560,
         "resizable": true,
+        "backgroundColor": "#0a0c0f",
         "fullscreen": false
       }
     ],
     "security": {
       "csp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost; font-src 'self'; img-src 'self' asset: http://asset.localhost; object-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'",
-      "devCsp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost ws://localhost:1420; font-src 'self' http://localhost:1420; img-src 'self' asset: http://asset.localhost http://localhost:1420; object-src 'none'; script-src 'self' http://localhost:1420; style-src 'self' 'unsafe-inline' http://localhost:1420; base-uri 'none'; frame-ancestors 'none'",
+      "devCsp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost ws://127.0.0.1:1420; font-src 'self' http://127.0.0.1:1420; img-src 'self' asset: http://asset.localhost http://127.0.0.1:1420; object-src 'none'; script-src 'self' http://127.0.0.1:1420; style-src 'self' 'unsafe-inline' http://127.0.0.1:1420; base-uri 'none'; frame-ancestors 'none'",
       "assetProtocol": {
         "enable": true,
         "scope": ["$RESOURCE/maps/2d/**", "$RESOURCE/maps/preview/**"]

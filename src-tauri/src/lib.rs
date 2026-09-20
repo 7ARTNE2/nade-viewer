@@ -794,10 +794,22 @@ struct RadarParams {
 
 pub fn run() {
     tauri::Builder::default()
+        .manage(StartupClock(Instant::now()))
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .on_page_load(|webview, payload| {
+            eprintln!(
+                "[startup] Page {:?}: {:?}",
+                payload.event(),
+                webview.app_handle().state::<StartupClock>().0.elapsed()
+            );
+        })
         .setup(|app| {
-            let state = init_state(app.handle())?;
-            app.manage(state);
+            eprintln!(
+                "[startup] Window setup: {:?}",
+                app.state::<StartupClock>().0.elapsed()
+            );
+            eprintln!("[startup] Setup timestamp: {}", Utc::now().to_rfc3339());
+            app.manage(StartupState::default());
             let mut parser_status = crate::plugin::ParserStatus::default();
             parser_status.stage = "idle".into();
             app.manage(std::sync::Arc::new(std::sync::Mutex::new(parser_status)));
@@ -805,6 +817,8 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            report_startup_timing,
+            initialize_application,
             select_import_file,
             import_json,
             cancel_import,
@@ -855,6 +869,53 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running Nade Viewer");
+}
+
+struct StartupClock(Instant);
+
+#[tauri::command]
+fn report_startup_timing(app: AppHandle, phase: String, timing: String) {
+    #[cfg(debug_assertions)]
+    eprintln!(
+        "[startup:webview] {} at {:?}: {}",
+        phase,
+        app.state::<StartupClock>().0.elapsed(),
+        timing
+    );
+    #[cfg(not(debug_assertions))]
+    let _ = (app, phase, timing);
+}
+
+#[derive(Default)]
+struct StartupState(Mutex<Option<Result<(), String>>>);
+
+// Keep filesystem work and SQLite migrations off the window event loop. The
+// frontend calls this only after mounting the startup screen, before any DB IPC.
+#[tauri::command]
+async fn initialize_application(app: AppHandle) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let startup = app.state::<StartupState>();
+        let mut result = startup.0.lock().map_err(|error| error.to_string())?;
+        if let Some(result) = result.as_ref() {
+            return result.clone();
+        }
+        let started = Instant::now();
+        let initialized = init_state(&app)
+            .map(|state| {
+                app.manage(state);
+            })
+            .map_err(|error| error.to_string());
+        eprintln!(
+            "Application initialization completed in {:?}",
+            started.elapsed()
+        );
+        if initialized.is_ok() {
+            *result = Some(Ok(()));
+        }
+        initialized
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 fn init_state(app: &AppHandle) -> Result<AppState, Box<dyn std::error::Error>> {

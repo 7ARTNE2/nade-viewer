@@ -5,8 +5,116 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#090b0f" />
     <title>Nade Viewer</title>
+    <script src="/startup.js" defer></script>
+    <style>
+      #startup-initial {
+        position: fixed;
+        inset: 0;
+        z-index: 3000;
+        display: grid;
+        place-items: center;
+        padding: 32px;
+        background: #0a0c0f;
+        color: #f4f6f8;
+        font-family: 'Segoe UI', sans-serif;
+        text-align: center;
+      }
+      #startup-initial .initial-content {
+        width: min(100%, 480px);
+        margin-top: -28px;
+      }
+      #startup-initial svg {
+        display: block;
+        width: min(100%, 440px);
+        margin: 0 auto 28px;
+      }
+      #startup-initial h1 {
+        margin: 0;
+        font-size: clamp(28px, 5vw, 44px);
+        line-height: 1.15;
+        letter-spacing: -0.04em;
+      }
+      #startup-initial h1 span {
+        font-weight: 400;
+      }
+      #startup-initial p {
+        margin: 14px 0 0;
+        color: #89929f;
+        font-size: 13px;
+        line-height: 1.6;
+      }
+      #startup-initial .initial-track {
+        height: 2px;
+        width: min(100%, 300px);
+        margin: 44px auto 0;
+        overflow: hidden;
+        background: #272c34;
+      }
+      #startup-initial .initial-track span {
+        display: block;
+        width: 100%;
+        height: 100%;
+        background: #c8f43d;
+        transform-origin: left;
+        animation: initial-wait 1.8s ease-in-out infinite;
+      }
+      #startup-initial button {
+        margin-top: 16px;
+        padding: 10px 16px;
+        border: 1px solid #89929f;
+        border-radius: 9px;
+        background: #171b21;
+        color: #f4f6f8;
+        cursor: pointer;
+      }
+      #startup-initial button:focus-visible {
+        outline: 2px solid #c8f43d;
+        outline-offset: 3px;
+      }
+      @keyframes initial-wait {
+        from {
+          transform: translateX(-35%) scaleX(0.35);
+        }
+        to {
+          transform: translateX(100%) scaleX(0.35);
+        }
+      }
+    </style>
   </head>
-  <body>
+  <body style="margin: 0; background: #0a0c0f">
+    <!-- No JavaScript, external CSS, or fonts required for the first paint. -->
+    <div id="startup-initial" role="status" aria-label="Nade Viewer startup">
+      <div class="initial-content">
+        <svg viewBox="0 0 440 180" fill="none" aria-hidden="true">
+          <g stroke="#272c34">
+            <path
+              d="M32 132H408M80 124V140M220 124V140M360 124V140M24 40V24H40M400 24H416V40M24 148V164H40M400 164H416V148"
+            />
+            <circle cx="360" cy="132" r="24" />
+            <path d="M328 132H344M376 132H392M360 100V116M360 148V164" />
+          </g>
+          <path
+            stroke="#c8f43d"
+            stroke-width="2"
+            stroke-linecap="round"
+            d="M80 132C137 6 242 6 298 132Q317 92 338 132Q349 114 360 132"
+          />
+          <circle cx="80" cy="132" r="4" fill="#0a0c0f" stroke="#c8f43d" />
+          <circle cx="360" cy="132" r="6" fill="#c8f43d" />
+          <circle cx="360" cy="132" r="16" stroke="#c8f43d" opacity=".35" />
+        </svg>
+        <h1>NADE <span>VIEWER</span></h1>
+        <p>Counter-Strike 2</p>
+        <div class="initial-track" aria-hidden="true"><span></span></div>
+        <p id="startup-initial-status">Loading / Запуск</p>
+        <button id="startup-initial-retry" type="button" hidden>
+          Retry / Повторить
+        </button>
+        <noscript
+          ><p>JavaScript is required / Требуется JavaScript</p></noscript
+        >
+      </div>
+    </div>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
