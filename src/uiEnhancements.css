@@ -2426,3 +2426,88 @@
   line-height: 1.4;
   overflow-wrap: anywhere;
 }
+
+/* =========================================================
+   2K / QHD — match styles.css (min-width only, no effect below 1920)
+   ========================================================= */
+@media (min-width: 1920px) {
+  .nade-parser {
+    max-width: 1720px;
+  }
+  .nade-parser .tools-header h1 {
+    font-size: 32px;
+  }
+  .nade-parser .tools-card {
+    padding: 24px;
+  }
+  .nade-parser .tools-grid {
+    gap: 18px;
+  }
+  /* --- typography: 2K readability --- */
+  .filter-section-heading{font-size:11px}
+  .tactical-filter-label{font-size:10px}
+  .tactical-filter-trigger strong{font-size:12px}
+  .tactical-filter-trigger small,.tactical-filter-value small{font-size:10px}
+  .tactical-filter-options strong{font-size:12px}
+  .tactical-filter-options small{font-size:10px}
+  .tactical-filter-loading-copy strong{font-size:11px}
+  .workers-select-value strong{font-size:16px}
+  .workers-select-value small{font-size:10px}
+  .workers-select-option-copy strong{font-size:13px}
+  .workers-select-option-meta{font-size:10px}
+  .nade-parser .tools-card-title h2{font-size:15px}
+  .nade-parser .tools-card-title small{font-size:12px}
+  .nade-parser .parser-heading-row{gap:18px}
+  .parser-workflow strong{font-size:13px}
+  .parser-workflow small{font-size:11px}
+  .parser-step-number{font-size:12px;width:34px;height:34px}
+  .nade-parser .tools-workers,.nade-parser .tools-check{font-size:13px}
+  .nade-parser .tools-workers small,.nade-parser .tools-check small{font-size:12px}
+  .nade-parser .tools-progress-meta b{font-size:48px}
+  .nade-parser .tools-stats b{font-size:24px}
+  .nade-parser .tools-stats span{font-size:12px}
+  .nade-parser .tools-output{row-gap:12px}
+  .nade-parser .tools-dataset-copy strong{font-size:13px}
+  .nade-parser .tools-dataset-copy small{font-size:11px}
+  .usage-leader strong{font-size:14px}
+  .usage-leader small,.usage-last-throw small{font-size:11px}
+  .usage-leader .usage-leader-count{font-size:15px}
+  .usage-history-heading{font-size:12px}
+  .usage-history-stats dt{font-size:10px}
+  .usage-history-stats dd{font-size:20px}
+  .usage-history-axis{font-size:10px}
+  .demo-filename{font-size:13px}
+  .demo-metadata-label{font-size:10px}
+  .coordinate-command-panel code{font-size:12px;line-height:1.65}
+  .import-complete h2{font-size:22px}
+  .import-complete-counts b{font-size:22px}
+  .import-complete-counts span{font-size:10px}
+  .import-inline-copy strong{font-size:11px}
+  .library-update-error-copy strong{font-size:11px}
+  .filter-summary-chip{font-size:10px;max-width:200px}
+}
+@media (min-width: 2560px) {
+  .nade-parser {
+    max-width: 1920px;
+  }
+  .nade-parser .tools-header h1 {
+    font-size: 34px;
+  }
+  /* --- typography: 2560 readability --- */
+  .filter-section-heading{font-size:12px}
+  .tactical-filter-label{font-size:11px}
+  .tactical-filter-trigger strong{font-size:13px}
+  .tactical-filter-options strong{font-size:13px}
+  .workers-select-value strong{font-size:17px}
+  .nade-parser .tools-card-title h2{font-size:16px}
+  .parser-workflow strong{font-size:14px}
+  .nade-parser .tools-progress-meta b{font-size:52px}
+  .nade-parser .tools-stats b{font-size:26px}
+  .usage-leader strong{font-size:15px}
+  .usage-leader .usage-leader-count{font-size:16px}
+  .usage-history-stats dd{font-size:22px}
+  .demo-filename{font-size:14px}
+  .coordinate-command-panel code{font-size:13px}
+  .import-complete h2{font-size:24px}
+  .import-complete-counts b{font-size:24px}
+}
