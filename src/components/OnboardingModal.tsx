@@ -267,7 +267,13 @@ export default function OnboardingModal({
         const rect = element.getBoundingClientRect();
         return rect.width > 0 && rect.height > 0 ? rect : null;
       })();
-      const anchorElement = resolveAnchor(element, target.dialogAnchor);
+      const openLegend =
+        step === 7 &&
+        element?.getAttribute('aria-expanded') === 'true'
+          ? document.querySelector('.map-legend.is-visible')
+          : null;
+      const anchorElement =
+        openLegend ?? resolveAnchor(element, target.dialogAnchor);
       const anchorRect = anchorElement?.getBoundingClientRect() ?? nextRect;
       const targetVisible = Boolean(nextRect);
       applyHighlight(nextRect);
@@ -293,9 +299,11 @@ export default function OnboardingModal({
         ((step === 2 &&
           element instanceof HTMLElement &&
           element.querySelector('[aria-expanded="true"]')) ||
-          step === 5) &&
+          step === 5 ||
+          Boolean(openLegend)) &&
         element instanceof HTMLElement &&
-        (element.hasAttribute('open') ||
+        (Boolean(openLegend) ||
+          element.hasAttribute('open') ||
           Boolean(element.querySelector('[aria-expanded="true"]')));
       const isViewMapsTransitionStep0Complete = Boolean(
         step === 0 &&
