@@ -17,6 +17,7 @@ import {
   useEffect,
   useLayoutEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 import { useI18n } from '../i18n';
@@ -159,6 +160,7 @@ export default function OnboardingModal({
   } | null>(null);
   const [mapTargetAvailable, setMapTargetAvailable] = useState(false);
   const [mapSelectionPending, setMapSelectionPending] = useState(false);
+  const startButtonRef = useRef<HTMLButtonElement>(null);
   const target = useMemo(() => {
     if (!started) return null;
     if (step !== 0) return steps[step];
@@ -194,6 +196,10 @@ export default function OnboardingModal({
     if (!busy) void onComplete();
   }, [busy, onComplete]);
   const dialogRef = useModalAccessibility(!started, close);
+
+  useEffect(() => {
+    if (!started) startButtonRef.current?.focus();
+  }, [started]);
 
   useEffect(() => {
     if (!started) return;
@@ -531,6 +537,7 @@ export default function OnboardingModal({
                 className="btn primary"
                 type="button"
                 autoFocus
+                ref={startButtonRef}
                 disabled={busy}
                 onClick={() => {
                   setStarted(true);
