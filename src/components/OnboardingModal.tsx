@@ -12,7 +12,13 @@ import {
   Upload,
   type LucideIcon,
 } from 'lucide-react';
-import { useCallback, useEffect, useLayoutEffect, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useState,
+} from 'react';
 import { useI18n } from '../i18n';
 import { useModalAccessibility } from '../lib/useModalAccessibility';
 
@@ -21,21 +27,34 @@ type OnboardingModalProps = {
   onShowImport: () => void;
   onShowMaps: () => void;
   activeImport: boolean;
+  importState: 'idle' | 'importing' | 'complete';
   pathname: string;
 };
 
 type TourStep = {
   selector: string;
+  dialogAnchor?: string | (() => Element | null);
   icon: LucideIcon;
   title: string;
   copy: string;
 };
 
+function resolveAnchor(
+  element: Element | null,
+  dialogAnchor: TourStep['dialogAnchor'],
+) {
+  if (typeof dialogAnchor === 'function') return dialogAnchor();
+  if (typeof dialogAnchor === 'string')
+    return document.querySelector(dialogAnchor);
+  return element;
+}
+
 const steps: TourStep[] = [
   {
     selector: '[data-tour="import-choose-file"]',
+    dialogAnchor: '.import-action-card',
     icon: Upload,
-    title: 'Bring in your playbook',
+    title: 'Import a lineup library',
     copy: 'Load a grenade_index.json or Core Nades file. Everything stays local to this device.',
   },
   {
@@ -95,7 +114,7 @@ const steps: TourStep[] = [
 ];
 
 const russianTitles = [
-  'Загрузите свой плейбук',
+  'Загрузите библиотеку раскидок',
   'Выберите карту для изучения',
   'Переключайте карты быстро',
   'Управляйте видом радара',
@@ -125,6 +144,7 @@ export default function OnboardingModal({
   onShowImport,
   onShowMaps,
   activeImport,
+  importState,
   pathname,
 }: OnboardingModalProps) {
   const { locale, tr } = useI18n();
@@ -132,19 +152,60 @@ export default function OnboardingModal({
   const [step, setStep] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [rect, setRect] = useState<DOMRect | null>(null);
+  const [highlightRect, setHighlightRect] = useState<DOMRect | null>(null);
   const [dialogPosition, setDialogPosition] = useState<{
     left: number;
     top: number;
   } | null>(null);
   const [mapTargetAvailable, setMapTargetAvailable] = useState(false);
   const [mapSelectionPending, setMapSelectionPending] = useState(false);
-  const target = started ? steps[step] : null;
+  const target = useMemo(() => {
+    if (!started) return null;
+    if (step !== 0) return steps[step];
+    if (importState === 'complete') {
+      return {
+        ...steps[0],
+        selector: '[data-tour="import-view-maps"]',
+        title: tr('Your lineup library is ready', 'Библиотека раскидок готова'),
+        copy: tr(
+          'The library is imported. Open the map list to choose where to start.',
+          'Библиотека импортирована. Откройте список карт и выберите, с чего начать.',
+        ),
+      };
+    }
+    if (importState === 'importing') {
+      return {
+        ...steps[0],
+        selector: '[data-tour="import-progress"]',
+        title: tr(
+          'Importing your lineup library',
+          'Импортируем библиотеку раскидок',
+        ),
+        copy: tr(
+          'Keep Nade Viewer open while the library is prepared on this device.',
+          'Не закрывайте Nade Viewer, пока библиотека подготавливается на этом устройстве.',
+        ),
+      };
+    }
+    return steps[0];
+  }, [importState, locale, started, step, tr]);
   const StepIcon = target?.icon;
   const close = useCallback(() => {
     if (!busy) void onComplete();
   }, [busy, onComplete]);
-  const dialogRef = useModalAccessibility(true, close);
+  const dialogRef = useModalAccessibility(!started, close);
+
+  useEffect(() => {
+    if (!started) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        close();
+      }
+    };
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, [close, started]);
 
   useEffect(() => {
     if (!started) return;
@@ -171,12 +232,12 @@ export default function OnboardingModal({
   }, [started, step]);
 
   useEffect(() => {
-    if (!started || step !== 7) return;
+    if (!started || step !== 8) return;
     const advanceAfterClusterSelection = (event: MouseEvent) => {
       if (
         (event.target as Element | null)?.closest('[data-tour="cluster-list"]')
       ) {
-        setStep(8);
+        setStep(9);
       }
     };
     window.addEventListener('click', advanceAfterClusterSelection, true);
@@ -186,27 +247,48 @@ export default function OnboardingModal({
 
   useLayoutEffect(() => {
     if (!target) return;
+    const observedElement = document.querySelector(target.selector);
+    const observedAnchor = resolveAnchor(observedElement, target.dialogAnchor);
+    const highlightTargetDirectly =
+      step === 0 && importState === 'complete' ? observedElement : null;
+    if (highlightTargetDirectly)
+      highlightTargetDirectly.classList.add('onboarding-target-active');
+    const applyHighlight = (nextRect: DOMRect | null) => {
+      if (highlightTargetDirectly) {
+        setHighlightRect(null);
+        return;
+      }
+      setHighlightRect(nextRect);
+    };
     const update = () => {
       const element = document.querySelector(target.selector);
-      const nextRect = element?.getBoundingClientRect() ?? null;
-      setRect(nextRect);
-      if (step === 1) setMapTargetAvailable(Boolean(element));
-      if (!nextRect || !dialogRef.current) {
+      const nextRect = (() => {
+        if (!element) return null;
+        const rect = element.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0 ? rect : null;
+      })();
+      const anchorElement = resolveAnchor(element, target.dialogAnchor);
+      const anchorRect = anchorElement?.getBoundingClientRect() ?? nextRect;
+      const targetVisible = Boolean(nextRect);
+      applyHighlight(nextRect);
+      if (step === 1) setMapTargetAvailable(targetVisible);
+      if (!anchorRect || !dialogRef.current) {
         setDialogPosition(null);
         return;
       }
 
-      const dialog = dialogRef.current.getBoundingClientRect();
+      const dialogWidth = dialogRef.current.offsetWidth;
+      const dialogHeight = dialogRef.current.offsetHeight;
       const margin = 16;
       const gap = 14;
       const viewportWidth = window.innerWidth;
       const viewportHeight = window.innerHeight;
       const fitsBelow =
-        nextRect.bottom + gap + dialog.height <= viewportHeight - margin;
-      const fitsAbove = nextRect.top - gap - dialog.height >= margin;
+        anchorRect.bottom + gap + dialogHeight <= viewportHeight - margin;
+      const fitsAbove = anchorRect.top - gap - dialogHeight >= margin;
       const fitsRight =
-        nextRect.right + gap + dialog.width <= viewportWidth - margin;
-      const fitsLeft = nextRect.left - gap - dialog.width >= margin;
+        anchorRect.right + gap + dialogWidth <= viewportWidth - margin;
+      const fitsLeft = anchorRect.left - gap - dialogWidth >= margin;
       const preferSidePlacement =
         ((step === 2 &&
           element instanceof HTMLElement &&
@@ -215,55 +297,91 @@ export default function OnboardingModal({
         element instanceof HTMLElement &&
         (element.hasAttribute('open') ||
           Boolean(element.querySelector('[aria-expanded="true"]')));
-      let top = fitsBelow
-        ? nextRect.bottom + gap
-        : fitsAbove
-          ? nextRect.top - dialog.height - gap
-          : Math.max(margin, (viewportHeight - dialog.height) / 2);
-      let left = Math.min(
-        Math.max(margin, nextRect.left),
-        Math.max(margin, viewportWidth - dialog.width - margin),
+      const isViewMapsTransitionStep0Complete = Boolean(
+        step === 0 &&
+        importState === 'complete' &&
+        document.querySelector('[data-tour="import-view-maps"]'),
       );
-      if (preferSidePlacement && fitsRight) {
-        left = nextRect.right + gap;
-        top = nextRect.top;
-      } else if (preferSidePlacement && fitsLeft) {
-        left = nextRect.left - dialog.width - gap;
-        top = nextRect.top;
+      const resolvedPreferSidePlacement =
+        isViewMapsTransitionStep0Complete || preferSidePlacement;
+      let top = fitsBelow
+        ? anchorRect.bottom + gap
+        : fitsAbove
+          ? anchorRect.top - dialogHeight - gap
+          : Math.max(margin, (viewportHeight - dialogHeight) / 2);
+      let left = Math.min(
+        Math.max(margin, anchorRect.left),
+        Math.max(margin, viewportWidth - dialogWidth - margin),
+      );
+      if (step === 0 && fitsLeft && !isViewMapsTransitionStep0Complete) {
+        left = anchorRect.left - dialogWidth - gap;
+        top = anchorRect.top;
+      } else if (isViewMapsTransitionStep0Complete && fitsLeft) {
+        left = anchorRect.left - dialogWidth - gap;
+        top = anchorRect.top + (anchorRect.height - dialogHeight) / 2;
+      } else if (isViewMapsTransitionStep0Complete && fitsRight) {
+        left = anchorRect.right + gap;
+        top = anchorRect.top + (anchorRect.height - dialogHeight) / 2;
+      } else if (preferSidePlacement && fitsRight) {
+        left = anchorRect.right + gap;
+        top = anchorRect.top;
+      } else if (resolvedPreferSidePlacement && fitsLeft) {
+        left = anchorRect.left - dialogWidth - gap;
+        top = anchorRect.top;
       } else if (!fitsBelow && !fitsAbove && fitsRight)
-        left = nextRect.right + gap;
+        left = anchorRect.right + gap;
       else if (!fitsBelow && !fitsAbove && fitsLeft)
-        left = nextRect.left - dialog.width - gap;
+        left = anchorRect.left - dialogWidth - gap;
       if (
-        !preferSidePlacement &&
+        !resolvedPreferSidePlacement &&
         !fitsBelow &&
         !fitsAbove &&
         (fitsRight || fitsLeft)
       ) {
-        top = nextRect.bottom - dialog.height;
+        top = anchorRect.bottom - dialogHeight;
       }
       top = Math.min(
         Math.max(margin, top),
-        Math.max(margin, viewportHeight - dialog.height - margin),
+        Math.max(margin, viewportHeight - dialogHeight - margin),
       );
       setDialogPosition({ left, top });
     };
     update();
     window.addEventListener('resize', update);
     window.addEventListener('scroll', update, true);
-    const observer = new MutationObserver(update);
-    const element = document.querySelector(target.selector);
+    const observer = new MutationObserver(() => {
+      // Re-bind observers if target element was swapped (choose-file -> view-maps)
+      const fresh = document.querySelector(target.selector);
+      if (fresh && fresh !== observedElement) {
+        try {
+          observer.observe(fresh, { attributes: true });
+        } catch {
+          // ignore observer reuse errors
+        }
+        try {
+          resizeObserver.observe(fresh);
+        } catch {
+          // ignore observer reuse errors
+        }
+      }
+      update();
+    });
     observer.observe(document.body, { childList: true, subtree: true });
-    if (element) observer.observe(element, { attributes: true });
-    const resizeObserver = element ? new ResizeObserver(update) : null;
-    if (element) resizeObserver?.observe(element);
+    if (observedElement)
+      observer.observe(observedElement, { attributes: true });
+    const resizeObserver = new ResizeObserver(update);
+    if (observedElement) resizeObserver.observe(observedElement);
+    if (observedAnchor && observedAnchor !== observedElement)
+      resizeObserver.observe(observedAnchor);
+    if (dialogRef.current) resizeObserver.observe(dialogRef.current);
     return () => {
+      highlightTargetDirectly?.classList.remove('onboarding-target-active');
       window.removeEventListener('resize', update);
       window.removeEventListener('scroll', update, true);
       observer.disconnect();
-      resizeObserver?.disconnect();
+      resizeObserver.disconnect();
     };
-  }, [dialogRef, step, target]);
+  }, [dialogRef, importState, step, target]);
 
   const run = async (action: () => Promise<void>) => {
     setBusy(true);
@@ -285,23 +403,24 @@ export default function OnboardingModal({
 
   return (
     <div className={`onboarding-layer ${started ? 'tour-active' : ''}`}>
-      {rect ? (
+      {highlightRect ? (
         <div
           className="onboarding-highlight"
           style={{
-            left: rect.left - 5,
-            top: rect.top - 5,
-            width: rect.width + 10,
-            height: rect.height + 10,
+            left: highlightRect.left - 5,
+            top: highlightRect.top - 5,
+            width: highlightRect.width + 10,
+            height: highlightRect.height + 10,
           }}
         />
       ) : null}
       <section
         ref={dialogRef}
-        className="onboarding-dialog"
+        className={`onboarding-dialog ${started && step === 0 ? 'onboarding-import-step' : ''}`}
         role="dialog"
-        aria-modal="true"
+        aria-modal={started ? undefined : true}
         aria-labelledby="onboarding-title"
+        aria-live={started ? 'polite' : undefined}
         style={
           started && dialogPosition
             ? {
@@ -342,31 +461,51 @@ export default function OnboardingModal({
           </div>
         )}
         <h1 id="onboarding-title">
-          {started && locale === 'ru'
-            ? russianTitles[step]
-            : started
-              ? target?.title
-              : tr('Welcome to Nade Viewer', 'Добро пожаловать в Nade Viewer')}
+          {started && step === 0 && importState === 'complete'
+            ? tr('Your lineup library is ready', 'Библиотека раскидок готова')
+            : started && step === 0 && importState === 'importing'
+              ? tr(
+                  'Importing your lineup library',
+                  'Импортируем библиотеку раскидок',
+                )
+              : started && locale === 'ru'
+                ? russianTitles[step]
+                : started
+                  ? target?.title
+                  : tr(
+                      'Welcome to Nade Viewer',
+                      'Добро пожаловать в Nade Viewer',
+                    )}
         </h1>
         <p>
-          {started && step === 1 && !mapTargetAvailable
+          {started && step === 0 && importState === 'complete'
             ? tr(
-                'This library has no maps to show yet. Import a non-empty grenade library to continue the tour, or skip it.',
-                'В этой библиотеке пока нет карт. Импортируйте непустую библиотеку гранат, чтобы продолжить обучение, или пропустите его.',
+                'The library is imported. Open the map list to choose where to start.',
+                'Библиотека импортирована. Откройте список карт и выберите, с чего начать.',
               )
-            : started && locale === 'ru'
-              ? russianCopies[step]
-              : started
-                ? target?.copy
-                : activeImport
-                  ? tr(
-                      'A grenade library is already loaded. The tour will start with the map selection screen and use the first available map.',
-                      'Библиотека уже загружена. Обучение начнется с выбора первой доступной карты.',
-                    )
-                  : tr(
-                      'Start by importing a library. Then the tour will show map selection and a workspace for the first available map.',
-                      'Сначала импортируйте библиотеку. Затем обучение покажет выбор карты и интерфейс первой доступной карты.',
-                    )}
+            : started && step === 0 && importState === 'importing'
+              ? tr(
+                  'Keep Nade Viewer open while the library is prepared on this device.',
+                  'Не закрывайте Nade Viewer, пока библиотека подготавливается на этом устройстве.',
+                )
+              : started && step === 1 && !mapTargetAvailable
+                ? tr(
+                    'This library has no maps to show yet. Import a non-empty grenade library to continue the tour, or skip it.',
+                    'В этой библиотеке пока нет карт. Импортируйте непустую библиотеку гранат, чтобы продолжить обучение, или пропустите его.',
+                  )
+                : started && locale === 'ru'
+                  ? russianCopies[step]
+                  : started
+                    ? target?.copy
+                    : activeImport
+                      ? tr(
+                          'A grenade library is already loaded. The tour will start with the map selection screen and use the first available map.',
+                          'Библиотека уже загружена. Обучение начнется с выбора первой доступной карты.',
+                        )
+                      : tr(
+                          'Start by importing a library. Then the tour will show map selection and a workspace for the first available map.',
+                          'Сначала импортируйте библиотеку. Затем обучение покажет выбор карты и интерфейс первой доступной карты.',
+                        )}
         </p>
         {error ? <div className="onboarding-error">{error}</div> : null}
         <div className="onboarding-actions">
@@ -399,18 +538,19 @@ export default function OnboardingModal({
                 <ArrowRight size={15} />
               </button>
             ) : step === 0 ? (
-              <button
-                className="btn primary"
-                type="button"
-                disabled={busy || !activeImport}
-                onClick={() => {
-                  setStep(1);
-                  onShowMaps();
-                }}
-              >
-                {tr('Choose a map', 'Выбрать карту')}
-                <ArrowRight size={15} />
-              </button>
+              <span className="onboarding-next-hint" aria-live="polite">
+                {importState === 'complete'
+                  ? tr(
+                      'Click the highlighted View maps button',
+                      'Нажмите выделенную кнопку «К картам»',
+                    )
+                  : importState === 'importing'
+                    ? tr('Import in progress…', 'Импорт выполняется…')
+                    : tr(
+                        'Click the highlighted Choose file button',
+                        'Нажмите выделенную кнопку «Выбрать файл»',
+                      )}
+              </span>
             ) : step === 1 ? (
               mapTargetAvailable ? (
                 <span className="onboarding-next-hint">

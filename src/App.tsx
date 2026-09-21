@@ -108,6 +108,9 @@ function Shell() {
   const [deleteSnapshotOpen, setDeleteSnapshotOpen] = useState(false);
   const [deleteSnapshotBusy, setDeleteSnapshotBusy] = useState(false);
   const [onboardingOpen, setOnboardingOpen] = useState(false);
+  const [tutorialImportState, setTutorialImportState] = useState<
+    'idle' | 'importing' | 'complete'
+  >('idle');
   const importsRequestRef = useRef(0);
   const [operationError, setOperationError] = useState<string | null>(null);
   const [availableUpdate, setAvailableUpdate] = useState<Update | null>(null);
@@ -870,6 +873,7 @@ function Shell() {
                     <ImportPage
                       onImported={refreshImports}
                       lastImport={imports[0] ?? null}
+                      onImportStateChange={setTutorialImportState}
                     />
                   }
                 />
@@ -1159,6 +1163,7 @@ function Shell() {
               onShowImport={() => navigate('/import')}
               onShowMaps={() => navigate('/maps')}
               activeImport={Boolean(activeImport)}
+              importState={tutorialImportState}
               pathname={location.pathname}
             />
           ) : null}

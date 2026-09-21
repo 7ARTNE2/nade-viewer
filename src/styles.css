@@ -285,8 +285,10 @@ button:focus-visible,[role="button"]:focus-visible,[role="link"]:focus-visible{o
 .onboarding-layer{position:fixed;z-index:500;inset:0;display:grid;place-items:center;padding:20px;background:rgba(3,5,7,.78)}
 .onboarding-layer.tour-active{display:block;padding:0;background:rgba(3,5,7,.28);pointer-events:none}
 .onboarding-dialog{position:relative;width:min(560px,100%);padding:32px;border:1px solid rgba(var(--acid-rgb),.26);border-radius:16px;background:linear-gradient(145deg,rgba(200,244,61,.08),transparent 34%),var(--surface);box-shadow:0 30px 100px rgba(0,0,0,.7),0 0 0 1px rgba(255,255,255,.025) inset}
-.tour-active .onboarding-dialog{position:fixed;width:min(440px,calc(100vw - 32px));max-height:calc(100dvh - 32px);padding:24px;pointer-events:auto;overflow:auto;animation:onboarding-in .24s cubic-bezier(.22,1,.36,1)}
+.tour-active .onboarding-dialog{position:fixed;z-index:2;width:min(440px,calc(100vw - 32px));max-height:calc(100dvh - 32px);padding:24px;pointer-events:auto;overflow:auto;animation:onboarding-in .24s cubic-bezier(.22,1,.36,1)}
+.tour-active .onboarding-dialog.onboarding-import-step{width:min(380px,calc(100vw - 32px))}
 .onboarding-highlight{position:fixed;z-index:1;border:2px solid var(--acid);border-radius:10px;box-shadow:0 0 0 9999px rgba(3,5,7,.24),0 0 22px rgba(var(--acid-rgb),.45);pointer-events:none}
+.onboarding-target-active{position:relative;z-index:501;outline:2px solid var(--acid);outline-offset:5px;box-shadow:0 0 22px rgba(var(--acid-rgb),.45)!important}
 .onboarding-icon,.onboarding-step-icon{display:grid;width:48px;height:48px;margin:20px 0 18px;place-items:center;border:1px solid rgba(var(--acid-rgb),.28);border-radius:14px;background:rgba(var(--acid-rgb),.08);color:var(--acid);box-shadow:0 10px 26px rgba(0,0,0,.18),inset 0 1px 0 rgba(255,255,255,.08)}
 .onboarding-step-icon{margin-top:22px;background:linear-gradient(145deg,rgba(var(--acid-rgb),.18),rgba(var(--acid-rgb),.035));}
 .onboarding-dialog h1{max-width:14ch;margin:0 0 14px;font:600 clamp(23px,2vw,28px) Orbitron;letter-spacing:-.04em;line-height:1.12}

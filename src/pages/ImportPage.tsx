@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import {
@@ -46,6 +47,7 @@ import { useToast } from '../components/Toast';
 type Props = {
   onImported: () => Promise<void>;
   lastImport: ImportSummary | null;
+  onImportStateChange: (state: 'idle' | 'importing' | 'complete') => void;
 };
 
 /** Inline outcome shown under the drop zone after a run settles. */
@@ -59,7 +61,11 @@ function sourceFileName(path: string) {
   return path.split(/[\\/]/).filter(Boolean).pop() || path;
 }
 
-export default function ImportPage({ onImported, lastImport }: Props) {
+export default function ImportPage({
+  onImported,
+  lastImport,
+  onImportStateChange,
+}: Props) {
   const { locale, tr, count } = useI18n();
   const { showToast } = useToast();
   const navigate = useNavigate();
@@ -112,8 +118,9 @@ export default function ImportPage({ onImported, lastImport }: Props) {
       busyRef.current = false;
       setBusy(false);
       setCancelling(false);
+      onImportStateChange('idle');
     },
-    [showToast, tr],
+    [onImportStateChange, showToast, tr],
   );
 
   useImportStatusPolling({
@@ -159,6 +166,7 @@ export default function ImportPage({ onImported, lastImport }: Props) {
     busyRef.current = true;
     runHandledRef.current = false;
     setBusy(true);
+    onImportStateChange('importing');
     setCancelling(false);
     setCompletion(null);
     setOutcome(null);
@@ -192,13 +200,17 @@ export default function ImportPage({ onImported, lastImport }: Props) {
           { tone: 'success', duration: 1960 },
         );
       }
-      setCompletion(report);
+      flushSync(() => {
+        setCompletion(report);
+        onImportStateChange('complete');
+      });
     } catch (error) {
       // A newer run started, or the polling loop already reported this outcome.
       if (token !== runTokenRef.current || runHandledRef.current) return;
       runHandledRef.current = true;
       const code = importErrorCode(error);
       if (code === 'import_cancelled') {
+        onImportStateChange('idle');
         setOutcome({
           tone: 'cancelled',
           title: tr('Import cancelled', 'Импорт отменён'),
@@ -212,6 +224,7 @@ export default function ImportPage({ onImported, lastImport }: Props) {
       const title =
         importErrorLabel(code, tr) ?? tr('Import failed', 'Ошибка импорта');
       const detail = importErrorDetail(error)?.trim() || undefined;
+      onImportStateChange('idle');
       setOutcome({ tone: 'error', title, detail });
       showToast(detail ? `${title}: ${detail}` : title, {
         tone: 'error',
@@ -232,6 +245,7 @@ export default function ImportPage({ onImported, lastImport }: Props) {
     setOutcome(null);
     setPath('');
     setStatus(IMPORT_STATUS_IDLE);
+    onImportStateChange('idle');
   };
 
   const cancelRun = async () => {
@@ -392,6 +406,7 @@ export default function ImportPage({ onImported, lastImport }: Props) {
               <div className="import-complete-actions">
                 <button
                   className="btn primary"
+                  data-tour="import-view-maps"
                   onClick={() => navigate('/maps', { replace: true })}
                 >
                   <Map size={17} />
@@ -407,6 +422,7 @@ export default function ImportPage({ onImported, lastImport }: Props) {
             <>
               <div
                 className={`drop-zone ${busy ? 'working' : ''} ${dragging ? 'dragging' : ''}`}
+                data-tour={busy ? 'import-progress' : undefined}
               >
                 <Database size={24} />
                 <strong>
