@@ -304,6 +304,7 @@ button:focus-visible,[role="button"]:focus-visible,[role="link"]:focus-visible{o
 .onboarding-dialog .btn.primary svg{transition:transform .2s ease}
 .onboarding-dialog .btn.primary:hover svg{transform:translateX(2px)}
 .onboarding-dialog::after{position:absolute;right:24px;bottom:24px;width:64px;height:1px;background:linear-gradient(90deg,transparent,rgba(var(--acid-rgb),.45));content:"";pointer-events:none}
+.tour-active .onboarding-dialog::after{display:none}
 @keyframes onboarding-in{from{opacity:0;transform:translateY(7px) scale(.985)}to{opacity:1;transform:none}}
 .onboarding-error{margin-top:18px;color:#ff9ca3;font-size:10px}
 .onboarding-actions{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:28px}
