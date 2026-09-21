@@ -167,6 +167,7 @@ export default function MapCanvas({
   const [copied, setCopied] = useState<number | null>(null);
   const [copiedGrenadeId, setCopiedGrenadeId] = useState<number | null>(null);
   const [activeGroupId, setActiveGroupId] = useState<string | null>(null);
+  const [legendOpen, setLegendOpen] = useState(false);
   const [preview, setPreview] = useState<{
     grenade: GrenadePreview;
     x: number;
@@ -591,133 +592,139 @@ export default function MapCanvas({
           <RotateCcw size={14} />
         </button>
       </div>
-      <details
-        className="map-legend"
-        data-map-control="1"
-        data-tour="map-legend"
-      >
-        <summary
-          aria-label={tr('Map legend', 'Легенда карты')}
-          data-tip={tr('Map legend', 'Легенда карты')}
-          data-tip-pos="right"
-        >
-          <CircleHelp size={15} aria-hidden="true" />
-        </summary>
+      <div className="map-legend-control" data-map-control="1">
         <button
           type="button"
-          className="map-legend-close"
-          aria-label={tr('Close map legend', 'Закрыть легенду карты')}
-          data-tip={tr('Close', 'Закрыть')}
+          className={`map-legend-toggle ${legendOpen ? 'is-active' : ''}`}
+          aria-label={tr('Map legend', 'Легенда карты')}
+          aria-expanded={legendOpen}
+          aria-controls="map-legend-content"
+          data-tour="map-legend"
+          data-tip={tr('Map legend', 'Легенда карты')}
           data-tip-pos="right"
-          onClick={(event) =>
-            event.currentTarget.parentElement?.removeAttribute('open')
-          }
+          onClick={() => setLegendOpen((open) => !open)}
         >
-          <X size={14} aria-hidden="true" />
+          <CircleHelp size={15} aria-hidden="true" />
         </button>
-        <div className="map-legend-content">
-          <div className="legend-group legend-clusters">
-            <strong>{tr('Clusters', 'Кластеры')}</strong>
-            <span>
-              <i className="legend-dot t" /> {tr('T side', 'Сторона T')}
-            </span>
-            <span>
-              <i className="legend-dot ct" /> {tr('CT side', 'Сторона CT')}
-            </span>
-            <span>
-              <i className="legend-dot mix" />{' '}
-              {tr('Mixed sides', 'Смешанные стороны')}
-            </span>
+        <section
+          className={`map-legend ${legendOpen ? 'is-visible' : ''}`}
+          aria-label={tr('Map legend', 'Легенда карты')}
+          aria-hidden={!legendOpen}
+        >
+          <button
+            type="button"
+            className="map-legend-close"
+            aria-label={tr('Close map legend', 'Закрыть легенду карты')}
+            data-tip={tr('Close', 'Закрыть')}
+            data-tip-pos="right"
+            onClick={() => setLegendOpen(false)}
+          >
+            <X size={14} aria-hidden="true" />
+          </button>
+          <div id="map-legend-content" className="map-legend-content">
+            <div className="legend-group legend-clusters">
+              <strong>{tr('Clusters', 'Кластеры')}</strong>
+              <span>
+                <i className="legend-dot t" /> {tr('T side', 'Сторона T')}
+              </span>
+              <span>
+                <i className="legend-dot ct" /> {tr('CT side', 'Сторона CT')}
+              </span>
+              <span>
+                <i className="legend-dot mix" />{' '}
+                {tr('Mixed sides', 'Смешанные стороны')}
+              </span>
+            </div>
+            <div className="legend-group legend-lineups">
+              <strong>{tr('Lineups', 'Раскидки')}</strong>
+              <span>
+                <i className="legend-throw" />{' '}
+                {tr(
+                  'One lineup: click to open',
+                  'Одна раскидка: нажмите, чтобы открыть',
+                )}
+              </span>
+              <span>
+                <i className="legend-throw legend-stack">2</i>{' '}
+                {tr(
+                  'Several lineups: click to choose',
+                  'Несколько раскидок: нажмите для выбора',
+                )}
+              </span>
+              <span>
+                <i className="legend-throw legend-core" />{' '}
+                {tr('Core lineup', 'Избранная раскидка')}
+              </span>
+              <span>
+                <i className="legend-throw legend-insta" />{' '}
+                {tr('Spawn match', 'Совпадение со спавном')}
+              </span>
+              <small>
+                {tr(
+                  'Right-click a lineup point to copy coordinates',
+                  'ПКМ по точке раскидки: копировать координаты',
+                )}
+              </small>
+            </div>
+            <div className="legend-group legend-types">
+              <strong>
+                {tr('Grenade type and trajectory', 'Тип гранаты и траектория')}
+              </strong>
+              <span>
+                <i className="legend-line smoke" /> {tr('Smoke', 'Смок')}
+              </span>
+              <span>
+                <i className="legend-line flash" /> {tr('Flash', 'Флешка')}
+              </span>
+              <span>
+                <i className="legend-line molotov" /> {tr('Molotov', 'Молотов')}
+              </span>
+              <span>
+                <i className="legend-line incendiary" />{' '}
+                {tr('Incendiary', 'Зажигательная')}
+              </span>
+              <span>
+                <i className="legend-line he" /> HE
+              </span>
+            </div>
+            <div className="legend-group legend-spawns">
+              <strong>{tr('Spawns', 'Спавны')}</strong>
+              <span>
+                <i className="legend-spawn t" /> {tr('T spawn', 'Спавн T')}
+              </span>
+              <span>
+                <i className="legend-spawn ct" /> {tr('CT spawn', 'Спавн CT')}
+              </span>
+              <small>
+                {tr(
+                  'Click a spawn to copy its command',
+                  'Нажмите на спавн, чтобы скопировать команду',
+                )}
+              </small>
+            </div>
+            <div className="legend-group legend-controls">
+              <strong>{tr('Hotkeys', 'Горячие клавиши')}</strong>
+              <span>
+                <kbd>{tr('Wheel', 'Колесо')}</kbd> {tr('Zoom', 'Масштаб')}
+              </span>
+              <span>
+                <kbd>{tr('Drag', 'Перетаскивание')}</kbd>{' '}
+                {tr('Pan when zoomed', 'Перемещение при увеличении')}
+              </span>
+              <span>
+                <kbd>{tr('Arrow keys', 'Стрелки')}</kbd>{' '}
+                {tr('Pan', 'Перемещение')}
+              </span>
+              <span>
+                <kbd>+ / -</kbd> {tr('Zoom', 'Масштаб')}
+              </span>
+              <span>
+                <kbd>0</kbd> {tr('Reset view', 'Сбросить вид')}
+              </span>
+            </div>
           </div>
-          <div className="legend-group legend-lineups">
-            <strong>{tr('Lineups', 'Раскидки')}</strong>
-            <span>
-              <i className="legend-throw" />{' '}
-              {tr(
-                'One lineup: click to open',
-                'Одна раскидка: нажмите, чтобы открыть',
-              )}
-            </span>
-            <span>
-              <i className="legend-throw legend-stack">2</i>{' '}
-              {tr(
-                'Several lineups: click to choose',
-                'Несколько раскидок: нажмите для выбора',
-              )}
-            </span>
-            <span>
-              <i className="legend-throw legend-core" />{' '}
-              {tr('Core lineup', 'Избранная раскидка')}
-            </span>
-            <span>
-              <i className="legend-throw legend-insta" />{' '}
-              {tr('Spawn match', 'Совпадение со спавном')}
-            </span>
-            <small>
-              {tr(
-                'Right-click a lineup point to copy coordinates',
-                'ПКМ по точке раскидки: копировать координаты',
-              )}
-            </small>
-          </div>
-          <div className="legend-group legend-types">
-            <strong>
-              {tr('Grenade type and trajectory', 'Тип гранаты и траектория')}
-            </strong>
-            <span>
-              <i className="legend-line smoke" /> {tr('Smoke', 'Смок')}
-            </span>
-            <span>
-              <i className="legend-line flash" /> {tr('Flash', 'Флешка')}
-            </span>
-            <span>
-              <i className="legend-line molotov" /> {tr('Molotov', 'Молотов')}
-            </span>
-            <span>
-              <i className="legend-line incendiary" />{' '}
-              {tr('Incendiary', 'Зажигательная')}
-            </span>
-            <span>
-              <i className="legend-line he" /> HE
-            </span>
-          </div>
-          <div className="legend-group legend-spawns">
-            <strong>{tr('Spawns', 'Спавны')}</strong>
-            <span>
-              <i className="legend-spawn t" /> {tr('T spawn', 'Спавн T')}
-            </span>
-            <span>
-              <i className="legend-spawn ct" /> {tr('CT spawn', 'Спавн CT')}
-            </span>
-            <small>
-              {tr(
-                'Click a spawn to copy its command',
-                'Нажмите на спавн, чтобы скопировать команду',
-              )}
-            </small>
-          </div>
-          <div className="legend-group legend-controls">
-            <strong>{tr('Hotkeys', 'Горячие клавиши')}</strong>
-            <span>
-              <kbd>{tr('Wheel', 'Колесо')}</kbd> {tr('Zoom', 'Масштаб')}
-            </span>
-            <span>
-              <kbd>{tr('Drag', 'Перетаскивание')}</kbd>{' '}
-              {tr('Pan when zoomed', 'Перемещение при увеличении')}
-            </span>
-            <span>
-              <kbd>{tr('Arrow keys', 'Стрелки')}</kbd>{' '}
-              {tr('Pan', 'Перемещение')}
-            </span>
-            <span>
-              <kbd>+ / -</kbd> {tr('Zoom', 'Масштаб')}
-            </span>
-            <span>
-              <kbd>0</kbd> {tr('Reset view', 'Сбросить вид')}
-            </span>
-          </div>
-        </div>
-      </details>
+        </section>
+      </div>
       <div
         ref={viewportRef}
         className={`map-viewport ${view.s > 1 ? 'is-draggable' : ''} ${viewAnimating ? 'is-camera-moving' : ''}`}
