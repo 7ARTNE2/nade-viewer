@@ -343,10 +343,16 @@ export default function OnboardingModal({
 
   useLayoutEffect(() => {
     if (!target) return;
-    const observedElement = document.querySelector(target.selector);
+    const observedElement =
+      document.querySelector(target.selector) ??
+      (step === 2 ? document.querySelector('[data-tour="map-tile"]') : null);
     const observedAnchor = resolveAnchor(observedElement, target.dialogAnchor);
+    // The tutorial card can overlap the two library controls. Highlight the
+    // actual button so the outline follows its rounded shape and stays usable.
     const highlightTargetDirectly =
-      step === 0 && importState === 'complete' ? observedElement : null;
+      step >= 11
+        ? (observedElement?.querySelector('button') ?? observedElement)
+        : null;
     if (highlightTargetDirectly)
       highlightTargetDirectly.classList.add('onboarding-target-active');
     const applyHighlight = (nextRect: DOMRect | null) => {
@@ -357,7 +363,16 @@ export default function OnboardingModal({
       setHighlightRect(nextRect);
     };
     const update = () => {
-      const element = document.querySelector(target.selector);
+      const element =
+        document.querySelector(target.selector) ??
+        (step === 2
+          ? document.querySelector('[data-tour="map-target"], [data-tour="map-tile"]')
+          : null);
+      if (step >= 11) {
+        const directTarget = element?.querySelector('button') ?? element;
+        if (directTarget && !directTarget.classList.contains('onboarding-target-active'))
+          directTarget.classList.add('onboarding-target-active');
+      }
       const nextRect = (() => {
         if (!element) return null;
         const rect = element.getBoundingClientRect();
@@ -368,14 +383,32 @@ export default function OnboardingModal({
         element?.getAttribute('aria-expanded') === 'true'
           ? document.querySelector('.map-legend.is-visible')
           : null;
+      const openLibraryMenu =
+        step === 11
+          ? document.querySelector('.snapshot-menu')
+          : step === 12
+            ? document.querySelector('.library-actions-popover')
+            : null;
       const anchorElement =
-        openLegend ?? resolveAnchor(element, target.dialogAnchor);
+        openLegend ?? openLibraryMenu ?? resolveAnchor(element, target.dialogAnchor);
       const anchorRect = anchorElement?.getBoundingClientRect() ?? nextRect;
-      const isVisible = Boolean(nextRect);
+       const directTarget =
+         step >= 11
+           ? (element?.querySelector('button') ?? element)
+           : null;
+       const directRect = directTarget?.getBoundingClientRect();
+      const visibleRect = step >= 11 ? directRect : nextRect;
+      const isVisible = Boolean(
+        visibleRect && visibleRect.width > 0 && visibleRect.height > 0,
+      );
       applyHighlight(nextRect);
       setTargetAvailable(isVisible);
       if (step === 1) setRecentHistoryAvailable(isVisible);
-      if (step === 2) setMapTargetAvailable(isVisible);
+      if (step === 2) {
+        setMapTargetAvailable(
+          isVisible || Boolean(document.querySelector('[data-tour="map-tile"]')),
+        );
+      }
       if (!anchorRect || !dialogRef.current) {
         setDialogPosition(null);
         return;
@@ -398,9 +431,11 @@ export default function OnboardingModal({
           element instanceof HTMLElement &&
           element.querySelector('[aria-expanded="true"]')) ||
           step === 6 ||
-          Boolean(openLegend)) &&
+          Boolean(openLegend) ||
+          Boolean(openLibraryMenu)) &&
         element instanceof HTMLElement &&
         (Boolean(openLegend) ||
+          Boolean(openLibraryMenu) ||
           element.hasAttribute('open') ||
           Boolean(element.querySelector('[aria-expanded="true"]')));
       const isViewMapsTransitionStep0Complete = Boolean(
@@ -486,6 +521,9 @@ export default function OnboardingModal({
     if (dialogRef.current) resizeObserver.observe(dialogRef.current);
     return () => {
       highlightTargetDirectly?.classList.remove('onboarding-target-active');
+      document
+        .querySelector(`${target.selector} button`)
+        ?.classList.remove('onboarding-target-active');
       window.removeEventListener('resize', update);
       window.removeEventListener('scroll', update, true);
       observer.disconnect();
@@ -711,42 +749,27 @@ export default function OnboardingModal({
                       )}
               </span>
             ) : step === 1 ? (
-              recentHistoryAvailable ? (
-                <div className="onboarding-nav-group">
-                  <button
-                    className="btn onboarding-back"
-                    type="button"
-                    disabled={busy}
-                    onClick={() => setStep((v) => Math.max(0, v - 1))}
-                    aria-label={tr('Back', 'Назад')}
-                  >
-                    <ChevronLeft size={15} />
-                    {tr('Back', 'Назад')}
-                  </button>
-                  <button
-                    className="btn primary"
-                    type="button"
-                    disabled={busy}
-                    onClick={() => setStep((v) => v + 1)}
-                  >
-                    {tr('Next tip', 'Далее')}
-                    <ArrowRight size={15} />
-                  </button>
-                </div>
-              ) : (
+              <div className="onboarding-nav-group">
+                <button
+                  className="btn onboarding-back"
+                  type="button"
+                  disabled={busy}
+                  onClick={() => setStep((v) => Math.max(0, v - 1))}
+                  aria-label={tr('Back', 'Назад')}
+                >
+                  <ChevronLeft size={15} />
+                  {tr('Back', 'Назад')}
+                </button>
                 <button
                   className="btn primary"
                   type="button"
                   disabled={busy}
-                  onClick={() =>
-                    run(async () => {
-                      onShowImport();
-                    })
-                  }
+                  onClick={() => setStep((v) => v + 1)}
                 >
-                  {tr('Import a library', 'Импортировать библиотеку')}
+                  {tr('Next tip', 'Далее')}
+                  <ArrowRight size={15} />
                 </button>
-              )
+              </div>
             ) : step === 2 ? (
               mapTargetAvailable ? (
                 <div className="onboarding-nav-group">
