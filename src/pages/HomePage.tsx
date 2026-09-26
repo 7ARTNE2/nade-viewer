@@ -89,7 +89,7 @@ export default function HomePage({ activeImportId }: HomePageProps) {
         >
           <Plus size={15} /> {tr('Import library', 'Импорт библиотеки')}
         </button>
-        <div className="recent-history">
+        <div className="recent-history" data-tour="recent-history">
           <div className="recent-history-title">
             <span>
               <History size={14} />{' '}
@@ -152,7 +152,7 @@ export default function HomePage({ activeImportId }: HomePageProps) {
               )}
             </strong>
           </div>
-          <div className="search-box">
+          <div className="search-box" data-tour="map-search">
             <Search size={16} />
             <input
               value={search}

@@ -293,12 +293,18 @@ button:focus-visible,[role="button"]:focus-visible,[role="link"]:focus-visible{o
 .onboarding-step-icon{margin-top:22px;background:linear-gradient(145deg,rgba(var(--acid-rgb),.18),rgba(var(--acid-rgb),.035));}
 .onboarding-dialog h1{max-width:14ch;margin:0 0 14px;font:600 clamp(23px,2vw,28px) Orbitron;letter-spacing:-.04em;line-height:1.12}
 .onboarding-dialog p{max-width:48ch;margin:0;color:var(--muted);font-size:13px;line-height:1.65}
-.onboarding-stepbar{display:flex;align-items:center;gap:10px;min-height:16px;color:var(--dim);font-size:9px;font-weight:800;letter-spacing:.1em;text-transform:uppercase}
-.onboarding-stage{color:var(--acid)}
-.onboarding-progress{margin:0 0 0 auto;color:var(--text);font-size:10px;font-variant-numeric:tabular-nums;letter-spacing:.02em}
-.onboarding-progress-track{display:flex;flex:1;gap:3px;height:3px}
-.onboarding-progress-track i{display:block;flex:1;border-radius:99px;background:var(--line)}
+.onboarding-stepbar{display:flex;align-items:center;gap:8px;min-height:16px;color:var(--dim);font-size:9px;font-weight:800;letter-spacing:.1em;text-transform:uppercase}
+.onboarding-stage{flex:none;color:var(--acid);font-size:8px;white-space:nowrap}
+.onboarding-progress{flex:none;margin:0;color:var(--text);font-size:10px;font-variant-numeric:tabular-nums;letter-spacing:.02em}
+.onboarding-progress-track{display:flex;flex:1;gap:3px;min-width:0;align-items:center;height:14px}
+.onboarding-progress-track i{display:block;flex:1;height:3px;border-radius:99px;background:var(--line)}
 .onboarding-progress-track i.active{background:var(--acid);box-shadow:0 0 7px rgba(var(--acid-rgb),.45)}
+.onboarding-dot{flex:1;height:3px;min-width:0;padding:0;border:0;border-radius:99px;background:var(--line);cursor:pointer;transition:background 160ms ease,box-shadow 160ms ease,transform 160ms ease}
+.onboarding-dot.active{background:var(--acid);box-shadow:0 0 7px rgba(var(--acid-rgb),.45)}
+.onboarding-dot.current{height:5px;background:var(--acid);box-shadow:0 0 10px rgba(var(--acid-rgb),.6);transform:translateY(0)}
+.onboarding-dot:hover{background:#3d4654}
+.onboarding-dot.active:hover{background:#d6ff55}
+.onboarding-dot:focus-visible{outline:2px solid var(--acid);outline-offset:2px}
 .onboarding-dialog .btn.primary{min-width:104px;box-shadow:0 8px 22px rgba(var(--acid-rgb),.13)}
 .onboarding-dialog .btn.primary:hover{box-shadow:0 10px 28px rgba(var(--acid-rgb),.24)}
 .onboarding-dialog .btn.primary svg{transition:transform .2s ease}
@@ -308,9 +314,16 @@ button:focus-visible,[role="button"]:focus-visible,[role="link"]:focus-visible{o
 @keyframes onboarding-in{from{opacity:0;transform:translateY(7px) scale(.985)}to{opacity:1;transform:none}}
 .onboarding-error{margin-top:18px;color:#ff9ca3;font-size:10px}
 .onboarding-actions{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:28px}
-.onboarding-actions-right{display:flex;gap:8px}
+.onboarding-actions-right{display:flex;gap:8px;align-items:center}
 .onboarding-skip{padding:7px 0;border:0;background:none;color:var(--dim);font-size:10px;font-weight:700;cursor:pointer}
 .onboarding-skip:hover{color:var(--text)}
+.onboarding-nav-group{display:flex;align-items:center;gap:8px}
+.onboarding-back{border-color:var(--line);background:var(--surface-2);color:var(--muted)}
+.onboarding-back:hover{border-color:rgba(var(--acid-rgb),.32);background:var(--surface-3);color:var(--text)}
+.onboarding-centered{left:50%!important;top:50%!important;transform:translate(-50%,-50%)}
+.onboarding-keyhint{display:flex;gap:10px;margin-top:16px;color:var(--dim);font-size:8px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}
+.onboarding-keyhint span{display:inline-flex;align-items:center;gap:4px;padding:4px 6px;border:1px solid var(--line-soft);border-radius:5px;background:rgba(255,255,255,.02)}
+.onboarding-keyhint svg{color:var(--dim)}
 .map-legend-control{position:absolute;z-index:60;inset:0;pointer-events:none}
 .map-legend{position:absolute;bottom:12px;left:12px;display:flex;width:238px;max-height:calc(100% - 24px);flex-direction:column;padding-bottom:44px;overflow:hidden;border:1px solid var(--line);border-radius:8px;background:rgba(11,14,18,.9);color:var(--muted);font-size:9px;box-shadow:0 8px 28px rgba(0,0,0,.34);opacity:0;visibility:hidden;pointer-events:none;contain:layout paint}
 .map-legend.is-visible{opacity:1;visibility:visible;pointer-events:auto}

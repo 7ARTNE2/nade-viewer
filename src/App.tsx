@@ -555,6 +555,7 @@ function Shell() {
                 </button>
                 <button
                   className={`topbar-nav-link ${toolsRouteActive ? 'active' : ''}`}
+                  data-tour="topbar-tools"
                   onClick={() => navigate('/tools')}
                 >
                   <Wrench size={16} />
@@ -562,6 +563,7 @@ function Shell() {
                 </button>
                 <div
                   className="language-switch"
+                  data-tour="language-switch"
                   aria-label={tr('Language', 'Язык')}
                 >
                   <button
@@ -585,6 +587,7 @@ function Shell() {
                 {activeImport ? (
                   <div
                     className="snapshot-picker"
+                    data-tour="library-switcher"
                     onBlur={(event) => {
                       if (
                         !event.currentTarget.contains(
@@ -751,6 +754,7 @@ function Shell() {
                 )}
                 <div
                   className="library-actions-menu"
+                  data-tour="library-actions"
                   onBlur={(event) => {
                     if (
                       !event.currentTarget.contains(

@@ -1,15 +1,20 @@
 import {
+  ArrowLeft,
   ArrowRight,
+  BadgeCheck,
   Check,
+  ChevronLeft,
   CircleHelp,
   ClipboardCheck,
   Database,
   Eye,
+  History,
   Layers3,
   Map,
   ScanLine,
   SlidersHorizontal,
   Upload,
+  Wrench,
   type LucideIcon,
 } from 'lucide-react';
 import {
@@ -38,6 +43,8 @@ type TourStep = {
   icon: LucideIcon;
   title: string;
   copy: string;
+  section: string;
+  sectionRu: string;
 };
 
 function resolveAnchor(
@@ -55,89 +62,150 @@ const steps: TourStep[] = [
     selector: '[data-tour="import-choose-file"]',
     dialogAnchor: '.import-action-card',
     icon: Upload,
+    section: 'Library',
+    sectionRu: 'Библиотека',
     title: 'Import a lineup library',
-    copy: 'Load a grenade_index.json or Core Nades file. Everything stays local to this device.',
+    copy: 'Load grenade_index.json, Core Nades JSON / MessagePack, or a Nadegrid Screenshot ZIP. Drag & drop works too. Everything stays local in SQLite.',
+  },
+  {
+    selector: '[data-tour="recent-history"]',
+    dialogAnchor: '[data-tour="recent-history"]',
+    icon: History,
+    section: 'Library',
+    sectionRu: 'Библиотека',
+    title: 'Reuse recent work',
+    copy: 'Search maps by name, check lineup counts per map, and reopen your last 10 viewed grenades from the left rail. History survives restarts.',
   },
   {
     selector: '[data-tour="map-target"]',
     icon: Map,
+    section: 'Library',
+    sectionRu: 'Библиотека',
     title: 'Pick a map to explore',
-    copy: 'Choose a map and move from the library into the tactical workspace.',
+    copy: 'Choose a map tile and move into the tactical workspace. Each tile shows how many lineups hit that map.',
   },
   {
     selector: '[data-tour="map-selector"]',
     icon: Map,
-    title: 'Switch maps quickly',
-    copy: 'Open the map selector to jump between available maps without returning to the library.',
+    section: 'Workspace',
+    sectionRu: 'Рабочее место',
+    title: 'Switch maps without going back',
+    copy: 'Open the map selector in the header to jump between available maps. Your filters and view settings are remembered per map.',
   },
   {
     selector: '[data-tour="map-toolbar-actions"]',
     icon: ScanLine,
+    section: 'Workspace',
+    sectionRu: 'Рабочее место',
     title: 'Control the radar view',
-    copy: 'Use Focus to hide the side panel, Icons to change marker style, Core and Insta to filter throws, Spawns to show spawn points, and Throw to group by throw position.',
+    copy: 'Focus hides the inspector, Icons toggles marker style, Core / Insta filter throws, Spawns shows spawn points, Throw groups by throw position. Nuke and Vertigo also offer Main / Lower radar.',
   },
   {
     selector: '[data-tour="map-filters"]',
     icon: SlidersHorizontal,
-    title: 'Cut through the noise',
-    copy: 'Combine filters for type, side, tournament, team, player, or search. Reset to see the full library again.',
+    section: 'Workspace',
+    sectionRu: 'Рабочее место',
+    title: 'Narrow by type, side, and match',
+    copy: 'Combine grenade type, side, and free-text search with Tournament → Team → Player. Picking a team limits the player list. Reset clears filters and the selected cluster.',
   },
   {
     selector: '[data-tour="visibility-rules"]',
     icon: Eye,
+    section: 'Workspace',
+    sectionRu: 'Рабочее место',
     title: 'Tune what stays visible',
-    copy: 'Raise the minimum usage to hide one-off throws and keep only proven lineups on the radar. Lower it to inspect the full library.',
+    copy: 'Raise Minimum usage to hide one-off throws and keep only proven lineups. Lower it to inspect the full library. The value is stored locally and applied per map.',
   },
   {
     selector: '[data-tour="map-canvas"]',
     icon: ScanLine,
+    section: 'Radar',
+    sectionRu: 'Радар',
     title: 'Read the radar at a glance',
-    copy: 'Scroll to zoom, drag to pan, then select a marker or cluster to reveal the throws behind it.',
+    copy: 'Scroll to zoom, drag to pan when zoomed, use +/- and 0 to reset, arrow keys to pan. Right-click any lineup point to copy its setpos / setang command.',
   },
   {
     selector: '[data-tour="map-legend"]',
     icon: CircleHelp,
-    title: 'Make every mark count',
-    copy: 'Use the legend to decode sides, grenade types, spawns, and trajectory lines. Reset the zoom when needed.',
+    section: 'Radar',
+    sectionRu: 'Радар',
+    title: 'Decode every mark',
+    copy: 'The legend explains T / CT / Mix cluster colors, grenade types, trajectory lines, stacked points (numbers), Core gold rings, Insta spawn matches, and pulsing spawns. Click a spawn to copy it.',
   },
   {
     selector: '[data-tour="cluster-list"]',
     icon: Layers3,
+    section: 'Radar',
+    sectionRu: 'Радар',
     title: 'Start with a cluster',
-    copy: 'Nearby landing or throw positions are grouped together. Select one here or directly on the radar.',
+    copy: 'Nearby landings or throw positions are grouped. Pick a cluster here or directly on the radar — the camera will fly to it and load up to 30 lineups per page.',
   },
   {
     selector: '[data-tour="grenade-list"]',
     icon: ClipboardCheck,
+    section: 'Radar',
+    sectionRu: 'Радар',
     title: 'Turn a find into a setup',
-    copy: 'Open a lineup for its thrower, landing point, and command. Copy it for practice or save it to Core.',
+    copy: 'Click any row to open the full detail, Copy the console command, or toggle Core. Insta badges mark spawn-aligned throws; throw-key icons and usage / airtime / round are shown inline.',
+  },
+  {
+    selector: '[data-tour="library-switcher"]',
+    icon: Database,
+    section: 'System',
+    sectionRu: 'Система',
+    title: 'Manage library snapshots',
+    copy: 'Switch the active Snapshot from the header, rename it in place, and see grenade counts at a glance. Each import is isolated — switching never merges data.',
+  },
+  {
+    selector: '[data-tour="library-actions"]',
+    icon: BadgeCheck,
+    section: 'System',
+    sectionRu: 'Система',
+    title: 'Export Core & keep it fresh',
+    copy: 'Open the … menu to export Core Nades to core_nades.json, check the online library manifest, download a compressed update, or delete the active library. Updates only replace data on success.',
+  },
+  {
+    selector: '[data-tour="topbar-tools"]',
+    icon: Wrench,
+    section: 'System',
+    sectionRu: 'Система',
+    title: 'Extend with Tools · EN / RU',
+    copy: 'Visit Tools for local plugins (e.g., demo parser). Switch EN / RU in the top bar — layouts handle Russian expansion. Per-map view state (filters, spawns, radar level, icons) persists locally.',
   },
 ];
 
 const russianTitles = [
   'Загрузите библиотеку раскидок',
+  'Возвращайтесь быстрее',
   'Выберите карту для изучения',
-  'Переключайте карты быстро',
+  'Переключайте карты на лету',
   'Управляйте видом радара',
-  'Отсейте лишнее',
+  'Фильтруйте по типу, стороне и матчу',
   'Настройте видимость',
   'Читайте радар с первого взгляда',
   'Разберитесь в обозначениях',
   'Начните с кластера',
   'Превратите находку в готовый сетап',
+  'Управляйте снимками библиотеки',
+  'Экспортируйте Core и обновляйте библиотеку',
+  'Расширяйте инструментами · EN / RU',
 ];
 
 const russianCopies = [
-  'Загрузите grenade_index.json или файл Core Nades. Все данные останутся на этом устройстве.',
-  'Выберите карту и перейдите из библиотеки в тактическое рабочее пространство.',
-  'Откройте селектор карты, чтобы быстро перейти на другую доступную карту, не возвращаясь в библиотеку.',
-  'Кнопки здесь управляют радаром: «Фокус» скрывает боковую панель, «Значки» меняет вид маркеров, «Избранные» и «Инста» фильтруют раскидки, «Спавны» показывает точки появления, а «Бросок» группирует по позиции броска.',
-  'Комбинируйте фильтры типа, стороны, турнира, команды, игрока и поиска. Сбросьте их, чтобы увидеть всю библиотеку.',
-  'Ползунком «Правила видимости» задайте минимальный порог использований. Повышайте его, чтобы скрыть разовые броски и оставить только проверенные, понижайте — чтобы изучить всю библиотеку.',
-  'Приближайте колесом, перемещайте карту перетаскиванием, затем выберите маркер или кластер.',
-  'Легенда объясняет стороны, типы гранат, точки спавна и траектории. При необходимости сбросьте масштаб.',
-  'Близкие позиции приземления или броска объединены в группы. Выберите кластер здесь или прямо на радаре.',
-  'Откройте раскидку, чтобы увидеть игрока, точку приземления и команду. Скопируйте ее для тренировки или добавьте в Core.',
+  'Загрузите grenade_index.json, Core Nades в JSON / MessagePack или ZIP скриншотов Nadegrid. Можно перетаскиванием — всё остаётся локально в SQLite.',
+  'Ищите карты по названию, смотрите счётчики раскидок на тайлах и открывайте 10 последних просмотренных гранат слева. История сохраняется после перезапуска.',
+  'Выберите тайл карты, чтобы перейти в тактическое рабочее пространство. На тайле видно, сколько раскидок приходится на карту.',
+  'Откройте селектор карты в шапке, чтобы прыгать между доступными картами. Фильтры и настройки вида запоминаются для каждой карты отдельно.',
+  '«Фокус» скрывает инспектор, «Значки» меняет вид маркеров, «Избранные» и «Инста» фильтруют раскидки, «Спавны» показывает точки появления, «Бросок» группирует по позиции броска. На Nuke и Vertigo есть переключение Основной / Нижний.',
+  'Совмещайте тип гранаты, сторону и поиск с цепочкой Турнир → Команда → Игрок. Выбор команды сужает список игроков. «Сбросить» очищает фильтры и выбранный кластер.',
+  'Ползунком «Правила видимости» задайте минимальный порог использований. Повышайте, чтобы скрыть разовые броски и оставить только проверенные; понижайте — чтобы изучить всю библиотеку. Хранится локально для каждой карты.',
+  'Колесом — масштаб, перетаскиванием — перемещение при приближении, +/- и 0 — зум и сброс, стрелками — сдвиг. ПКМ по точке раскидки — копировать команду setpos / setang.',
+  'Легенда объясняет цвета кластеров T / CT / Mix, типы гранат, линии траекторий, стопки (цифры), золотые кольца Core, метки Insta и пульсирующие спавны. Нажмите на спавн, чтобы скопировать.',
+  'Близкие точки приземления или броска объединены в группы. Выберите кластер здесь или прямо на радаре — камера подлетит к нему и загрузит до 30 раскидок на страницу.',
+  'Нажмите строку, чтобы открыть детали, «Копировать» — для команды консоли, или переключите Core. Метка Insta подсвечивает совпадение со спавном; иконки клавиш броска и метрики usage / airtime / round — прямо в строке.',
+  'Переключайте активный снимок в шапке, переименовывайте на месте и видите счётчики гранат. Каждый импорт изолирован — переключение не смешивает данные.',
+  'Откройте меню «…», чтобы экспортировать Core в core_nades.json, проверить онлайн-библиотеку по манифесту, скачать сжатое обновление или удалить активную библиотеку. Данные заменяются только при успешном импорте.',
+  'Откройте «Инструменты» для локальных плагинов (например, парсер демо). Переключайте EN / RU вверху — верстка учитывает длину русского. Состояние вида для каждой карты (фильтры, спавны, уровень радара, значки) сохраняется локально.',
 ];
 
 export default function OnboardingModal({
@@ -159,7 +227,10 @@ export default function OnboardingModal({
     top: number;
   } | null>(null);
   const [mapTargetAvailable, setMapTargetAvailable] = useState(false);
+  const [recentHistoryAvailable, setRecentHistoryAvailable] = useState(false);
   const [mapSelectionPending, setMapSelectionPending] = useState(false);
+  const [targetAvailable, setTargetAvailable] = useState(false);
+  const furthestStepRef = useRef(0);
   const startButtonRef = useRef<HTMLButtonElement>(null);
   const target = useMemo(() => {
     if (!started) return null;
@@ -173,6 +244,8 @@ export default function OnboardingModal({
           'The library is imported. Open the map list to choose where to start.',
           'Библиотека импортирована. Откройте список карт и выберите, с чего начать.',
         ),
+        section: steps[0].section,
+        sectionRu: steps[0].sectionRu,
       };
     }
     if (importState === 'importing') {
@@ -187,11 +260,18 @@ export default function OnboardingModal({
           'Keep Nade Viewer open while the library is prepared on this device.',
           'Не закрывайте Nade Viewer, пока библиотека подготавливается на этом устройстве.',
         ),
+        section: steps[0].section,
+        sectionRu: steps[0].sectionRu,
       };
     }
     return steps[0];
   }, [importState, locale, started, step, tr]);
   const StepIcon = target?.icon;
+
+  useEffect(() => {
+    furthestStepRef.current = Math.max(furthestStepRef.current, step);
+  }, [step]);
+
   const close = useCallback(() => {
     if (!busy) void onComplete();
   }, [busy, onComplete]);
@@ -208,10 +288,18 @@ export default function OnboardingModal({
         event.preventDefault();
         close();
       }
+      if (event.key === 'ArrowRight' && step < steps.length - 1) {
+        event.preventDefault();
+        setStep((v) => Math.min(steps.length - 1, v + 1));
+      }
+      if (event.key === 'ArrowLeft' && step > 0) {
+        event.preventDefault();
+        setStep((v) => Math.max(0, v - 1));
+      }
     };
     document.addEventListener('keydown', closeOnEscape);
     return () => document.removeEventListener('keydown', closeOnEscape);
-  }, [close, started]);
+  }, [close, started, step]);
 
   useEffect(() => {
     if (!started) return;
@@ -219,12 +307,14 @@ export default function OnboardingModal({
       setStep((value) => Math.max(value, 1));
     if (pathname.startsWith('/map/')) {
       setMapSelectionPending(false);
-      setStep((value) => Math.max(value, 2));
+      setStep((value) => Math.max(value, 3));
     }
   }, [activeImport, pathname, started]);
 
   useEffect(() => {
-    if (!started || step !== 1) return;
+    if (!started) return;
+    // step 2 is the map-target tile — clicking it should hint "opening map"
+    if (step !== 2) return;
     const advanceAfterMapSelection = (event: MouseEvent) => {
       if (
         (event.target as Element | null)?.closest('[data-tour="map-target"]')
@@ -238,12 +328,12 @@ export default function OnboardingModal({
   }, [started, step]);
 
   useEffect(() => {
-    if (!started || step !== 8) return;
+    if (!started || step !== 9) return;
     const advanceAfterClusterSelection = (event: MouseEvent) => {
       if (
         (event.target as Element | null)?.closest('[data-tour="cluster-list"]')
       ) {
-        setStep(9);
+        setStep(10);
       }
     };
     window.addEventListener('click', advanceAfterClusterSelection, true);
@@ -274,16 +364,18 @@ export default function OnboardingModal({
         return rect.width > 0 && rect.height > 0 ? rect : null;
       })();
       const openLegend =
-        step === 7 &&
+        step === 8 &&
         element?.getAttribute('aria-expanded') === 'true'
           ? document.querySelector('.map-legend.is-visible')
           : null;
       const anchorElement =
         openLegend ?? resolveAnchor(element, target.dialogAnchor);
       const anchorRect = anchorElement?.getBoundingClientRect() ?? nextRect;
-      const targetVisible = Boolean(nextRect);
+      const isVisible = Boolean(nextRect);
       applyHighlight(nextRect);
-      if (step === 1) setMapTargetAvailable(targetVisible);
+      setTargetAvailable(isVisible);
+      if (step === 1) setRecentHistoryAvailable(isVisible);
+      if (step === 2) setMapTargetAvailable(isVisible);
       if (!anchorRect || !dialogRef.current) {
         setDialogPosition(null);
         return;
@@ -302,10 +394,10 @@ export default function OnboardingModal({
         anchorRect.right + gap + dialogWidth <= viewportWidth - margin;
       const fitsLeft = anchorRect.left - gap - dialogWidth >= margin;
       const preferSidePlacement =
-        ((step === 2 &&
+        ((step === 3 &&
           element instanceof HTMLElement &&
           element.querySelector('[aria-expanded="true"]')) ||
-          step === 5 ||
+          step === 6 ||
           Boolean(openLegend)) &&
         element instanceof HTMLElement &&
         (Boolean(openLegend) ||
@@ -358,13 +450,17 @@ export default function OnboardingModal({
         Math.max(margin, top),
         Math.max(margin, viewportHeight - dialogHeight - margin),
       );
+      // If target not visible, center dialog instead of anchoring off-screen
+      if (!isVisible) {
+        setDialogPosition(null);
+        return;
+      }
       setDialogPosition({ left, top });
     };
     update();
     window.addEventListener('resize', update);
     window.addEventListener('scroll', update, true);
     const observer = new MutationObserver(() => {
-      // Re-bind observers if target element was swapped (choose-file -> view-maps)
       const fresh = document.querySelector(target.selector);
       if (fresh && fresh !== observedElement) {
         try {
@@ -415,6 +511,17 @@ export default function OnboardingModal({
     }
   };
 
+  const canGoBack = started && step > 0;
+  const canGoNext = started && step < steps.length - 1 && targetAvailable;
+  const isLastStep = started && step === steps.length - 1;
+
+  const currentSectionLabel =
+    started && target
+      ? locale === 'ru'
+        ? target.sectionRu.toUpperCase()
+        : target.section.toUpperCase()
+      : null;
+
   return (
     <div className={`onboarding-layer ${started ? 'tour-active' : ''}`}>
       {highlightRect ? (
@@ -430,7 +537,7 @@ export default function OnboardingModal({
       ) : null}
       <section
         ref={dialogRef}
-        className={`onboarding-dialog ${started && step === 0 ? 'onboarding-import-step' : ''}`}
+        className={`onboarding-dialog ${started && step === 0 ? 'onboarding-import-step' : ''} ${!targetAvailable && started ? 'onboarding-centered' : ''}`}
         role="dialog"
         aria-modal={started ? undefined : true}
         aria-labelledby="onboarding-title"
@@ -447,15 +554,42 @@ export default function OnboardingModal({
         {started ? (
           <div className="onboarding-stepbar">
             <span className="onboarding-stage">
-              {tr('TUTORIAL', 'ТУТОРИАЛ')}
+              {currentSectionLabel ?? tr('TUTORIAL', 'ТУТОРИАЛ')}
             </span>
             <div className="onboarding-progress-track" aria-hidden="true">
-              {steps.map((tourStep, index) => (
-                <i
-                  className={index <= step ? 'active' : ''}
-                  key={tourStep.selector}
-                />
-              ))}
+              {steps.map((tourStep, index) => {
+                const isActive = index <= step;
+                const isCurrent = index === step;
+                return (
+                  <button
+                    key={tourStep.selector + index}
+                    type="button"
+                    className={`onboarding-dot ${isActive ? 'active' : ''} ${isCurrent ? 'current' : ''}`}
+                    aria-label={tr(
+                      `Go to step ${index + 1}`,
+                      `Перейти к шагу ${index + 1}`,
+                    )}
+                    aria-current={isCurrent ? 'step' : undefined}
+                    disabled={busy}
+                    onClick={() => {
+                      // allow free navigation backward, and forward only to visited+1
+                      if (
+                        index <= furthestStepRef.current + 1 ||
+                        index < step
+                      ) {
+                        setStep(index);
+                        // auto-navigate for section jumps
+                        if (index <= 2 && pathname !== '/maps' && pathname !== '/import') {
+                          // stay where we are, dialog will be centered with hint
+                        }
+                        if (index >= 3 && index <= 10 && !pathname.startsWith('/map/') && activeImport) {
+                          // hint will tell user to pick a map; don't force navigation
+                        }
+                      }
+                    }}
+                  />
+                );
+              })}
             </div>
             <span className="onboarding-progress" aria-live="polite">
               {tr(
@@ -502,24 +636,34 @@ export default function OnboardingModal({
                   'Keep Nade Viewer open while the library is prepared on this device.',
                   'Не закрывайте Nade Viewer, пока библиотека подготавливается на этом устройстве.',
                 )
-              : started && step === 1 && !mapTargetAvailable
+              : started && step === 1 && !recentHistoryAvailable
+                ? tr(
+                    'Open the Maps page to see your recent grenades and map search. Import a library first if the list is empty.',
+                    'Откройте страницу Карт, чтобы увидеть недавние гранаты и поиск по картам. Если список пуст — сначала импортируйте библиотеку.',
+                  )
+                : started && step === 2 && !mapTargetAvailable
                 ? tr(
                     'This library has no maps to show yet. Import a non-empty grenade library to continue the tour, or skip it.',
                     'В этой библиотеке пока нет карт. Импортируйте непустую библиотеку гранат, чтобы продолжить обучение, или пропустите его.',
                   )
-                : started && locale === 'ru'
-                  ? russianCopies[step]
-                  : started
-                    ? target?.copy
-                    : activeImport
-                      ? tr(
-                          'A grenade library is already loaded. The tour will start with the map selection screen and use the first available map.',
-                          'Библиотека уже загружена. Обучение начнется с выбора первой доступной карты.',
-                        )
-                      : tr(
-                          'Start by importing a library. Then the tour will show map selection and a workspace for the first available map.',
-                          'Сначала импортируйте библиотеку. Затем обучение покажет выбор карты и интерфейс первой доступной карты.',
-                        )}
+                : started && !targetAvailable
+                  ? tr(
+                      'This part of the interface is not visible right now. Use Next to continue — you can revisit any step from the dots above.',
+                      'Этот элемент сейчас не виден. Нажмите «Далее», чтобы продолжить — к любому шагу можно вернуться по точкам выше.',
+                    )
+                  : started && locale === 'ru'
+                    ? russianCopies[step]
+                    : started
+                      ? target?.copy
+                      : activeImport
+                        ? tr(
+                            'A grenade library is already loaded. The tour will start with the map selection screen and use the first available map.',
+                            'Библиотека уже загружена. Обучение начнется с выбора первой доступной карты.',
+                          )
+                        : tr(
+                            'Start by importing a library. Then the tour will show map selection and a workspace for the first available map.',
+                            'Сначала импортируйте библиотеку. Затем обучение покажет выбор карты и интерфейс первой доступной карты.',
+                          )}
         </p>
         {error ? <div className="onboarding-error">{error}</div> : null}
         <div className="onboarding-actions">
@@ -567,15 +711,28 @@ export default function OnboardingModal({
                       )}
               </span>
             ) : step === 1 ? (
-              mapTargetAvailable ? (
-                <span className="onboarding-next-hint">
-                  {mapSelectionPending
-                    ? tr('Opening map...', 'Открываем карту...')
-                    : tr(
-                        'Click the highlighted map to continue',
-                        'Нажмите на выделенную карту, чтобы продолжить',
-                      )}
-                </span>
+              recentHistoryAvailable ? (
+                <div className="onboarding-nav-group">
+                  <button
+                    className="btn onboarding-back"
+                    type="button"
+                    disabled={busy}
+                    onClick={() => setStep((v) => Math.max(0, v - 1))}
+                    aria-label={tr('Back', 'Назад')}
+                  >
+                    <ChevronLeft size={15} />
+                    {tr('Back', 'Назад')}
+                  </button>
+                  <button
+                    className="btn primary"
+                    type="button"
+                    disabled={busy}
+                    onClick={() => setStep((v) => v + 1)}
+                  >
+                    {tr('Next tip', 'Далее')}
+                    <ArrowRight size={15} />
+                  </button>
+                </div>
               ) : (
                 <button
                   className="btn primary"
@@ -590,29 +747,150 @@ export default function OnboardingModal({
                   {tr('Import a library', 'Импортировать библиотеку')}
                 </button>
               )
-            ) : step < steps.length - 1 ? (
-              <button
-                className="btn primary"
-                type="button"
-                disabled={busy}
-                onClick={() => setStep((value) => value + 1)}
-              >
-                {tr('Next tip', 'Далее')}
-                <ArrowRight size={15} />
-              </button>
+            ) : step === 2 ? (
+              mapTargetAvailable ? (
+                <div className="onboarding-nav-group">
+                  <button
+                    className="btn onboarding-back"
+                    type="button"
+                    disabled={busy}
+                    onClick={() => setStep((v) => Math.max(0, v - 1))}
+                  >
+                    <ChevronLeft size={15} />
+                    {tr('Back', 'Назад')}
+                  </button>
+                  <span className="onboarding-next-hint">
+                    {mapSelectionPending
+                      ? tr('Opening map...', 'Открываем карту...')
+                      : tr(
+                          'Click the highlighted map to continue',
+                          'Нажмите на выделенную карту, чтобы продолжить',
+                        )}
+                  </span>
+                </div>
+              ) : (
+                <div className="onboarding-nav-group">
+                  <button
+                    className="btn onboarding-back"
+                    type="button"
+                    disabled={busy}
+                    onClick={() => setStep((v) => Math.max(0, v - 1))}
+                  >
+                    <ChevronLeft size={15} />
+                    {tr('Back', 'Назад')}
+                  </button>
+                  <button
+                    className="btn primary"
+                    type="button"
+                    disabled={busy}
+                    onClick={() =>
+                      run(async () => {
+                        onShowImport();
+                      })
+                    }
+                  >
+                    {tr('Import a library', 'Импортировать библиотеку')}
+                  </button>
+                </div>
+              )
+            ) : isLastStep ? (
+              <div className="onboarding-nav-group">
+                <button
+                  className="btn onboarding-back"
+                  type="button"
+                  disabled={busy}
+                  onClick={() => setStep((v) => Math.max(0, v - 1))}
+                >
+                  <ChevronLeft size={15} />
+                  {tr('Back', 'Назад')}
+                </button>
+                <button
+                  className="btn primary"
+                  type="button"
+                  disabled={busy}
+                  onClick={() => run(onComplete)}
+                >
+                  {tr('Finish', 'Завершить')}
+                  <Check size={15} />
+                </button>
+              </div>
+            ) : !targetAvailable ? (
+              <div className="onboarding-nav-group">
+                <button
+                  className="btn onboarding-back"
+                  type="button"
+                  disabled={busy}
+                  onClick={() => setStep((v) => Math.max(0, v - 1))}
+                >
+                  <ChevronLeft size={15} />
+                  {tr('Back', 'Назад')}
+                </button>
+                <button
+                  className="btn primary"
+                  type="button"
+                  disabled={busy}
+                  onClick={() => setStep((v) => v + 1)}
+                >
+                  {tr('Next tip', 'Далее')}
+                  <ArrowRight size={15} />
+                </button>
+              </div>
+            ) : canGoNext ? (
+              <div className="onboarding-nav-group">
+                <button
+                  className="btn onboarding-back"
+                  type="button"
+                  disabled={busy || !canGoBack}
+                  onClick={() => setStep((v) => Math.max(0, v - 1))}
+                >
+                  <ChevronLeft size={15} />
+                  {tr('Back', 'Назад')}
+                </button>
+                <button
+                  className="btn primary"
+                  type="button"
+                  disabled={busy}
+                  onClick={() => setStep((v) => v + 1)}
+                >
+                  {tr('Next tip', 'Далее')}
+                  <ArrowRight size={15} />
+                </button>
+              </div>
             ) : (
-              <button
-                className="btn primary"
-                type="button"
-                disabled={busy}
-                onClick={() => run(onComplete)}
-              >
-                {tr('Finish', 'Завершить')}
-                <Check size={15} />
-              </button>
+              <div className="onboarding-nav-group">
+                <button
+                  className="btn onboarding-back"
+                  type="button"
+                  disabled={busy}
+                  onClick={() => setStep((v) => Math.max(0, v - 1))}
+                >
+                  <ChevronLeft size={15} />
+                  {tr('Back', 'Назад')}
+                </button>
+                <button
+                  className="btn primary"
+                  type="button"
+                  disabled={busy}
+                  onClick={() => setStep((v) => v + 1)}
+                >
+                  {tr('Next tip', 'Далее')}
+                  <ArrowRight size={15} />
+                </button>
+              </div>
             )}
           </div>
         </div>
+        {started ? (
+          <div className="onboarding-keyhint" aria-hidden="true">
+            <span>
+              <ArrowLeft size={11} /> {tr('Back', 'Назад')}
+            </span>
+            <span>
+              {tr('Next', 'Далее')} <ArrowRight size={11} />
+            </span>
+            <span>Esc {tr('Skip', 'Пропуск')}</span>
+          </div>
+        ) : null}
       </section>
     </div>
   );
