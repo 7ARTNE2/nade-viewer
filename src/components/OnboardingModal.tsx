@@ -254,6 +254,30 @@ const steps: TourStep[] = [
     copy: 'Single lineup points on the radar also support right-click to copy setpos / setang. Left-click one to open its full details; the tutorial will continue there.',
   },
   {
+    selector: '[data-tour="grenade-core-toggle"]',
+    icon: BadgeCheck,
+    section: 'Lineup details',
+    sectionRu: 'Детали раскидки',
+    title: 'Save a useful lineup',
+    copy: 'Add this lineup to Core so it stays easy to find in your library.',
+  },
+  {
+    selector: '[data-tour="grenade-overview"]',
+    icon: ScanLine,
+    section: 'Lineup details',
+    sectionRu: 'Детали раскидки',
+    title: 'Explore the lineup details',
+    copy: 'The radar shows the throw point and trajectory. The header identifies the grenade type, side, thrower and team; these metrics show airtime, round time, usage count and tickrate.',
+  },
+  {
+    selector: '[data-tour="grenade-throw-keys"]',
+    icon: Crosshair,
+    section: 'Lineup details',
+    sectionRu: 'Детали раскидки',
+    title: 'Check the throw keys and screenshots',
+    copy: 'Throw keys show the inputs for the lineup. When screenshots are available, they appear after the coordinates: open a normal or wide view to compare your position and aim.',
+  },
+  {
     selector: '[data-tour="grenade-copy-coordinates"]',
     icon: ClipboardCheck,
     section: 'Lineup details',
@@ -262,12 +286,36 @@ const steps: TourStep[] = [
     copy: 'Copy the setpos / setang command from the coordinates panel.',
   },
   {
-    selector: '[data-tour="grenade-core-toggle"]',
-    icon: BadgeCheck,
+    selector: '[data-tour="grenade-demo-metadata"]',
+    icon: Database,
     section: 'Lineup details',
     sectionRu: 'Детали раскидки',
-    title: 'Save a useful lineup',
-    copy: 'Add this lineup to Core so it stays easy to find in your library.',
+    title: 'Trace the source demo',
+    copy: 'Demo metadata gives the source file and throw tick, so you can locate the exact moment this lineup was recorded.',
+  },
+  {
+    selector: '[data-tour="grenade-usage"]',
+    icon: History,
+    section: 'Lineup details',
+    sectionRu: 'Детали раскидки',
+    title: 'See how this lineup was used',
+    copy: 'Usage history charts throws over time. The panel names the player and team that used this lineup most often, and shows its last recorded demo and tick.',
+  },
+  {
+    selector: '[data-tour="grenade-throwers"]',
+    icon: History,
+    section: 'Lineup details',
+    sectionRu: 'Детали раскидки',
+    title: 'Find who used it',
+    copy: 'The throwers list names players who used this lineup. Click a name to search their throws on the map.',
+  },
+  {
+    selector: '[data-tour="grenade-similar"]',
+    icon: Layers3,
+    section: 'Lineup details',
+    sectionRu: 'Детали раскидки',
+    title: 'Compare similar lineups',
+    copy: 'Browse nearby or related grenades here. Open one for its details, copy its command, or save it to Core.',
   },
   {
     selector: '[data-tour="map-legend"]',
@@ -341,8 +389,14 @@ const russianTitles = [
   'Скопируйте координаты раскидки',
   'Скопируйте команду спавна',
   'Откройте раскидку',
-  'Скопируйте команду раскидки',
   'Сохраните раскидку в Core',
+  'Изучите страницу раскидки',
+  'Проверьте клавиши и скриншоты',
+  'Скопируйте команду раскидки',
+  'Найдите исходное демо',
+  'Посмотрите статистику использования',
+  'Узнайте, кто бросал гранату',
+  'Сравните похожие раскидки',
   'Разберитесь в обозначениях',
   'Начните с кластера',
   'Превратите находку в готовый сетап',
@@ -366,8 +420,14 @@ const russianCopies = [
   'Нажмите ПКМ по одиночной точке на радаре или по точке в раскрытой стопке, чтобы скопировать setpos / setang.',
   'Нажмите на пульсирующий спавн, чтобы скопировать команду setpos / setang.',
   'Одиночную точку на радаре тоже можно нажать правой кнопкой, чтобы скопировать setpos / setang. Нажмите левой кнопкой, чтобы открыть детали и продолжить обучение.',
-  'Скопируйте команду setpos / setang в блоке координат.',
   'Добавьте эту раскидку в Core, чтобы быстро находить её в библиотеке.',
+  'На радаре видны точка броска и траектория. В шапке указаны тип гранаты, сторона, игрок и команда. Здесь показаны время полёта, момент раунда, число использований и тикрейт.',
+  'Клавиши подсказывают, что нажимать для броска. Если доступны скриншоты, они расположены после координат: откройте обычный или широкий вид, чтобы сверить позицию и прицел.',
+  'Скопируйте команду setpos / setang в блоке координат.',
+  'Здесь указан файл демо и тик броска — по ним можно найти точный момент записи раскидки.',
+  'График показывает историю бросков. Здесь же указаны игрок и команда, которые чаще всего использовали раскидку, а также последнее демо и тик.',
+  'Здесь перечислены игроки, использовавшие раскидку. Нажмите на имя, чтобы найти их броски на карте.',
+  'Ниже показаны похожие гранаты. Можно открыть детали, скопировать команду или добавить раскидку в Core.',
   'Легенда объясняет цвета кластеров T / CT / Mix, типы гранат, линии траекторий, стопки (цифры), золотые кольца Core, метки Insta и пульсирующие спавны. Нажмите на спавн, чтобы скопировать.',
   'Близкие точки приземления или броска объединены в группы. Выберите кластер здесь или прямо на радаре — камера подлетит к нему и загрузит до 30 раскидок на страницу.',
   'Нажмите строку, чтобы открыть детали, «Копировать» — для команды консоли, или переключите Core. Метка Insta подсвечивает совпадение со спавном; иконки клавиш броска и метрики usage / airtime / round — прямо в строке.',
@@ -450,7 +510,7 @@ export default function OnboardingModal({
   }, [step]);
 
   useEffect(() => {
-    if (!started || step < 15 || !pathname.startsWith('/grenade/')) return;
+    if (!started || step < 21 || !pathname.startsWith('/grenade/')) return;
     if (radarPathRef.current) navigate(radarPathRef.current);
     else
       document
@@ -545,8 +605,8 @@ export default function OnboardingModal({
   useEffect(() => {
     if (!started || !pathname.startsWith('/grenade/')) return;
     const detailActions: Record<number, string> = {
-      13: 'grenade-copy-coordinates',
-      14: 'grenade-core-toggle',
+      13: 'grenade-core-toggle',
+      16: 'grenade-copy-coordinates',
     };
     const action = detailActions[step];
     if (!action) return;
@@ -560,6 +620,33 @@ export default function OnboardingModal({
     window.addEventListener('click', handleAction, true);
     return () => window.removeEventListener('click', handleAction, true);
   }, [pathname, started, step]);
+
+  useLayoutEffect(() => {
+    if (
+      !started ||
+      !pathname.startsWith('/grenade/') ||
+      step < 13 ||
+      step > 20 ||
+      !target
+    )
+      return;
+    const revealTarget = () => {
+      const element = document.querySelector(target.selector);
+      if (!element) return false;
+      element.scrollIntoView({
+        block: 'start',
+        inline: 'nearest',
+        behavior: 'instant',
+      });
+      return true;
+    };
+    if (revealTarget()) return;
+    const observer = new MutationObserver(() => {
+      if (revealTarget()) observer.disconnect();
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, [pathname, started, step, target]);
 
   useLayoutEffect(() => {
     if (!target) return;
@@ -671,14 +758,19 @@ export default function OnboardingModal({
       }
     };
     const directTargetFor = (element: Element | null) =>
-      (step >= 8 && step <= 14) || step >= 18
+      (step >= 8 && step <= 12) || step === 13 || step === 16 || step >= 24
         ? target.selector === '[data-tour="language-switch"]'
           ? element
           : (element?.querySelector('button') ?? element)
         : null;
     highlightDirectTarget(directTargetFor(observedElement));
     const applyHighlight = (nextRect: DOMRect | null) => {
-      if ((step >= 8 && step <= 14) || step >= 18) {
+      if (
+        (step >= 8 && step <= 12) ||
+        step === 13 ||
+        step === 16 ||
+        step >= 24
+      ) {
         setHighlightRect(null);
         return;
       }
@@ -719,13 +811,13 @@ export default function OnboardingModal({
             )
           : null);
       const openLegend =
-        step === 15 && element?.getAttribute('aria-expanded') === 'true'
+        step === 21 && element?.getAttribute('aria-expanded') === 'true'
           ? document.querySelector('.map-legend.is-visible')
           : null;
       const openLibraryMenu =
-        step === 18
+        step === 24
           ? document.querySelector('.snapshot-menu')
-          : step === 19
+          : step === 25
             ? document.querySelector('.library-actions-popover')
             : null;
       const openThrowStack =
@@ -750,7 +842,9 @@ export default function OnboardingModal({
       const directTarget = directTargetFor(element);
       const directRect = directTarget?.getBoundingClientRect();
       const visibleRect =
-        (step >= 8 && step <= 14) || step >= 18 ? directRect : nextRect;
+        (step >= 8 && step <= 12) || step === 13 || step === 16 || step >= 24
+          ? directRect
+          : nextRect;
       const isVisible = Boolean(
         visibleRect && visibleRect.width > 0 && visibleRect.height > 0,
       );
@@ -809,15 +903,34 @@ export default function OnboardingModal({
       ].filter((rect): rect is DOMRect =>
         Boolean(rect && rect.width && rect.height),
       );
-      const position = placeTourDialog(
-        anchorRect,
-        protectedRects,
-        radarViewport,
-        dialogWidth,
-        dialogHeight,
-        window.innerWidth,
-        window.innerHeight,
-      );
+      const inspectorRect =
+        step >= 13 && step <= 20 && pathname.startsWith('/grenade/')
+          ? document.querySelector('.detail-inspector')?.getBoundingClientRect()
+          : null;
+      const leftOfInspector =
+        inspectorRect && inspectorRect.left >= dialogWidth + 32
+          ? {
+              left: Math.max(16, inspectorRect.left - dialogWidth - 16),
+              top: Math.max(
+                16,
+                Math.min(
+                  anchorRect.top + (anchorRect.height - dialogHeight) / 2,
+                  window.innerHeight - dialogHeight - 16,
+                ),
+              ),
+            }
+          : null;
+      const position =
+        leftOfInspector ??
+        placeTourDialog(
+          anchorRect,
+          inspectorRect ? [...protectedRects, inspectorRect] : protectedRects,
+          radarViewport,
+          dialogWidth,
+          dialogHeight,
+          window.innerWidth,
+          window.innerHeight,
+        );
       // During radar practice, keep the card outside the radar even while a
       // marker loads or moves off screen. Other steps retain the centered hint.
       if (!isVisible && !radarViewport) {

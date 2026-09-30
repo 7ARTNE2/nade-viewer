@@ -464,7 +464,10 @@ export default function GrenadePage() {
           </button>
         </div>
 
-        <div className="metric-grid detail-order-metrics">
+        <div
+          className="metric-grid detail-order-metrics"
+          data-tour="grenade-overview"
+        >
           <div>
             <Timer size={14} />
             <span>{tr('Airtime', 'Время полета')}</span>
@@ -491,7 +494,10 @@ export default function GrenadePage() {
           </div>
         </div>
 
-        <div className="info-block usage-snapshot-block detail-order-usage">
+        <div
+          className="info-block usage-snapshot-block detail-order-usage"
+          data-tour="grenade-usage"
+        >
           <div className="usage-snapshot-heading">
             <div className="block-title">
               <span>
@@ -563,7 +569,10 @@ export default function GrenadePage() {
           />
         </div>
 
-        <div className="info-block detail-order-keys">
+        <div
+          className="info-block detail-order-keys"
+          data-tour="grenade-throw-keys"
+        >
           <div className="block-title">
             {tr('Throw keys', 'Клавиши броска')}
           </div>
@@ -694,7 +703,10 @@ export default function GrenadePage() {
           </div>
         </div>
 
-        <div className="info-block demo-metadata-block detail-order-metadata">
+        <div
+          className="info-block demo-metadata-block detail-order-metadata"
+          data-tour="grenade-demo-metadata"
+        >
           <div className="block-title">
             {tr('Demo metadata', 'Данные демо')}
           </div>
@@ -726,7 +738,10 @@ export default function GrenadePage() {
           </div>
         </div>
 
-        <div className="info-block usage-throwers-block detail-order-throwers">
+        <div
+          className="info-block usage-throwers-block detail-order-throwers"
+          data-tour="grenade-throwers"
+        >
           <div className="block-title">
             {tr('Usage throwers', 'Использовали игроки')}
             {grenade.usage_throwers.length ? (
@@ -753,7 +768,10 @@ export default function GrenadePage() {
           )}
         </div>
 
-        <div className="info-block detail-order-similar">
+        <div
+          className="info-block detail-order-similar"
+          data-tour="grenade-similar"
+        >
           <div className="block-title">
             {tr('Similar grenades', 'Похожие гранаты')}
           </div>
