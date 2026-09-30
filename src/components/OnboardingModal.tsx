@@ -274,8 +274,8 @@ const steps: TourStep[] = [
     icon: Crosshair,
     section: 'Lineup details',
     sectionRu: 'Детали раскидки',
-    title: 'Check the throw keys and screenshots',
-    copy: 'Throw keys show the inputs for the lineup. When screenshots are available, they appear after the coordinates: open a normal or wide view to compare your position and aim.',
+    title: 'Check the throw keys',
+    copy: 'These keys show the inputs for the lineup. Use them to repeat the throw in the game.',
   },
   {
     selector: '[data-tour="grenade-copy-coordinates"]',
@@ -284,6 +284,14 @@ const steps: TourStep[] = [
     sectionRu: 'Детали раскидки',
     title: 'Copy the lineup command',
     copy: 'Copy the setpos / setang command from the coordinates panel.',
+  },
+  {
+    selector: '[data-tour="grenade-screenshots"]',
+    icon: ScanLine,
+    section: 'Lineup details',
+    sectionRu: 'Детали раскидки',
+    title: 'Check the lineup screenshots',
+    copy: 'Open the normal FOV or wide FOV screenshot to compare your position and aim.',
   },
   {
     selector: '[data-tour="grenade-demo-metadata"]',
@@ -391,8 +399,9 @@ const russianTitles = [
   'Откройте раскидку',
   'Сохраните раскидку в Core',
   'Изучите страницу раскидки',
-  'Проверьте клавиши и скриншоты',
+  'Проверьте клавиши броска',
   'Скопируйте команду раскидки',
+  'Посмотрите скриншоты раскидки',
   'Найдите исходное демо',
   'Посмотрите статистику использования',
   'Узнайте, кто бросал гранату',
@@ -422,8 +431,9 @@ const russianCopies = [
   'Одиночную точку на радаре тоже можно нажать правой кнопкой, чтобы скопировать setpos / setang. Нажмите левой кнопкой, чтобы открыть детали и продолжить обучение.',
   'Добавьте эту раскидку в Core, чтобы быстро находить её в библиотеке.',
   'На радаре видны точка броска и траектория. В шапке указаны тип гранаты, сторона, игрок и команда. Здесь показаны время полёта, момент раунда, число использований и тикрейт.',
-  'Клавиши подсказывают, что нажимать для броска. Если доступны скриншоты, они расположены после координат: откройте обычный или широкий вид, чтобы сверить позицию и прицел.',
+  'Клавиши подсказывают, что нажимать для броска, чтобы повторить раскидку в игре.',
   'Скопируйте команду setpos / setang в блоке координат.',
+  'Откройте скриншот с обычным или широким FOV, чтобы сверить позицию и прицел.',
   'Здесь указан файл демо и тик броска — по ним можно найти точный момент записи раскидки.',
   'График показывает историю бросков. Здесь же указаны игрок и команда, которые чаще всего использовали раскидку, а также последнее демо и тик.',
   'Здесь перечислены игроки, использовавшие раскидку. Нажмите на имя, чтобы найти их броски на карте.',
@@ -461,6 +471,7 @@ export default function OnboardingModal({
   const [recentHistoryAvailable, setRecentHistoryAvailable] = useState(false);
   const [mapSelectionPending, setMapSelectionPending] = useState(false);
   const [targetAvailable, setTargetAvailable] = useState(false);
+  const [screenshotsAvailable, setScreenshotsAvailable] = useState(false);
   const furthestStepRef = useRef(0);
   const radarPathRef = useRef<string | null>(null);
   const startButtonRef = useRef<HTMLButtonElement>(null);
@@ -499,6 +510,44 @@ export default function OnboardingModal({
     return steps[0];
   }, [importState, locale, started, step, tr]);
   const StepIcon = target?.icon;
+  const screenshotStep = 17;
+  const visibleSteps = steps
+    .map((tourStep, index) => ({ tourStep, index }))
+    .filter(({ index }) => index !== screenshotStep || screenshotsAvailable);
+  const screenshotsInPage = () =>
+    Boolean(document.querySelector('[data-tour="grenade-screenshots"]'));
+  const nextStep = (value: number) =>
+    value === screenshotStep - 1 && !screenshotsInPage()
+      ? value + 2
+      : value + 1;
+  const previousStep = (value: number) =>
+    value === screenshotStep + 1 && !screenshotsInPage()
+      ? value - 2
+      : value - 1;
+
+  useEffect(() => {
+    if (!started || !pathname.startsWith('/grenade/')) {
+      setScreenshotsAvailable(false);
+      return;
+    }
+    const updateScreenshots = () =>
+      setScreenshotsAvailable(screenshotsInPage());
+    updateScreenshots();
+    const observer = new MutationObserver(updateScreenshots);
+    observer.observe(document.body, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, [pathname, started]);
+
+  useEffect(() => {
+    if (
+      step === screenshotStep &&
+      !screenshotsInPage() &&
+      pathname.startsWith('/grenade/') &&
+      document.querySelector('[data-tour="grenade-copy-coordinates"]')
+    ) {
+      setStep(screenshotStep + 1);
+    }
+  }, [pathname, screenshotsAvailable, step]);
 
   useEffect(() => {
     onStepChange(started && pathname.startsWith('/map/') ? step : null);
@@ -510,7 +559,7 @@ export default function OnboardingModal({
   }, [step]);
 
   useEffect(() => {
-    if (!started || step < 21 || !pathname.startsWith('/grenade/')) return;
+    if (!started || step < 22 || !pathname.startsWith('/grenade/')) return;
     if (radarPathRef.current) navigate(radarPathRef.current);
     else
       document
@@ -536,11 +585,11 @@ export default function OnboardingModal({
       }
       if (event.key === 'ArrowRight' && step < steps.length - 1) {
         event.preventDefault();
-        setStep((v) => Math.min(steps.length - 1, v + 1));
+        setStep((v) => Math.min(steps.length - 1, nextStep(v)));
       }
       if (event.key === 'ArrowLeft' && step > 0) {
         event.preventDefault();
-        setStep((v) => Math.max(0, v - 1));
+        setStep((v) => Math.max(0, previousStep(v)));
       }
     };
     document.addEventListener('keydown', closeOnEscape);
@@ -614,7 +663,7 @@ export default function OnboardingModal({
       if (
         (event.target as Element | null)?.closest(`[data-tour="${action}"]`)
       ) {
-        setStep((value) => value + 1);
+        setStep((value) => nextStep(value));
       }
     };
     window.addEventListener('click', handleAction, true);
@@ -626,7 +675,7 @@ export default function OnboardingModal({
       !started ||
       !pathname.startsWith('/grenade/') ||
       step < 13 ||
-      step > 20 ||
+      step > 21 ||
       !target
     )
       return;
@@ -758,7 +807,7 @@ export default function OnboardingModal({
       }
     };
     const directTargetFor = (element: Element | null) =>
-      (step >= 8 && step <= 12) || step === 13 || step === 16 || step >= 24
+      (step >= 8 && step <= 12) || step === 13 || step === 16 || step >= 25
         ? target.selector === '[data-tour="language-switch"]'
           ? element
           : (element?.querySelector('button') ?? element)
@@ -769,7 +818,7 @@ export default function OnboardingModal({
         (step >= 8 && step <= 12) ||
         step === 13 ||
         step === 16 ||
-        step >= 24
+        step >= 25
       ) {
         setHighlightRect(null);
         return;
@@ -811,13 +860,13 @@ export default function OnboardingModal({
             )
           : null);
       const openLegend =
-        step === 21 && element?.getAttribute('aria-expanded') === 'true'
+        step === 22 && element?.getAttribute('aria-expanded') === 'true'
           ? document.querySelector('.map-legend.is-visible')
           : null;
       const openLibraryMenu =
-        step === 24
+        step === 25
           ? document.querySelector('.snapshot-menu')
-          : step === 25
+          : step === 26
             ? document.querySelector('.library-actions-popover')
             : null;
       const openThrowStack =
@@ -842,7 +891,7 @@ export default function OnboardingModal({
       const directTarget = directTargetFor(element);
       const directRect = directTarget?.getBoundingClientRect();
       const visibleRect =
-        (step >= 8 && step <= 12) || step === 13 || step === 16 || step >= 24
+        (step >= 8 && step <= 12) || step === 13 || step === 16 || step >= 25
           ? directRect
           : nextRect;
       const isVisible = Boolean(
@@ -904,7 +953,7 @@ export default function OnboardingModal({
         Boolean(rect && rect.width && rect.height),
       );
       const inspectorRect =
-        step >= 13 && step <= 20 && pathname.startsWith('/grenade/')
+        step >= 13 && step <= 21 && pathname.startsWith('/grenade/')
           ? document.querySelector('.detail-inspector')?.getBoundingClientRect()
           : null;
       const leftOfInspector =
@@ -1057,7 +1106,7 @@ export default function OnboardingModal({
               {currentSectionLabel ?? tr('TUTORIAL', 'ТУТОРИАЛ')}
             </span>
             <div className="onboarding-progress-track" aria-hidden="true">
-              {steps.map((tourStep, index) => {
+              {visibleSteps.map(({ tourStep, index }) => {
                 const isActive = index <= step;
                 const isCurrent = index === step;
                 return (
@@ -1066,8 +1115,8 @@ export default function OnboardingModal({
                     type="button"
                     className={`onboarding-dot ${isActive ? 'active' : ''} ${isCurrent ? 'current' : ''}`}
                     aria-label={tr(
-                      `Go to step ${index + 1}`,
-                      `Перейти к шагу ${index + 1}`,
+                      `Go to step ${visibleSteps.findIndex((entry) => entry.index === index) + 1}`,
+                      `Перейти к шагу ${visibleSteps.findIndex((entry) => entry.index === index) + 1}`,
                     )}
                     aria-current={isCurrent ? 'step' : undefined}
                     disabled={busy}
@@ -1102,8 +1151,8 @@ export default function OnboardingModal({
             </div>
             <span className="onboarding-progress" aria-live="polite">
               {tr(
-                `${step + 1} / ${steps.length}`,
-                `${step + 1} / ${steps.length}`,
+                `${visibleSteps.filter(({ index }) => index <= step).length} / ${visibleSteps.length}`,
+                `${visibleSteps.filter(({ index }) => index <= step).length} / ${visibleSteps.length}`,
               )}
             </span>
           </div>
@@ -1225,7 +1274,7 @@ export default function OnboardingModal({
                   className="btn onboarding-back"
                   type="button"
                   disabled={busy}
-                  onClick={() => setStep((v) => Math.max(0, v - 1))}
+                  onClick={() => setStep((v) => Math.max(0, previousStep(v)))}
                   aria-label={tr('Back', 'Назад')}
                 >
                   <ChevronLeft size={15} />
@@ -1235,7 +1284,7 @@ export default function OnboardingModal({
                   className="btn primary"
                   type="button"
                   disabled={busy}
-                  onClick={() => setStep((v) => v + 1)}
+                  onClick={() => setStep((v) => nextStep(v))}
                 >
                   {tr('Next tip', 'Далее')}
                   <ArrowRight size={15} />
@@ -1248,7 +1297,7 @@ export default function OnboardingModal({
                     className="btn onboarding-back"
                     type="button"
                     disabled={busy}
-                    onClick={() => setStep((v) => Math.max(0, v - 1))}
+                    onClick={() => setStep((v) => Math.max(0, previousStep(v)))}
                   >
                     <ChevronLeft size={15} />
                     {tr('Back', 'Назад')}
@@ -1268,7 +1317,7 @@ export default function OnboardingModal({
                     className="btn onboarding-back"
                     type="button"
                     disabled={busy}
-                    onClick={() => setStep((v) => Math.max(0, v - 1))}
+                    onClick={() => setStep((v) => Math.max(0, previousStep(v)))}
                   >
                     <ChevronLeft size={15} />
                     {tr('Back', 'Назад')}
@@ -1293,7 +1342,7 @@ export default function OnboardingModal({
                   className="btn onboarding-back"
                   type="button"
                   disabled={busy}
-                  onClick={() => setStep((v) => Math.max(0, v - 1))}
+                  onClick={() => setStep((v) => Math.max(0, previousStep(v)))}
                 >
                   <ChevronLeft size={15} />
                   {tr('Back', 'Назад')}
@@ -1314,7 +1363,7 @@ export default function OnboardingModal({
                   className="btn onboarding-back"
                   type="button"
                   disabled={busy}
-                  onClick={() => setStep((v) => Math.max(0, v - 1))}
+                  onClick={() => setStep((v) => Math.max(0, previousStep(v)))}
                 >
                   <ChevronLeft size={15} />
                   {tr('Back', 'Назад')}
@@ -1323,7 +1372,7 @@ export default function OnboardingModal({
                   className="btn primary"
                   type="button"
                   disabled={busy}
-                  onClick={() => setStep((v) => v + 1)}
+                  onClick={() => setStep((v) => nextStep(v))}
                 >
                   {tr('Next tip', 'Далее')}
                   <ArrowRight size={15} />
@@ -1335,7 +1384,7 @@ export default function OnboardingModal({
                   className="btn onboarding-back"
                   type="button"
                   disabled={busy || !canGoBack}
-                  onClick={() => setStep((v) => Math.max(0, v - 1))}
+                  onClick={() => setStep((v) => Math.max(0, previousStep(v)))}
                 >
                   <ChevronLeft size={15} />
                   {tr('Back', 'Назад')}
@@ -1344,7 +1393,7 @@ export default function OnboardingModal({
                   className="btn primary"
                   type="button"
                   disabled={busy}
-                  onClick={() => setStep((v) => v + 1)}
+                  onClick={() => setStep((v) => nextStep(v))}
                 >
                   {tr('Next tip', 'Далее')}
                   <ArrowRight size={15} />
@@ -1356,7 +1405,7 @@ export default function OnboardingModal({
                   className="btn onboarding-back"
                   type="button"
                   disabled={busy}
-                  onClick={() => setStep((v) => Math.max(0, v - 1))}
+                  onClick={() => setStep((v) => Math.max(0, previousStep(v)))}
                 >
                   <ChevronLeft size={15} />
                   {tr('Back', 'Назад')}
@@ -1365,7 +1414,7 @@ export default function OnboardingModal({
                   className="btn primary"
                   type="button"
                   disabled={busy}
-                  onClick={() => setStep((v) => v + 1)}
+                  onClick={() => setStep((v) => nextStep(v))}
                 >
                   {tr('Next tip', 'Далее')}
                   <ArrowRight size={15} />

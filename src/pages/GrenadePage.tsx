@@ -612,7 +612,10 @@ export default function GrenadePage() {
         </div>
 
         {grenade.screenshot_image_path || grenade.screenshot_wide_image_path ? (
-          <div className="info-block lineup-screenshot-block detail-order-screenshots">
+          <div
+            className="info-block lineup-screenshot-block detail-order-screenshots"
+            data-tour="grenade-screenshots"
+          >
             <div className="block-title">
               {tr('Lineup screenshots', 'Скриншоты раскидки')}
             </div>
