@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type RefObject } from 'react';
 
 const focusableSelector =
   'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
@@ -6,6 +6,7 @@ const focusableSelector =
 export function useModalAccessibility<T extends HTMLElement>(
   open: boolean,
   onClose: () => void,
+  initialFocusRef?: RefObject<HTMLElement>,
 ) {
   const ref = useRef<T>(null);
   const restoreFocusRef = useRef<HTMLElement | null>(null);
@@ -19,7 +20,9 @@ export function useModalAccessibility<T extends HTMLElement>(
     const container = ref.current;
     const focusFirst = () => {
       const first = container?.querySelector<HTMLElement>(focusableSelector);
-      first?.focus();
+      const preferred = initialFocusRef?.current;
+      if (preferred && container?.contains(preferred)) preferred.focus();
+      else first?.focus();
     };
     focusFirst();
     const onKeyDown = (event: KeyboardEvent) => {
@@ -48,7 +51,7 @@ export function useModalAccessibility<T extends HTMLElement>(
       document.removeEventListener('keydown', onKeyDown);
       restoreFocusRef.current?.focus();
     };
-  }, [open, onClose]);
+  }, [open, onClose, initialFocusRef]);
 
   return ref;
 }

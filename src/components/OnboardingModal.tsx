@@ -570,11 +570,7 @@ export default function OnboardingModal({
   const close = useCallback(() => {
     if (!busy) void onComplete();
   }, [busy, onComplete]);
-  const dialogRef = useModalAccessibility(!started, close);
-
-  useEffect(() => {
-    if (!started) startButtonRef.current?.focus();
-  }, [started]);
+  const dialogRef = useModalAccessibility(!started, close, startButtonRef);
 
   useEffect(() => {
     if (!started) return;
