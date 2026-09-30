@@ -9,6 +9,7 @@ import {
   Database,
   Eye,
   History,
+  Languages,
   Layers3,
   Map,
   ScanLine,
@@ -169,8 +170,16 @@ const steps: TourStep[] = [
     icon: Wrench,
     section: 'System',
     sectionRu: 'Система',
-    title: 'Extend with Tools · EN / RU',
-    copy: 'Visit Tools for local plugins (e.g., demo parser). Switch EN / RU in the top bar — layouts handle Russian expansion. Per-map view state (filters, spawns, radar level, icons) persists locally.',
+    title: 'Extend with Tools',
+    copy: 'Visit Tools to open local plugins, such as the demo parser.',
+  },
+  {
+    selector: '[data-tour="language-switch"]',
+    icon: Languages,
+    section: 'System',
+    sectionRu: 'Система',
+    title: 'Switch the interface language',
+    copy: 'Choose EN or RU in the top bar. The layout adapts to Russian, and your per-map view settings stay saved.',
   },
 ];
 
@@ -188,7 +197,8 @@ const russianTitles = [
   'Превратите находку в готовый сетап',
   'Управляйте снимками библиотеки',
   'Экспортируйте Core и обновляйте библиотеку',
-  'Расширяйте инструментами · EN / RU',
+  'Откройте инструменты',
+  'Переключите язык интерфейса',
 ];
 
 const russianCopies = [
@@ -205,7 +215,8 @@ const russianCopies = [
   'Нажмите строку, чтобы открыть детали, «Копировать» — для команды консоли, или переключите Core. Метка Insta подсвечивает совпадение со спавном; иконки клавиш броска и метрики usage / airtime / round — прямо в строке.',
   'Переключайте активный снимок в шапке, переименовывайте на месте и видите счётчики гранат. Каждый импорт изолирован — переключение не смешивает данные.',
   'Откройте меню «…», чтобы экспортировать Core в core_nades.json, проверить онлайн-библиотеку по манифесту, скачать сжатое обновление или удалить активную библиотеку. Данные заменяются только при успешном импорте.',
-  'Откройте «Инструменты» для локальных плагинов (например, парсер демо). Переключайте EN / RU вверху — верстка учитывает длину русского. Состояние вида для каждой карты (фильтры, спавны, уровень радара, значки) сохраняется локально.',
+  'Откройте «Инструменты» для локальных плагинов, например парсера демо.',
+  'Переключайте EN / RU вверху. Верстка учитывает длину русского, а состояние вида для каждой карты сохраняется локально.',
 ];
 
 export default function OnboardingModal({
@@ -351,7 +362,9 @@ export default function OnboardingModal({
     // actual button so the outline follows its rounded shape and stays usable.
     const highlightTargetDirectly =
       step >= 11
-        ? (observedElement?.querySelector('button') ?? observedElement)
+        ? target.selector === '[data-tour="language-switch"]'
+          ? observedElement
+          : (observedElement?.querySelector('button') ?? observedElement)
         : null;
     if (highlightTargetDirectly)
       highlightTargetDirectly.classList.add('onboarding-target-active');
@@ -369,7 +382,10 @@ export default function OnboardingModal({
           ? document.querySelector('[data-tour="map-target"], [data-tour="map-tile"]')
           : null);
       if (step >= 11) {
-        const directTarget = element?.querySelector('button') ?? element;
+        const directTarget =
+          target.selector === '[data-tour="language-switch"]'
+            ? element
+            : (element?.querySelector('button') ?? element);
         if (directTarget && !directTarget.classList.contains('onboarding-target-active'))
           directTarget.classList.add('onboarding-target-active');
       }
@@ -394,7 +410,9 @@ export default function OnboardingModal({
       const anchorRect = anchorElement?.getBoundingClientRect() ?? nextRect;
        const directTarget =
          step >= 11
-           ? (element?.querySelector('button') ?? element)
+           ? target.selector === '[data-tour="language-switch"]'
+             ? element
+             : (element?.querySelector('button') ?? element)
            : null;
        const directRect = directTarget?.getBoundingClientRect();
       const visibleRect = step >= 11 ? directRect : nextRect;
