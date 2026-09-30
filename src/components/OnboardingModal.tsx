@@ -563,8 +563,22 @@ export default function OnboardingModal({
 
   useLayoutEffect(() => {
     if (!target) return;
+    // Select the spawn only after the radar has returned to its overview.
+    // Keep that choice for the rest of this step as the camera or DOM updates.
+    let selectedSpawn: Element | null = null;
     const findTarget = () => {
       if (step === 11) {
+        if (selectedSpawn?.isConnected) return selectedSpawn;
+        const camera = document.querySelector<HTMLElement>('.map-camera');
+        const scale = Number(
+          camera?.style.transform.match(/scale\(([^)]+)\)/)?.[1] ?? 1,
+        );
+        if (
+          !camera ||
+          camera.classList.contains('is-animating') ||
+          scale > 1.01
+        )
+          return null;
         const viewport = document
           .querySelector('.map-viewport')
           ?.getBoundingClientRect();
@@ -617,7 +631,7 @@ export default function OnboardingModal({
             (rect.top + rect.bottom - viewport.top - viewport.bottom) / 2,
           );
         };
-        return (
+        selectedSpawn =
           visibleSpawns.sort((first, second) => {
             const firstClearance = clearance(first);
             const secondClearance = clearance(second);
@@ -627,8 +641,8 @@ export default function OnboardingModal({
             if (!firstFree && firstClearance !== secondClearance)
               return secondClearance - firstClearance;
             return distanceFromCenter(first) - distanceFromCenter(second);
-          })[0] ?? null
-        );
+          })[0] ?? null;
+        return selectedSpawn;
       }
       return (
         (step === 10
@@ -684,6 +698,26 @@ export default function OnboardingModal({
         const rect = element.getBoundingClientRect();
         return rect.width > 0 && rect.height > 0 ? rect : null;
       })();
+      const mapMenu =
+        step === 3 ? element?.querySelector('.map-selector-menu') : null;
+      const mapTriggerRect =
+        step === 3
+          ? element
+              ?.querySelector('.map-selector-trigger')
+              ?.getBoundingClientRect()
+          : null;
+      // Reserve the dropdown's space before it opens so the card never blocks
+      // its options on the first click.
+      const mapMenuRect =
+        mapMenu?.getBoundingClientRect() ??
+        (mapTriggerRect
+          ? new DOMRect(
+              mapTriggerRect.left,
+              mapTriggerRect.bottom + 7,
+              Math.min(164, window.innerWidth - 24),
+              Math.min(380, window.innerHeight - 100),
+            )
+          : null);
       const openLegend =
         step === 15 && element?.getAttribute('aria-expanded') === 'true'
           ? document.querySelector('.map-legend.is-visible')
@@ -709,7 +743,10 @@ export default function OnboardingModal({
             null)
           : null;
       const anchorRect =
-        anchorElement?.getBoundingClientRect() ?? nextRect ?? radarViewport;
+        mapMenuRect ??
+        anchorElement?.getBoundingClientRect() ??
+        nextRect ??
+        radarViewport;
       const directTarget = directTargetFor(element);
       const directRect = directTarget?.getBoundingClientRect();
       const visibleRect =
@@ -760,6 +797,8 @@ export default function OnboardingModal({
         nextRect,
         directRect,
         anchorRect,
+        mapTriggerRect,
+        mapMenuRect,
         openThrowStack?.getBoundingClientRect(),
         ...radarDetails,
         ...(step === 11
@@ -797,7 +836,11 @@ export default function OnboardingModal({
     // A camera transition moves map markers without a resize or DOM mutation.
     let animationFrame = 0;
     const trackCamera = () => {
-      if (document.querySelector('.map-camera.is-animating')) update();
+      if (
+        document.querySelector('.map-camera.is-animating') ||
+        (step === 11 && !selectedSpawn)
+      )
+        update();
       animationFrame = window.requestAnimationFrame(trackCamera);
     };
     if (step >= 8 && step <= 12) trackCamera();
