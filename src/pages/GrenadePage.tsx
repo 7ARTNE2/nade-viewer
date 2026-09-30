@@ -398,6 +398,7 @@ export default function GrenadePage() {
         <div className="map-toolbar">
           <button
             className="icon-btn"
+            data-tour="grenade-back-to-map"
             onClick={goBack}
             aria-label={tr('Back to maps', 'К картам')}
           >
@@ -452,6 +453,7 @@ export default function GrenadePage() {
           {isInsta ? <span className="insta-badge">{INSTA_LABEL}</span> : null}
           <button
             className={`core-action detail-core ${grenade.is_core ? 'active' : ''}`}
+            data-tour="grenade-core-toggle"
             onClick={() => handleCoreToggle(grenade.id, !grenade.is_core)}
             aria-pressed={grenade.is_core}
           >
@@ -675,6 +677,7 @@ export default function GrenadePage() {
             {tr('Coordinates', 'Координаты')}
             <button
               className={`micro-btn detail-copy-button ${copied ? 'copied' : ''}`}
+              data-tour="grenade-copy-coordinates"
               type="button"
               onClick={() => copy(grenade.coordinates)}
             >

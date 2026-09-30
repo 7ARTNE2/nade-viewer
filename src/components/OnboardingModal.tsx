@@ -13,6 +13,7 @@ import {
   Layers3,
   Map,
   ScanLine,
+  Crosshair,
   SlidersHorizontal,
   Upload,
   Wrench,
@@ -26,6 +27,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useI18n } from '../i18n';
 import { useModalAccessibility } from '../lib/useModalAccessibility';
 
@@ -36,6 +38,7 @@ type OnboardingModalProps = {
   activeImport: boolean;
   importState: 'idle' | 'importing' | 'complete';
   pathname: string;
+  onStepChange: (step: number | null) => void;
 };
 
 type TourStep = {
@@ -56,6 +59,91 @@ function resolveAnchor(
   if (typeof dialogAnchor === 'string')
     return document.querySelector(dialogAnchor);
   return element;
+}
+
+type DialogPosition = { left: number; top: number };
+
+function placeTourDialog(
+  anchor: DOMRect,
+  protectedRects: DOMRect[],
+  radarRect: DOMRect | null,
+  dialogWidth: number,
+  dialogHeight: number,
+  viewportWidth: number,
+  viewportHeight: number,
+): DialogPosition {
+  const margin = 16;
+  const gap = 14;
+  const clamp = (value: number, limit: number) =>
+    Math.min(Math.max(margin, value), Math.max(margin, limit - margin));
+  const left = anchor.left - dialogWidth - gap;
+  const right = anchor.right + gap;
+  const above = anchor.top - dialogHeight - gap;
+  const below = anchor.bottom + gap;
+  const centerX = anchor.left + (anchor.width - dialogWidth) / 2;
+  const centerY = anchor.top + (anchor.height - dialogHeight) / 2;
+  const candidates: DialogPosition[] = [
+    ...[anchor.left, centerX, anchor.right - dialogWidth].flatMap((x) => [
+      { left: x, top: below },
+      { left: x, top: above },
+    ]),
+    ...[anchor.top, centerY, anchor.bottom - dialogHeight].flatMap((y) => [
+      { left: right, top: y },
+      { left, top: y },
+    ]),
+    ...(radarRect
+      ? [
+          { left: radarRect.right + gap, top: radarRect.top },
+          { left: radarRect.right + gap, top: radarRect.bottom - dialogHeight },
+          { left: radarRect.left - dialogWidth - gap, top: radarRect.top },
+          {
+            left: radarRect.left - dialogWidth - gap,
+            top: radarRect.bottom - dialogHeight,
+          },
+          { left: radarRect.left, top: radarRect.top - dialogHeight - gap },
+          { left: radarRect.left, top: radarRect.bottom + gap },
+        ]
+      : []),
+    ...[margin, viewportWidth - dialogWidth - margin].flatMap((x) => [
+      { left: x, top: margin },
+      { left: x, top: viewportHeight - dialogHeight - margin },
+    ]),
+  ];
+  const overlap = (position: DialogPosition, rect: DOMRect) =>
+    Math.max(
+      0,
+      Math.min(position.left + dialogWidth, rect.right) -
+        Math.max(position.left, rect.left),
+    ) *
+    Math.max(
+      0,
+      Math.min(position.top + dialogHeight, rect.bottom) -
+        Math.max(position.top, rect.top),
+    );
+  let best = { left: margin, top: margin };
+  let bestScore = Infinity;
+  for (const candidate of candidates) {
+    const position = {
+      left: clamp(candidate.left, viewportWidth - dialogWidth),
+      top: clamp(candidate.top, viewportHeight - dialogHeight),
+    };
+    const coveredArea = protectedRects.reduce(
+      (total, rect) => total + overlap(position, rect),
+      0,
+    );
+    const distance = Math.hypot(
+      position.left + dialogWidth / 2 - (anchor.left + anchor.width / 2),
+      position.top + dialogHeight / 2 - (anchor.top + anchor.height / 2),
+    );
+    // Never cover the active control when another placement is available.
+    const radarArea = radarRect ? overlap(position, radarRect) : 0;
+    const score = coveredArea * 10000 + radarArea * 10 + distance;
+    if (score < bestScore) {
+      best = position;
+      bestScore = score;
+    }
+  }
+  return best;
 }
 
 const steps: TourStep[] = [
@@ -126,6 +214,62 @@ const steps: TourStep[] = [
     copy: 'Scroll to zoom, drag to pan when zoomed, use +/- and 0 to reset, and use arrow keys to pan. Click a cluster to focus it, click a lineup point to open it (or choose from a stack), click a spawn to copy its command, and right-click a lineup point to copy setpos / setang.',
   },
   {
+    selector: '[data-tour-action="cluster-click"]',
+    icon: Layers3,
+    section: 'Radar practice',
+    sectionRu: 'Практика радара',
+    title: 'Focus a cluster',
+    copy: 'Click a numbered cluster on the radar. The camera will focus on it and load its lineups.',
+  },
+  {
+    selector: '[data-tour-action="throw-stack"]',
+    icon: Layers3,
+    section: 'Radar practice',
+    sectionRu: 'Практика радара',
+    title: 'Open a lineup stack',
+    copy: 'Click a numbered stack to reveal its lineup points below the radar. Right-click any revealed point to copy its setpos / setang command.',
+  },
+  {
+    selector: '[data-tour-action-context="grenade-contextmenu"]',
+    icon: ScanLine,
+    section: 'Radar practice',
+    sectionRu: 'Практика радара',
+    title: 'Copy lineup coordinates',
+    copy: 'Right-click an individual lineup point directly on the radar, or a point in an opened stack, to copy its setpos / setang command.',
+  },
+  {
+    selector: '[data-tour-action="spawn-click"]',
+    icon: Crosshair,
+    section: 'Radar practice',
+    sectionRu: 'Практика радара',
+    title: 'Copy a spawn command',
+    copy: 'Click a pulsing spawn marker to copy its setpos / setang command.',
+  },
+  {
+    selector: '[data-tour-action="throw-single"]',
+    icon: ClipboardCheck,
+    section: 'Radar practice',
+    sectionRu: 'Практика радара',
+    title: 'Open a lineup',
+    copy: 'Single lineup points on the radar also support right-click to copy setpos / setang. Left-click one to open its full details; the tutorial will continue there.',
+  },
+  {
+    selector: '[data-tour="grenade-copy-coordinates"]',
+    icon: ClipboardCheck,
+    section: 'Lineup details',
+    sectionRu: 'Детали раскидки',
+    title: 'Copy the lineup command',
+    copy: 'Copy the setpos / setang command from the coordinates panel.',
+  },
+  {
+    selector: '[data-tour="grenade-core-toggle"]',
+    icon: BadgeCheck,
+    section: 'Lineup details',
+    sectionRu: 'Детали раскидки',
+    title: 'Save a useful lineup',
+    copy: 'Add this lineup to Core so it stays easy to find in your library.',
+  },
+  {
     selector: '[data-tour="map-legend"]',
     icon: CircleHelp,
     section: 'Radar',
@@ -192,6 +336,13 @@ const russianTitles = [
   'Фильтруйте по типу, стороне и матчу',
   'Настройте видимость',
   'Читайте радар с первого взгляда',
+  'Сфокусируйтесь на кластере',
+  'Откройте стопку раскидок',
+  'Скопируйте координаты раскидки',
+  'Скопируйте команду спавна',
+  'Откройте раскидку',
+  'Скопируйте команду раскидки',
+  'Сохраните раскидку в Core',
   'Разберитесь в обозначениях',
   'Начните с кластера',
   'Превратите находку в готовый сетап',
@@ -210,6 +361,13 @@ const russianCopies = [
   'Совмещайте тип гранаты, сторону и поиск с цепочкой Турнир → Команда → Игрок. Выбор команды сужает список игроков. «Сбросить» очищает фильтры и выбранный кластер.',
   'Ползунком «Правила видимости» задайте минимальный порог использований. Повышайте, чтобы скрыть разовые броски и оставить только проверенные; понижайте — чтобы изучить всю библиотеку. Хранится локально для каждой карты.',
   'Колесом — масштаб, перетаскиванием — перемещение при приближении, +/- и 0 — зум и сброс, стрелками — сдвиг. Нажмите кластер, чтобы сфокусироваться на нём; точку раскидки — чтобы открыть её или выбрать из стопки; спавн — чтобы скопировать команду. ПКМ по точке раскидки копирует setpos / setang.',
+  'Нажмите пронумерованный кластер на радаре. Камера сфокусируется на нём и загрузит его раскидки.',
+  'Нажмите пронумерованную стопку, чтобы раскрыть точки под радаром. Правый клик по любой из них копирует команду setpos / setang.',
+  'Нажмите ПКМ по одиночной точке на радаре или по точке в раскрытой стопке, чтобы скопировать setpos / setang.',
+  'Нажмите на пульсирующий спавн, чтобы скопировать команду setpos / setang.',
+  'Одиночную точку на радаре тоже можно нажать правой кнопкой, чтобы скопировать setpos / setang. Нажмите левой кнопкой, чтобы открыть детали и продолжить обучение.',
+  'Скопируйте команду setpos / setang в блоке координат.',
+  'Добавьте эту раскидку в Core, чтобы быстро находить её в библиотеке.',
   'Легенда объясняет цвета кластеров T / CT / Mix, типы гранат, линии траекторий, стопки (цифры), золотые кольца Core, метки Insta и пульсирующие спавны. Нажмите на спавн, чтобы скопировать.',
   'Близкие точки приземления или броска объединены в группы. Выберите кластер здесь или прямо на радаре — камера подлетит к нему и загрузит до 30 раскидок на страницу.',
   'Нажмите строку, чтобы открыть детали, «Копировать» — для команды консоли, или переключите Core. Метка Insta подсвечивает совпадение со спавном; иконки клавиш броска и метрики usage / airtime / round — прямо в строке.',
@@ -226,7 +384,9 @@ export default function OnboardingModal({
   activeImport,
   importState,
   pathname,
+  onStepChange,
 }: OnboardingModalProps) {
+  const navigate = useNavigate();
   const { locale, tr } = useI18n();
   const [started, setStarted] = useState(false);
   const [step, setStep] = useState(0);
@@ -242,6 +402,7 @@ export default function OnboardingModal({
   const [mapSelectionPending, setMapSelectionPending] = useState(false);
   const [targetAvailable, setTargetAvailable] = useState(false);
   const furthestStepRef = useRef(0);
+  const radarPathRef = useRef<string | null>(null);
   const startButtonRef = useRef<HTMLButtonElement>(null);
   const target = useMemo(() => {
     if (!started) return null;
@@ -280,8 +441,22 @@ export default function OnboardingModal({
   const StepIcon = target?.icon;
 
   useEffect(() => {
+    onStepChange(started && pathname.startsWith('/map/') ? step : null);
+    return () => onStepChange(null);
+  }, [onStepChange, pathname, started, step]);
+
+  useEffect(() => {
     furthestStepRef.current = Math.max(furthestStepRef.current, step);
   }, [step]);
+
+  useEffect(() => {
+    if (!started || step < 15 || !pathname.startsWith('/grenade/')) return;
+    if (radarPathRef.current) navigate(radarPathRef.current);
+    else
+      document
+        .querySelector<HTMLButtonElement>('[data-tour="grenade-back-to-map"]')
+        ?.click();
+  }, [navigate, pathname, started, step]);
 
   const close = useCallback(() => {
     if (!busy) void onComplete();
@@ -316,7 +491,10 @@ export default function OnboardingModal({
     if (!started) return;
     if (activeImport && pathname === '/maps')
       setStep((value) => Math.max(value, 1));
-    if (pathname.startsWith('/map/')) {
+    if (pathname.startsWith('/grenade/')) {
+      setStep((value) => Math.max(value, 13));
+    } else if (pathname.startsWith('/map/')) {
+      radarPathRef.current = pathname;
       setMapSelectionPending(false);
       setStep((value) => Math.max(value, 3));
     }
@@ -339,37 +517,154 @@ export default function OnboardingModal({
   }, [started, step]);
 
   useEffect(() => {
-    if (!started || step !== 9) return;
-    const advanceAfterClusterSelection = (event: MouseEvent) => {
+    if (!started || !pathname.startsWith('/map/')) return;
+    const actionSteps: Record<number, string> = {
+      8: 'cluster-click',
+      9: 'throw-stack',
+      10: 'grenade-contextmenu',
+      11: 'spawn-click',
+      12: 'throw-single',
+    };
+    const action = actionSteps[step];
+    if (!action) return;
+    const eventName =
+      action === 'grenade-contextmenu' ? 'contextmenu' : 'click';
+    const handleAction = (event: MouseEvent) => {
+      const target = event.target as Element | null;
+      const selector =
+        action === 'grenade-contextmenu'
+          ? `[data-tour-action-context="${action}"]`
+          : `[data-tour-action="${action}"]`;
+      if (!target?.closest(selector)) return;
+      setStep((value) => value + 1);
+    };
+    window.addEventListener(eventName, handleAction, true);
+    return () => window.removeEventListener(eventName, handleAction, true);
+  }, [pathname, started, step]);
+
+  useEffect(() => {
+    if (!started || !pathname.startsWith('/grenade/')) return;
+    const detailActions: Record<number, string> = {
+      13: 'grenade-copy-coordinates',
+      14: 'grenade-core-toggle',
+    };
+    const action = detailActions[step];
+    if (!action) return;
+    const handleAction = (event: MouseEvent) => {
       if (
-        (event.target as Element | null)?.closest('[data-tour="cluster-list"]')
+        (event.target as Element | null)?.closest(`[data-tour="${action}"]`)
       ) {
-        setStep(10);
+        setStep((value) => value + 1);
       }
     };
-    window.addEventListener('click', advanceAfterClusterSelection, true);
-    return () =>
-      window.removeEventListener('click', advanceAfterClusterSelection, true);
-  }, [started, step]);
+    window.addEventListener('click', handleAction, true);
+    return () => window.removeEventListener('click', handleAction, true);
+  }, [pathname, started, step]);
 
   useLayoutEffect(() => {
     if (!target) return;
+    const findTarget = () => {
+      if (step === 11) {
+        const viewport = document
+          .querySelector('.map-viewport')
+          ?.getBoundingClientRect();
+        if (!viewport) return null;
+        const strip = document
+          .querySelector('.throw-strip')
+          ?.getBoundingClientRect();
+        const visibleSpawns = [
+          ...document.querySelectorAll(target.selector),
+        ].filter((spawn) => {
+          const rect = spawn.getBoundingClientRect();
+          return (
+            rect.width > 0 &&
+            rect.height > 0 &&
+            rect.left >= viewport.left &&
+            rect.right <= viewport.right &&
+            rect.top >= viewport.top &&
+            rect.bottom <= viewport.bottom &&
+            (!strip ||
+              rect.right <= strip.left ||
+              rect.left >= strip.right ||
+              rect.bottom <= strip.top ||
+              rect.top >= strip.bottom)
+          );
+        });
+        const throwMarkers = [
+          ...document.querySelectorAll(
+            '.marker-layer [data-tour-action="throw-stack"], .marker-layer [data-tour-action="throw-single"], .marker-layer [data-tour-action="cluster-click"]',
+          ),
+        ].map((marker) => marker.getBoundingClientRect());
+        const clearance = (spawn: Element) => {
+          const rect = spawn.getBoundingClientRect();
+          // The outline also needs room around the spawn marker.
+          return Math.min(
+            Infinity,
+            ...throwMarkers.map((marker) =>
+              Math.max(
+                marker.left - rect.right,
+                rect.left - marker.right,
+                marker.top - rect.bottom,
+                rect.top - marker.bottom,
+              ),
+            ),
+          );
+        };
+        const distanceFromCenter = (spawn: Element) => {
+          const rect = spawn.getBoundingClientRect();
+          return Math.hypot(
+            (rect.left + rect.right - viewport.left - viewport.right) / 2,
+            (rect.top + rect.bottom - viewport.top - viewport.bottom) / 2,
+          );
+        };
+        return (
+          visibleSpawns.sort((first, second) => {
+            const firstClearance = clearance(first);
+            const secondClearance = clearance(second);
+            const firstFree = firstClearance >= 8;
+            const secondFree = secondClearance >= 8;
+            if (firstFree !== secondFree) return firstFree ? -1 : 1;
+            if (!firstFree && firstClearance !== secondClearance)
+              return secondClearance - firstClearance;
+            return distanceFromCenter(first) - distanceFromCenter(second);
+          })[0] ?? null
+        );
+      }
+      return (
+        (step === 10
+          ? document.querySelector(
+              '.throw-strip [data-tour-action-context="grenade-contextmenu"]',
+            )
+          : null) ?? document.querySelector(target.selector)
+      );
+    };
     const observedElement =
-      document.querySelector(target.selector) ??
+      findTarget() ??
       (step === 2 ? document.querySelector('[data-tour="map-tile"]') : null);
     const observedAnchor = resolveAnchor(observedElement, target.dialogAnchor);
-    // The tutorial card can overlap the two library controls. Highlight the
-    // actual button so the outline follows its rounded shape and stays usable.
-    const highlightTargetDirectly =
-      step >= 11
+    // Keep track of every marker highlighted while React replaces map controls.
+    const highlightedTargets = new Set<Element>();
+    const highlightDirectTarget = (element: Element | null) => {
+      for (const previous of highlightedTargets) {
+        if (previous !== element) {
+          previous.classList.remove('onboarding-target-active');
+          highlightedTargets.delete(previous);
+        }
+      }
+      if (element && !element.classList.contains('onboarding-target-active')) {
+        element.classList.add('onboarding-target-active');
+        highlightedTargets.add(element);
+      }
+    };
+    const directTargetFor = (element: Element | null) =>
+      (step >= 8 && step <= 14) || step >= 18
         ? target.selector === '[data-tour="language-switch"]'
-          ? observedElement
-          : (observedElement?.querySelector('button') ?? observedElement)
+          ? element
+          : (element?.querySelector('button') ?? element)
         : null;
-    if (highlightTargetDirectly)
-      highlightTargetDirectly.classList.add('onboarding-target-active');
+    highlightDirectTarget(directTargetFor(observedElement));
     const applyHighlight = (nextRect: DOMRect | null) => {
-      if (highlightTargetDirectly) {
+      if ((step >= 8 && step <= 14) || step >= 18) {
         setHighlightRect(null);
         return;
       }
@@ -377,45 +672,48 @@ export default function OnboardingModal({
     };
     const update = () => {
       const element =
-        document.querySelector(target.selector) ??
+        findTarget() ??
         (step === 2
-          ? document.querySelector('[data-tour="map-target"], [data-tour="map-tile"]')
+          ? document.querySelector(
+              '[data-tour="map-target"], [data-tour="map-tile"]',
+            )
           : null);
-      if (step >= 11) {
-        const directTarget =
-          target.selector === '[data-tour="language-switch"]'
-            ? element
-            : (element?.querySelector('button') ?? element);
-        if (directTarget && !directTarget.classList.contains('onboarding-target-active'))
-          directTarget.classList.add('onboarding-target-active');
-      }
+      highlightDirectTarget(directTargetFor(element));
       const nextRect = (() => {
         if (!element) return null;
         const rect = element.getBoundingClientRect();
         return rect.width > 0 && rect.height > 0 ? rect : null;
       })();
       const openLegend =
-        step === 8 &&
-        element?.getAttribute('aria-expanded') === 'true'
+        step === 15 && element?.getAttribute('aria-expanded') === 'true'
           ? document.querySelector('.map-legend.is-visible')
           : null;
       const openLibraryMenu =
-        step === 11
+        step === 18
           ? document.querySelector('.snapshot-menu')
-          : step === 12
+          : step === 19
             ? document.querySelector('.library-actions-popover')
             : null;
+      const openThrowStack =
+        step === 10 || step === 11
+          ? document.querySelector('.throw-strip')
+          : null;
       const anchorElement =
-        openLegend ?? openLibraryMenu ?? resolveAnchor(element, target.dialogAnchor);
-      const anchorRect = anchorElement?.getBoundingClientRect() ?? nextRect;
-       const directTarget =
-         step >= 11
-           ? target.selector === '[data-tour="language-switch"]'
-             ? element
-             : (element?.querySelector('button') ?? element)
-           : null;
-       const directRect = directTarget?.getBoundingClientRect();
-      const visibleRect = step >= 11 ? directRect : nextRect;
+        openThrowStack ??
+        openLegend ??
+        openLibraryMenu ??
+        resolveAnchor(element, target.dialogAnchor);
+      const radarViewport =
+        step >= 9 && step <= 12
+          ? (document.querySelector('.map-viewport')?.getBoundingClientRect() ??
+            null)
+          : null;
+      const anchorRect =
+        anchorElement?.getBoundingClientRect() ?? nextRect ?? radarViewport;
+      const directTarget = directTargetFor(element);
+      const directRect = directTarget?.getBoundingClientRect();
+      const visibleRect =
+        (step >= 8 && step <= 14) || step >= 18 ? directRect : nextRect;
       const isVisible = Boolean(
         visibleRect && visibleRect.width > 0 && visibleRect.height > 0,
       );
@@ -424,7 +722,8 @@ export default function OnboardingModal({
       if (step === 1) setRecentHistoryAvailable(isVisible);
       if (step === 2) {
         setMapTargetAvailable(
-          isVisible || Boolean(document.querySelector('[data-tour="map-tile"]')),
+          isVisible ||
+            Boolean(document.querySelector('[data-tour="map-tile"]')),
         );
       }
       if (!anchorRect || !dialogRef.current) {
@@ -434,87 +733,76 @@ export default function OnboardingModal({
 
       const dialogWidth = dialogRef.current.offsetWidth;
       const dialogHeight = dialogRef.current.offsetHeight;
-      const margin = 16;
-      const gap = 14;
-      const viewportWidth = window.innerWidth;
-      const viewportHeight = window.innerHeight;
-      const fitsBelow =
-        anchorRect.bottom + gap + dialogHeight <= viewportHeight - margin;
-      const fitsAbove = anchorRect.top - gap - dialogHeight >= margin;
-      const fitsRight =
-        anchorRect.right + gap + dialogWidth <= viewportWidth - margin;
-      const fitsLeft = anchorRect.left - gap - dialogWidth >= margin;
-      const preferSidePlacement =
-        ((step === 3 &&
-          element instanceof HTMLElement &&
-          element.querySelector('[aria-expanded="true"]')) ||
-          step === 6 ||
-          Boolean(openLegend) ||
-          Boolean(openLibraryMenu)) &&
-        element instanceof HTMLElement &&
-        (Boolean(openLegend) ||
-          Boolean(openLibraryMenu) ||
-          element.hasAttribute('open') ||
-          Boolean(element.querySelector('[aria-expanded="true"]')));
-      const isViewMapsTransitionStep0Complete = Boolean(
-        step === 0 &&
-        importState === 'complete' &&
-        document.querySelector('[data-tour="import-view-maps"]'),
+      const clipToRadar = (rect: DOMRect) => {
+        if (!radarViewport) return rect;
+        const left = Math.max(rect.left, radarViewport.left);
+        const top = Math.max(rect.top, radarViewport.top);
+        const right = Math.min(rect.right, radarViewport.right);
+        const bottom = Math.min(rect.bottom, radarViewport.bottom);
+        return new DOMRect(
+          left,
+          top,
+          Math.max(0, right - left),
+          Math.max(0, bottom - top),
+        );
+      };
+      // Protect the selected cluster, all visible throw points, trajectories
+      // and the expanded stack throughout the radar practice steps.
+      const radarDetails =
+        radarViewport && step >= 9 && step <= 12
+          ? [
+              ...document.querySelectorAll(
+                '.marker-layer [data-tour-action="cluster-click"], .marker-layer [data-tour-action="throw-stack"], .marker-layer [data-tour-action="throw-single"], .trajectory-screen-layer polyline, .trajectory-screen-layer line',
+              ),
+            ].map((marker) => clipToRadar(marker.getBoundingClientRect()))
+          : [];
+      const protectedRects = [
+        nextRect,
+        directRect,
+        anchorRect,
+        openThrowStack?.getBoundingClientRect(),
+        ...radarDetails,
+        ...(step === 11
+          ? [...document.querySelectorAll(target.selector)].map((spawn) =>
+              clipToRadar(spawn.getBoundingClientRect()),
+            )
+          : []),
+      ].filter((rect): rect is DOMRect =>
+        Boolean(rect && rect.width && rect.height),
       );
-      const resolvedPreferSidePlacement =
-        isViewMapsTransitionStep0Complete || preferSidePlacement;
-      let top = fitsBelow
-        ? anchorRect.bottom + gap
-        : fitsAbove
-          ? anchorRect.top - dialogHeight - gap
-          : Math.max(margin, (viewportHeight - dialogHeight) / 2);
-      let left = Math.min(
-        Math.max(margin, anchorRect.left),
-        Math.max(margin, viewportWidth - dialogWidth - margin),
+      const position = placeTourDialog(
+        anchorRect,
+        protectedRects,
+        radarViewport,
+        dialogWidth,
+        dialogHeight,
+        window.innerWidth,
+        window.innerHeight,
       );
-      if (step === 0 && fitsLeft && !isViewMapsTransitionStep0Complete) {
-        left = anchorRect.left - dialogWidth - gap;
-        top = anchorRect.top;
-      } else if (isViewMapsTransitionStep0Complete && fitsLeft) {
-        left = anchorRect.left - dialogWidth - gap;
-        top = anchorRect.top + (anchorRect.height - dialogHeight) / 2;
-      } else if (isViewMapsTransitionStep0Complete && fitsRight) {
-        left = anchorRect.right + gap;
-        top = anchorRect.top + (anchorRect.height - dialogHeight) / 2;
-      } else if (preferSidePlacement && fitsRight) {
-        left = anchorRect.right + gap;
-        top = anchorRect.top;
-      } else if (resolvedPreferSidePlacement && fitsLeft) {
-        left = anchorRect.left - dialogWidth - gap;
-        top = anchorRect.top;
-      } else if (!fitsBelow && !fitsAbove && fitsRight)
-        left = anchorRect.right + gap;
-      else if (!fitsBelow && !fitsAbove && fitsLeft)
-        left = anchorRect.left - dialogWidth - gap;
-      if (
-        !resolvedPreferSidePlacement &&
-        !fitsBelow &&
-        !fitsAbove &&
-        (fitsRight || fitsLeft)
-      ) {
-        top = anchorRect.bottom - dialogHeight;
-      }
-      top = Math.min(
-        Math.max(margin, top),
-        Math.max(margin, viewportHeight - dialogHeight - margin),
-      );
-      // If target not visible, center dialog instead of anchoring off-screen
-      if (!isVisible) {
+      // During radar practice, keep the card outside the radar even while a
+      // marker loads or moves off screen. Other steps retain the centered hint.
+      if (!isVisible && !radarViewport) {
         setDialogPosition(null);
         return;
       }
-      setDialogPosition({ left, top });
+      setDialogPosition((previous) =>
+        previous?.left === position.left && previous.top === position.top
+          ? previous
+          : position,
+      );
     };
     update();
     window.addEventListener('resize', update);
     window.addEventListener('scroll', update, true);
+    // A camera transition moves map markers without a resize or DOM mutation.
+    let animationFrame = 0;
+    const trackCamera = () => {
+      if (document.querySelector('.map-camera.is-animating')) update();
+      animationFrame = window.requestAnimationFrame(trackCamera);
+    };
+    if (step >= 8 && step <= 12) trackCamera();
     const observer = new MutationObserver(() => {
-      const fresh = document.querySelector(target.selector);
+      const fresh = findTarget();
       if (fresh && fresh !== observedElement) {
         try {
           observer.observe(fresh, { attributes: true });
@@ -538,10 +826,10 @@ export default function OnboardingModal({
       resizeObserver.observe(observedAnchor);
     if (dialogRef.current) resizeObserver.observe(dialogRef.current);
     return () => {
-      highlightTargetDirectly?.classList.remove('onboarding-target-active');
-      document
-        .querySelector(`${target.selector} button`)
-        ?.classList.remove('onboarding-target-active');
+      highlightedTargets.forEach((element) =>
+        element.classList.remove('onboarding-target-active'),
+      );
+      window.cancelAnimationFrame(animationFrame);
       window.removeEventListener('resize', update);
       window.removeEventListener('scroll', update, true);
       observer.disconnect();
@@ -593,7 +881,7 @@ export default function OnboardingModal({
       ) : null}
       <section
         ref={dialogRef}
-        className={`onboarding-dialog ${started && step === 0 ? 'onboarding-import-step' : ''} ${!targetAvailable && started ? 'onboarding-centered' : ''}`}
+        className={`onboarding-dialog ${started && step === 0 ? 'onboarding-import-step' : ''} ${!targetAvailable && started && !(step >= 9 && step <= 12 && pathname.startsWith('/map/')) ? 'onboarding-centered' : ''} ${started && step >= 9 && step <= 12 && pathname.startsWith('/map/') ? 'onboarding-radar-step' : ''}`}
         role="dialog"
         aria-modal={started ? undefined : true}
         aria-labelledby="onboarding-title"
@@ -635,10 +923,19 @@ export default function OnboardingModal({
                       ) {
                         setStep(index);
                         // auto-navigate for section jumps
-                        if (index <= 2 && pathname !== '/maps' && pathname !== '/import') {
+                        if (
+                          index <= 2 &&
+                          pathname !== '/maps' &&
+                          pathname !== '/import'
+                        ) {
                           // stay where we are, dialog will be centered with hint
                         }
-                        if (index >= 3 && index <= 10 && !pathname.startsWith('/map/') && activeImport) {
+                        if (
+                          index >= 3 &&
+                          index <= 10 &&
+                          !pathname.startsWith('/map/') &&
+                          activeImport
+                        ) {
                           // hint will tell user to pick a map; don't force navigation
                         }
                       }
@@ -698,28 +995,28 @@ export default function OnboardingModal({
                     'Откройте страницу Карт, чтобы увидеть недавние гранаты и поиск по картам. Если список пуст — сначала импортируйте библиотеку.',
                   )
                 : started && step === 2 && !mapTargetAvailable
-                ? tr(
-                    'This library has no maps to show yet. Import a non-empty grenade library to continue the tour, or skip it.',
-                    'В этой библиотеке пока нет карт. Импортируйте непустую библиотеку гранат, чтобы продолжить обучение, или пропустите его.',
-                  )
-                : started && !targetAvailable
                   ? tr(
-                      'This part of the interface is not visible right now. Use Next to continue — you can revisit any step from the dots above.',
-                      'Этот элемент сейчас не виден. Нажмите «Далее», чтобы продолжить — к любому шагу можно вернуться по точкам выше.',
+                      'This library has no maps to show yet. Import a non-empty grenade library to continue the tour, or skip it.',
+                      'В этой библиотеке пока нет карт. Импортируйте непустую библиотеку гранат, чтобы продолжить обучение, или пропустите его.',
                     )
-                  : started && locale === 'ru'
-                    ? russianCopies[step]
-                    : started
-                      ? target?.copy
-                      : activeImport
-                        ? tr(
-                            'A grenade library is already loaded. The tour will start with the map selection screen and use the first available map.',
-                            'Библиотека уже загружена. Обучение начнется с выбора первой доступной карты.',
-                          )
-                        : tr(
-                            'Start by importing a library. Then the tour will show map selection and a workspace for the first available map.',
-                            'Сначала импортируйте библиотеку. Затем обучение покажет выбор карты и интерфейс первой доступной карты.',
-                          )}
+                  : started && !targetAvailable
+                    ? tr(
+                        'This part of the interface is not visible right now. Use Next to continue — you can revisit any step from the dots above.',
+                        'Этот элемент сейчас не виден. Нажмите «Далее», чтобы продолжить — к любому шагу можно вернуться по точкам выше.',
+                      )
+                    : started && locale === 'ru'
+                      ? russianCopies[step]
+                      : started
+                        ? target?.copy
+                        : activeImport
+                          ? tr(
+                              'A grenade library is already loaded. The tour will start with the map selection screen and use the first available map.',
+                              'Библиотека уже загружена. Обучение начнется с выбора первой доступной карты.',
+                            )
+                          : tr(
+                              'Start by importing a library. Then the tour will show map selection and a workspace for the first available map.',
+                              'Сначала импортируйте библиотеку. Затем обучение покажет выбор карты и интерфейс первой доступной карты.',
+                            )}
         </p>
         {error ? <div className="onboarding-error">{error}</div> : null}
         <div className="onboarding-actions">

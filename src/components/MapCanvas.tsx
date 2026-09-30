@@ -39,6 +39,7 @@ type Props = {
   grenadePointMode?: 'throw' | 'landing';
   spawnPoints?: SpawnPoint[];
   showSpawns?: boolean;
+  tutorialSpawnStep?: boolean;
   iconTheme?: IconTheme;
   onClusterSelect?: (cluster: LandingCluster) => void;
   onGrenadeOpen?: (id: number) => void;
@@ -139,6 +140,7 @@ export default function MapCanvas({
   grenadePointMode = 'throw',
   spawnPoints = [],
   showSpawns = true,
+  tutorialSpawnStep = false,
   iconTheme = 'base',
   onClusterSelect,
   onGrenadeOpen,
@@ -424,6 +426,15 @@ export default function MapCanvas({
   };
 
   useEffect(() => {
+    if (!tutorialSpawnStep) return;
+    fittedClusterRef.current = null;
+    setActiveGroupId(null);
+    setPreview(null);
+    animateView({ s: 1, tx: 0, ty: 0 });
+  }, [tutorialSpawnStep]);
+
+  useEffect(() => {
+    if (tutorialSpawnStep) return;
     if (!selectedClusterId) {
       if (fittedClusterRef.current !== null)
         animateView({ s: 1, tx: 0, ty: 0 });
@@ -475,6 +486,7 @@ export default function MapCanvas({
   }, [
     grenades,
     grenadePointMode,
+    tutorialSpawnStep,
     selectedClusterId,
     selectedCluster?.x,
     selectedCluster?.y,
@@ -835,6 +847,7 @@ export default function MapCanvas({
                         className={`spawn-dot ${spawn.side === 'CT' ? 'ct' : 't'} ${copied === index ? 'coordinates-copied' : ''}`}
                         style={project(spawn.map_x, spawn.map_y)}
                         data-map-control="1"
+                        data-tour-action="spawn-click"
                         onClick={() => copySpawn(spawn, index)}
                         onContextMenu={(event) => {
                           event.preventDefault();
@@ -875,6 +888,7 @@ export default function MapCanvas({
                           } as CSSProperties
                         }
                         data-map-control="1"
+                        data-tour-action="cluster-click"
                         onClick={() => onClusterSelect?.(cluster)}
                         data-tip={count(
                           cluster.count,
@@ -916,6 +930,7 @@ export default function MapCanvas({
                     >
                       <button
                         className={`throw-dot throw-stack-dot ${group.grenades.some((item) => item.is_core) ? 'core' : ''} ${matched ? 'spawn-match' : ''} ${group.grenades.some((item) => item.id === copiedGrenadeId) ? 'coordinates-copied' : ''}`}
+                        data-tour-action="throw-stack"
                         onClick={() =>
                           setActiveGroupId(
                             activeGroupId === group.id ? null : group.id,
@@ -951,9 +966,11 @@ export default function MapCanvas({
                       className={`throw-dot ${grenade.is_core ? 'core' : ''} ${matched ? 'spawn-match' : ''} ${grenade.id === copiedGrenadeId ? 'coordinates-copied' : ''}`}
                       style={style}
                       data-map-control="1"
+                      data-tour-action="throw-single"
                       onPointerEnter={(event) => showPreview(event, grenade)}
                       onPointerLeave={() => setPreview(null)}
                       onClick={() => onGrenadeOpen?.(grenade.id)}
+                      data-tour-action-context="grenade-contextmenu"
                       onContextMenu={(event) =>
                         copyPointCoordinates(event, [grenade])
                       }
@@ -1015,6 +1032,7 @@ export default function MapCanvas({
                     '--dot': typeColor[grenade.grenade_type] ?? '#fff',
                   } as CSSProperties
                 }
+                data-tour-action-context="grenade-contextmenu"
                 onClick={() => onGrenadeOpen?.(grenade.id)}
                 onPointerEnter={(event) => showPreview(event, grenade)}
                 onPointerLeave={() => setPreview(null)}
@@ -1022,8 +1040,8 @@ export default function MapCanvas({
                   copyPointCoordinates(event, [grenade])
                 }
                 aria-label={tr(
-                  `${grenadeLabel(grenade.grenade_type)} grenade #${grenade.id}. Open details.`,
-                  `${grenadeLabel(grenade.grenade_type)} граната #${grenade.id}. Открыть детали.`,
+                  `${grenadeLabel(grenade.grenade_type)} grenade #${grenade.id}. Open details. Right-click to copy coordinates.`,
+                  `${grenadeLabel(grenade.grenade_type)} граната #${grenade.id}. Открыть детали. ПКМ для копирования координат.`,
                 )}
               >
                 {grenade.id === copiedGrenadeId ? (

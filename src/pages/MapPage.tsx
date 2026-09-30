@@ -79,9 +79,13 @@ const grenadePageSize = 30;
 
 type MapPageProps = {
   activeImportId: number;
+  tutorialStep?: number | null;
 };
 
-export default function MapPage({ activeImportId }: MapPageProps) {
+export default function MapPage({
+  activeImportId,
+  tutorialStep,
+}: MapPageProps) {
   const { locale, tr, count } = useI18n();
   const { showToast } = useToast();
   const { mapName = '' } = useParams();
@@ -1067,7 +1071,8 @@ export default function MapPage({ activeImportId }: MapPageProps) {
             grenades={mapGrenades}
             grenadePointMode={grenadeMode === 'throw' ? 'landing' : 'throw'}
             spawnPoints={visibleSpawns}
-            showSpawns={showSpawns}
+            showSpawns={showSpawns || tutorialStep === 11}
+            tutorialSpawnStep={tutorialStep === 11}
             iconTheme={iconTheme}
             onClusterSelect={selectCluster}
             onGrenadeOpen={(id) => navigate(`/grenade/${id}`)}

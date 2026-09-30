@@ -108,6 +108,7 @@ function Shell() {
   const [deleteSnapshotOpen, setDeleteSnapshotOpen] = useState(false);
   const [deleteSnapshotBusy, setDeleteSnapshotBusy] = useState(false);
   const [onboardingOpen, setOnboardingOpen] = useState(false);
+  const [tutorialMapStep, setTutorialMapStep] = useState<number | null>(null);
   const [tutorialImportState, setTutorialImportState] = useState<
     'idle' | 'importing' | 'complete'
   >('idle');
@@ -893,7 +894,10 @@ function Shell() {
                   path="/map/:mapName"
                   element={
                     activeImport ? (
-                      <MapPage activeImportId={activeImport.id} />
+                      <MapPage
+                        activeImportId={activeImport.id}
+                        tutorialStep={tutorialMapStep}
+                      />
                     ) : (
                       <Navigate to="/import" replace />
                     )
@@ -1169,6 +1173,7 @@ function Shell() {
               activeImport={Boolean(activeImport)}
               importState={tutorialImportState}
               pathname={location.pathname}
+              onStepChange={setTutorialMapStep}
             />
           ) : null}
           <Tooltip />
