@@ -823,10 +823,7 @@ export default function MapPage({
       className={`map-workspace ${inspectorVisible ? '' : 'inspector-hidden'}`}
     >
       <section className="map-main-panel">
-        <div
-          className={`map-toolbar ${hasLowerRadar ? 'has-radar-switch' : ''}`}
-          data-tour="map-workspace-toolbar"
-        >
+        <div className="map-toolbar" data-tour="map-workspace-toolbar">
           <button
             className="icon-btn"
             onClick={() => navigate('/maps')}
@@ -907,10 +904,7 @@ export default function MapPage({
             </div>
           </div>
           <div className="toolbar-spacer" />
-          <div
-            className="map-toolbar-actions"
-            data-tour="map-toolbar-actions"
-          >
+          <div className="map-toolbar-actions" data-tour="map-toolbar-actions">
             <button
               className="toggle inspector-toggle"
               type="button"
@@ -1018,35 +1012,6 @@ export default function MapPage({
               {tr('Throw', 'Бросок')}
             </button>
           </div>
-          {hasLowerRadar ? (
-            <div
-              className="radar-switch"
-              aria-label={tr('Radar level', 'Уровень радара')}
-            >
-              {radarLevels.map((level) => (
-                <button
-                  key={level.key}
-                  className={radarMode === level.key ? 'active' : ''}
-                  aria-pressed={radarMode === level.key}
-                  onClick={() => {
-                    setRadarMode(level.key);
-                    restoredClusterIdRef.current = null;
-                    restoredGrenadePageRef.current = 0;
-                    setSelectedCluster(null);
-                    setGrenades([]);
-                    setMapGrenades([]);
-                    setGrenadePage(0);
-                    mapTrajectoriesRequestRef.current += 1;
-                  }}
-                >
-                  <span className="radar-switch-indicator" aria-hidden="true" />
-                  {level.key === 'default'
-                    ? tr('Main', 'Основной')
-                    : tr('Lower', 'Нижний')}
-                </button>
-              ))}
-            </div>
-          ) : null}
         </div>
 
         {overviewError ? (
@@ -1064,6 +1029,43 @@ export default function MapPage({
           </div>
         ) : (
           <MapCanvas
+            radarControl={
+              hasLowerRadar ? (
+                <div
+                  className="radar-switch"
+                  role="group"
+                  data-map-control="1"
+                  aria-label={tr('Radar level', 'Уровень радара')}
+                >
+                  {radarLevels.map((level) => (
+                    <button
+                      key={level.key}
+                      type="button"
+                      className={radarMode === level.key ? 'active' : ''}
+                      aria-pressed={radarMode === level.key}
+                      onClick={() => {
+                        setRadarMode(level.key);
+                        restoredClusterIdRef.current = null;
+                        restoredGrenadePageRef.current = 0;
+                        setSelectedCluster(null);
+                        setGrenades([]);
+                        setMapGrenades([]);
+                        setGrenadePage(0);
+                        mapTrajectoriesRequestRef.current += 1;
+                      }}
+                    >
+                      <span
+                        className="radar-switch-indicator"
+                        aria-hidden="true"
+                      />
+                      {level.key === 'default'
+                        ? tr('Main', 'Основной')
+                        : tr('Lower', 'Нижний')}
+                    </button>
+                  ))}
+                </div>
+              ) : null
+            }
             mapImagePath={mapImagePath}
             mapLabel={overview?.map.label ?? decodedMap}
             clusters={overview?.clusters}
@@ -1302,7 +1304,10 @@ export default function MapPage({
           </div>
         </div>
 
-        <div className="panel-section inspector-visibility" data-tour="visibility-rules">
+        <div
+          className="panel-section inspector-visibility"
+          data-tour="visibility-rules"
+        >
           <button
             className="section-title section-toggle"
             type="button"
@@ -1328,7 +1333,9 @@ export default function MapPage({
             <div className="setting-card">
               <div className="setting-row">
                 <span>{tr('Public min usage', 'Минимум использований')}</span>
-                <strong className="visibility-setting-value">{siteValue}</strong>
+                <strong className="visibility-setting-value">
+                  {siteValue}
+                </strong>
               </div>
               <input
                 className="range"

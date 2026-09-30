@@ -78,9 +78,16 @@
 .map-heading{gap:4px}
 .map-heading strong{font-size:14px;line-height:1.2}
 .map-heading span{font-size:11px;line-height:1.3}
-.map-workspace .toggle,.map-workspace .radar-switch button{font-size:12px}
-/* Radar levels are a compact tactical control: the selected plane remains legible at a glance. */
-.map-toolbar .radar-switch{position:relative;gap:2px;padding:3px;border-color:var(--line-soft);border-radius:9px;background:var(--bg)}.map-toolbar .radar-switch button{position:relative;display:inline-flex;min-width:66px;height:30px;align-items:center;justify-content:center;gap:6px;padding:0 11px;border-radius:7px;color:var(--dim);font-size:11px;font-weight:800;letter-spacing:.035em;transition:color 150ms ease,background 150ms ease}.map-toolbar .radar-switch button:hover{background:var(--surface);color:var(--muted)}.map-toolbar .radar-switch button.active{background:var(--surface-3);color:var(--text)}.radar-switch-indicator{width:4px;height:4px;border-radius:50%;background:currentColor;opacity:.35}.radar-switch button.active .radar-switch-indicator{background:var(--acid);opacity:1}.map-toolbar .radar-switch button:focus-visible{z-index:1;outline-offset:1px}
+.map-workspace .toggle{font-size:12px}
+/* Compact radar level control on the map. */
+.map-canvas>.radar-switch{position:absolute;z-index:50;top:12px;right:12px;gap:1px;padding:3px;border:1px solid rgba(255,255,255,.12);border-radius:9px;background:rgba(10,13,17,.94);box-shadow:0 6px 18px rgba(0,0,0,.34)}
+.map-canvas>.radar-switch button{display:inline-flex;min-width:0;height:27px;align-items:center;justify-content:center;gap:5px;padding:0 9px;border-radius:6px;color:#abb4bf;font-size:10px;font-weight:700;letter-spacing:.01em;white-space:nowrap;transition:background 150ms ease,color 150ms ease,box-shadow 150ms ease}
+.map-canvas>.radar-switch button:hover{background:rgba(255,255,255,.07);color:var(--text)}
+.map-canvas>.radar-switch button.active{background:#252c30;color:var(--text);box-shadow:inset 0 0 0 1px rgba(var(--acid-rgb),.18),0 1px 4px rgba(0,0,0,.24)}
+.map-canvas>.radar-switch button.active:hover{background:#303937}
+.map-canvas>.radar-switch button:focus-visible{z-index:1;outline:2px solid var(--acid);outline-offset:2px}
+.radar-switch-indicator{width:4px;height:4px;flex:none;border-radius:50%;background:currentColor;opacity:.5}
+.radar-switch button.active .radar-switch-indicator{background:var(--acid);opacity:1;box-shadow:0 0 5px rgba(var(--acid-rgb),.35)}
 .section-title,.block-title{font-size:11px;line-height:1.35}
 .section-count,.block-count{min-width:28px;height:22px;font-size:10px}
 .segmented button{font-size:11px}
@@ -668,8 +675,7 @@ html[lang="ru"] .boot-title{font-family:Orbitron,sans-serif}
 .map-main-panel .map-selector-current{flex:1}
 .map-main-panel .toolbar-spacer{min-width:0}
 .map-toolbar-actions{display:flex;min-width:0;align-items:center;gap:8px}
-@container map-panel (max-width:1100px){.map-main-panel>.map-toolbar{gap:5px;padding-inline:8px}.map-toolbar-actions{gap:5px}.map-toolbar-actions .toggle{width:34px;min-width:34px;gap:0;padding:0;font-size:0}.map-toolbar-actions .toggle svg{margin:0}.map-toolbar-actions .inspector-toggle{min-width:34px}.map-main-panel .radar-switch button{min-width:58px;padding-inline:8px}}
-@container map-panel (max-width:600px){.map-main-panel>.map-toolbar.has-radar-switch{grid-template-columns:auto minmax(0,164px) minmax(0,1fr) auto;grid-template-rows:54px 38px;padding-bottom:4px}.map-main-panel .map-toolbar.has-radar-switch .radar-switch{grid-column:1/-1;grid-row:2;justify-self:end}.map-main-panel .map-toolbar.has-radar-switch .radar-switch button{min-width:52px}}
+@container map-panel (max-width:1100px){.map-main-panel>.map-toolbar{gap:5px;padding-inline:8px}.map-toolbar-actions{gap:5px}.map-toolbar-actions .toggle{width:34px;min-width:34px;gap:0;padding:0;font-size:0}.map-toolbar-actions .toggle svg{margin:0}.map-toolbar-actions .inspector-toggle{min-width:34px}}
 @media(max-width:920px){.map-workspace{grid-template-columns:minmax(0,1fr);grid-template-rows:clamp(340px,58dvh,520px) max-content;overflow-x:hidden;overflow-y:auto;scrollbar-gutter:stable;overscroll-behavior:contain}.map-workspace>.map-main-panel{min-height:0}.map-workspace>.inspector{overflow:visible;scrollbar-gutter:auto;border-top:1px solid var(--line-soft);border-left:0}.map-workspace.inspector-hidden{grid-template-rows:minmax(0,1fr);overflow:hidden}.map-workspace.inspector-hidden>.map-main-panel{min-height:0;height:auto}}
 
 /* Map tools read as one compact control deck, with clear mode states. */

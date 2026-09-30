@@ -6,6 +6,7 @@ import {
   type CSSProperties,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
+  type ReactNode,
 } from 'react';
 import {
   Check,
@@ -31,6 +32,7 @@ import { useI18n } from '../i18n';
 import { useToast } from './Toast';
 
 type Props = {
+  radarControl?: ReactNode;
   mapImagePath?: string | null;
   mapLabel?: string | null;
   clusters?: LandingCluster[];
@@ -132,6 +134,7 @@ const groupThrowPoints = (
 };
 
 export default function MapCanvas({
+  radarControl,
   mapImagePath,
   mapLabel,
   clusters = [],
@@ -580,6 +583,7 @@ export default function MapCanvas({
       className={`map-canvas icon-theme-${iconTheme}`}
       data-tour="map-canvas"
     >
+      {radarControl}
       <div className="map-toolbar-floating" data-map-control="1">
         <button
           onClick={() => zoomAt(1.18)}
