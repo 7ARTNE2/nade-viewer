@@ -461,100 +461,86 @@
   text-align: center;
 }
 
-/* Workers selector shares the tactical instrument language. */
+/* Parser concurrency: solid surfaces with restrained color accents. */
 .workers-select {
   display: grid;
   min-width: 0;
-  width: 208px;
+  width: 264px;
 }
 
 .workers-select-trigger {
   display: flex;
   min-width: 0;
-  min-height: 46px;
+  min-height: 48px;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 5px 9px;
-  border: 1px solid rgba(var(--acid-rgb), 0.26);
-  border-radius: 10px;
-  background: linear-gradient(
-    135deg,
-    rgba(var(--acid-rgb), 0.11),
-    rgba(var(--acid-rgb), 0.02)
-  );
+  gap: 8px;
+  padding: 6px 9px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--surface-2);
   color: var(--text);
+  text-align: left;
   cursor: pointer;
-  transition:
-    border-color 150ms ease,
-    background 150ms ease,
-    box-shadow 150ms ease,
-    transform 150ms ease;
+  transition: background 160ms ease;
 }
 
-.workers-select-trigger:hover,
+.workers-select-trigger:hover:not(:disabled),
 .workers-select-trigger[aria-expanded='true'] {
-  border-color: rgba(var(--acid-rgb), 0.58);
-  background: linear-gradient(
-    135deg,
-    rgba(var(--acid-rgb), 0.17),
-    rgba(var(--acid-rgb), 0.06)
-  );
-  transform: translateY(-1px);
+  background: var(--surface-3);
 }
 
 .workers-select-trigger:focus-visible {
-  border-color: rgba(var(--acid-rgb), 0.7);
-  box-shadow: 0 0 0 3px rgba(var(--acid-rgb), 0.12);
+  outline: 2px solid var(--acid);
+  outline-offset: 2px;
 }
 
 .workers-select-trigger:disabled {
   cursor: not-allowed;
   opacity: 0.55;
-  transform: none;
 }
 
 .workers-select-mark {
   display: grid;
-  width: 26px;
-  height: 26px;
+  width: 30px;
+  height: 30px;
   flex: none;
   place-items: center;
-  border: 1px solid rgba(var(--acid-rgb), 0.2);
+  border: 1px solid var(--line);
   border-radius: 7px;
-  background: rgba(var(--acid-rgb), 0.06);
-  color: var(--acid);
+  background: var(--surface);
+  color: var(--parser-muted, var(--muted));
 }
 
 .workers-select-value {
   display: grid;
   min-width: 0;
   flex: 1;
-  gap: 1px;
+  gap: 3px;
 }
 
 .workers-select-value strong {
-  color: var(--acid);
-  font:
-    800 15px/1 Orbitron,
-    sans-serif;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.1;
   font-variant-numeric: tabular-nums;
 }
 
 .workers-select-value small {
   overflow: hidden;
-  color: var(--dim);
-  font-size: 9px;
+  color: var(--parser-muted, var(--muted));
+  font-size: 10px;
+  line-height: 1.2;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .workers-select-trigger > svg {
   flex: none;
-  color: var(--dim);
+  color: var(--parser-muted, var(--muted));
   transition:
-    transform 150ms ease,
-    color 150ms ease;
+    transform 160ms ease,
+    color 160ms ease;
 }
 
 .workers-select-trigger > svg.open {
@@ -580,8 +566,68 @@
 }
 
 .workers-bars i.on {
-  background: var(--acid);
-  box-shadow: 0 0 6px rgba(var(--acid-rgb), 0.38);
+  background: rgb(var(--worker-accent-rgb, var(--acid-rgb)));
+  box-shadow: 0 0 6px rgba(var(--worker-accent-rgb, var(--acid-rgb)), 0.38);
+}
+
+.workers-select-trigger[data-workers='auto'],
+.workers-select-options button[data-workers='auto'] {
+  --worker-accent-rgb: 104, 198, 159;
+}
+
+/* Auto is an adaptive signal rather than a fixed worker count. */
+.workers-bars.is-auto i:nth-child(1),
+.workers-bars.is-auto i:nth-child(8) {
+  height: 7px;
+}
+
+.workers-bars.is-auto i:nth-child(2),
+.workers-bars.is-auto i:nth-child(7) {
+  height: 10px;
+}
+
+.workers-bars.is-auto i:nth-child(3),
+.workers-bars.is-auto i:nth-child(6) {
+  height: 13px;
+}
+
+.workers-bars.is-auto i:nth-child(4),
+.workers-bars.is-auto i:nth-child(5) {
+  height: 16px;
+}
+
+/* One solid accent per worker count, shared by its row and the trigger. */
+.workers-select-trigger[data-workers='1'],
+.workers-select-options button[data-workers='1'] {
+  --worker-accent-rgb: 222, 153, 107;
+}
+.workers-select-trigger[data-workers='2'],
+.workers-select-options button[data-workers='2'] {
+  --worker-accent-rgb: 220, 183, 105;
+}
+.workers-select-trigger[data-workers='3'],
+.workers-select-options button[data-workers='3'] {
+  --worker-accent-rgb: 177, 201, 115;
+}
+.workers-select-trigger[data-workers='4'],
+.workers-select-options button[data-workers='4'] {
+  --worker-accent-rgb: 104, 198, 159;
+}
+.workers-select-trigger[data-workers='5'],
+.workers-select-options button[data-workers='5'] {
+  --worker-accent-rgb: 105, 190, 213;
+}
+.workers-select-trigger[data-workers='6'],
+.workers-select-options button[data-workers='6'] {
+  --worker-accent-rgb: 122, 163, 223;
+}
+.workers-select-trigger[data-workers='7'],
+.workers-select-options button[data-workers='7'] {
+  --worker-accent-rgb: 161, 139, 211;
+}
+.workers-select-trigger[data-workers='8'],
+.workers-select-options button[data-workers='8'] {
+  --worker-accent-rgb: 208, 139, 178;
 }
 
 .workers-select-menu {
@@ -590,170 +636,108 @@
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   overflow: hidden;
-  border: 1px solid transparent;
-  border-radius: 12px;
-  background:
-    linear-gradient(#111419, #111419) padding-box,
-    linear-gradient(
-        115deg,
-        rgba(255, 91, 91, 0.56),
-        rgba(255, 181, 71, 0.56),
-        rgba(200, 244, 61, 0.56),
-        rgba(67, 213, 166, 0.56),
-        rgba(101, 167, 255, 0.56),
-        rgba(190, 112, 255, 0.56),
-        rgba(255, 91, 91, 0.56)
-      )
-      border-box;
-  background-size:
-    100% 100%,
-    220% 220%;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
   box-shadow:
-    0 20px 48px rgba(0, 0, 0, 0.58),
-    0 0 24px rgba(101, 167, 255, 0.08);
-  animation: tactical-filter-rainbow-frame 8s linear infinite;
+    0 18px 42px rgba(2, 5, 9, 0.56),
+    0 2px 8px rgba(2, 5, 9, 0.3);
   outline: none;
 }
 
 .workers-select-menu-label {
-  padding: 10px 11px 8px;
-  border-bottom: 1px solid var(--line-soft);
-  color: var(--muted);
-  font-size: 8px;
-  font-weight: 800;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  padding: 13px 14px 10px;
+  border-bottom: 1px solid var(--line);
+  color: var(--parser-muted, var(--muted));
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
 }
 
 .workers-select-options {
   min-height: 0;
   overflow-y: auto;
   padding: 5px;
+  scrollbar-color: var(--line) transparent;
 }
 
 .workers-select-options button {
-  --row-accent-rgb: 200, 244, 61;
-  position: relative;
-  display: grid;
+  display: flex;
   width: 100%;
-  min-width: 0;
-  min-height: 42px;
-  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  min-height: 39px;
   align-items: center;
-  gap: 9px;
-  padding: 7px 9px 7px 13px;
-  border: 0;
-  border-radius: 7px;
-  background: transparent;
+  gap: 11px;
+  padding: 7px 10px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: rgba(var(--worker-accent-rgb, var(--acid-rgb)), 0.045);
   color: var(--text);
   text-align: left;
   cursor: pointer;
-}
-
-.workers-select-options button:nth-child(6n + 1) {
-  --row-accent-rgb: 255, 104, 99;
-}
-
-.workers-select-options button:nth-child(6n + 2) {
-  --row-accent-rgb: 255, 176, 64;
-}
-
-.workers-select-options button:nth-child(6n + 3) {
-  --row-accent-rgb: 200, 244, 61;
-}
-
-.workers-select-options button:nth-child(6n + 4) {
-  --row-accent-rgb: 62, 207, 160;
-}
-
-.workers-select-options button:nth-child(6n + 5) {
-  --row-accent-rgb: 101, 167, 255;
-}
-
-.workers-select-options button:nth-child(6n) {
-  --row-accent-rgb: 190, 112, 255;
-}
-
-.workers-select-options button::before {
-  position: absolute;
-  top: 10px;
-  bottom: 10px;
-  left: 3px;
-  width: 2px;
-  border-radius: 7px;
-  background: rgba(var(--row-accent-rgb), 0.34);
-  content: '';
   transition:
     background 140ms ease,
-    box-shadow 140ms ease;
+    border-color 140ms ease;
+}
+
+.workers-select-options button.is-auto {
+  min-height: 51px;
+  margin-bottom: 5px;
+  border-bottom: 1px solid var(--line-soft);
+  border-radius: 6px 6px 0 0;
 }
 
 .workers-select-options button:hover,
 .workers-select-options button.highlighted {
-  background: linear-gradient(
-    90deg,
-    rgba(var(--row-accent-rgb), 0.105),
-    rgba(var(--row-accent-rgb), 0.025) 64%,
-    transparent
-  );
+  border-color: rgba(var(--worker-accent-rgb, var(--acid-rgb)), 0.25);
+  background: rgba(var(--worker-accent-rgb, var(--acid-rgb)), 0.16);
 }
 
 .workers-select-options button.selected {
-  background: linear-gradient(
-    90deg,
-    rgba(var(--acid-rgb), 0.14),
-    rgba(var(--acid-rgb), 0.035) 66%,
-    transparent
-  );
+  border-color: rgba(var(--worker-accent-rgb, var(--acid-rgb)), 0.45);
+  background: rgba(var(--worker-accent-rgb, var(--acid-rgb)), 0.21);
 }
 
-.workers-select-options button.selected::before {
-  background: var(--acid);
-  box-shadow: 0 0 8px rgba(var(--acid-rgb), 0.46);
+.workers-select-options button:focus-visible {
+  outline: 2px solid var(--acid);
+  outline-offset: -2px;
 }
 
 .workers-select-option-copy {
-  display: inline-flex;
-  min-width: 0;
+  display: flex;
+  min-width: 91px;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
 }
 
 .workers-select-option-copy strong {
-  min-width: 14px;
   color: var(--text);
-  font:
-    800 12px/1 Orbitron,
-    sans-serif;
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.2;
   font-variant-numeric: tabular-nums;
-  text-align: right;
 }
 
-.workers-select-options button.selected .workers-select-option-copy strong {
-  color: var(--acid);
+.workers-select-options button.selected .workers-select-option-copy strong,
+.workers-select-options button.selected > svg {
+  color: rgb(var(--worker-accent-rgb, var(--acid-rgb)));
 }
 
-.workers-select-options .workers-bars i.on {
-  background: rgb(var(--row-accent-rgb));
-  box-shadow: 0 0 6px rgba(var(--row-accent-rgb), 0.4);
-}
-
-.workers-select-options button.selected .workers-bars i.on {
-  background: var(--acid);
-  box-shadow: 0 0 6px rgba(var(--acid-rgb), 0.46);
+.workers-select-options button.is-auto .workers-select-option-copy {
+  min-width: 43px;
 }
 
 .workers-select-option-meta {
   overflow: hidden;
-  color: var(--dim);
-  font-size: 9px;
+  flex: 1;
+  color: var(--parser-muted, var(--muted));
+  font-size: 10px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .workers-select-options button > svg {
   flex: none;
-  color: var(--acid);
+  color: rgb(var(--worker-accent-rgb, var(--acid-rgb)));
 }
 
 /* Nade Parser: a scoped, three-stage operational workspace. */
@@ -1124,18 +1108,8 @@
 }
 
 .nade-parser .workers-select {
-  width: 194px;
+  width: 264px;
   flex: none;
-}
-
-.nade-parser .workers-select-trigger {
-  border-color: var(--line);
-  background: var(--surface-2);
-}
-
-.nade-parser .workers-select-trigger:hover:not(:disabled) {
-  border-color: rgba(var(--acid-rgb), 0.5);
-  transform: none;
 }
 
 .nade-parser .workers-select-value small {

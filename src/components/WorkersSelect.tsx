@@ -29,12 +29,18 @@ type Props = {
   disabled?: boolean;
 };
 
-function WorkerBars({ level }: { level: number }) {
+function WorkerBars({ level }: { level: number | null }) {
   return (
-    <span className="workers-bars" aria-hidden="true">
+    <span
+      className={`workers-bars ${level === null ? 'is-auto' : ''}`}
+      aria-hidden="true"
+    >
       {OPTIONS.filter((count): count is number => count !== null).map(
         (count) => (
-          <i key={count} className={count <= level ? 'on' : ''} />
+          <i
+            key={count}
+            className={level === null || count <= level ? 'on' : ''}
+          />
         ),
       )}
     </span>
@@ -86,7 +92,7 @@ export default function WorkersSelect({
     const edge = 10;
     const gap = 7;
     const width = Math.min(
-      Math.max(rect.width, 236),
+      Math.max(rect.width, 264),
       window.innerWidth - edge * 2,
     );
     const left = Math.max(
@@ -95,10 +101,10 @@ export default function WorkersSelect({
     );
     const spaceBelow = window.innerHeight - rect.bottom - edge - gap;
     const spaceAbove = rect.top - edge - gap;
-    const useAbove = spaceBelow < 300 && spaceAbove > spaceBelow;
+    const useAbove = spaceBelow < 380 && spaceAbove > spaceBelow;
     const maxHeight = Math.max(
       160,
-      Math.min(372, useAbove ? spaceAbove : spaceBelow),
+      Math.min(440, useAbove ? spaceAbove : spaceBelow),
     );
     setPosition({
       left,
@@ -201,6 +207,7 @@ export default function WorkersSelect({
       <button
         ref={triggerRef}
         className="workers-select-trigger"
+        data-workers={value ?? 'auto'}
         type="button"
         disabled={disabled}
         aria-haspopup="listbox"
@@ -222,7 +229,7 @@ export default function WorkersSelect({
           <strong>{value ?? tr('Auto', '\u0410\u0432\u0442\u043e')}</strong>
           <small>{triggerMeta}</small>
         </span>
-        <WorkerBars level={value ?? 0} />
+        <WorkerBars level={value} />
         <ChevronDown
           className={open ? 'open' : ''}
           size={15}
@@ -262,7 +269,8 @@ export default function WorkersSelect({
                       optionRefs.current[index] = node;
                     }}
                     key={count}
-                    className={`${count === value ? 'selected' : ''} ${index === activeIndex ? 'highlighted' : ''}`}
+                    className={`${count === null ? 'is-auto' : ''} ${count === value ? 'selected' : ''} ${index === activeIndex ? 'highlighted' : ''}`}
+                    data-workers={count ?? 'auto'}
                     type="button"
                     role="option"
                     aria-selected={count === value}
@@ -273,7 +281,7 @@ export default function WorkersSelect({
                       <strong>
                         {count ?? tr('Auto', '\u0410\u0432\u0442\u043e')}
                       </strong>
-                      {count !== null && <WorkerBars level={count} />}
+                      <WorkerBars level={count} />
                     </span>
                     <span className="workers-select-option-meta">
                       {count === null
