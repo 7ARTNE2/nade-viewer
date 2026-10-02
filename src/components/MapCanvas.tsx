@@ -983,7 +983,19 @@ export default function MapCanvas({
                         `${grenadeLabel(grenade.grenade_type)} граната #${grenade.id}. Открыть детали. ПКМ для копирования координат.`,
                       )}
                     >
-                      {grenade.id === copiedGrenadeId ? (
+                      {iconTheme === 'asset' ? (
+                        <>
+                          {markerIcon(grenade.grenade_type)}
+                          {grenade.id === copiedGrenadeId && (
+                            <span
+                              className="throw-copy-badge"
+                              aria-hidden="true"
+                            >
+                              <Check size={10} strokeWidth={2.6} />
+                            </span>
+                          )}
+                        </>
+                      ) : grenade.id === copiedGrenadeId ? (
                         <Check size={13} />
                       ) : (
                         markerIcon(grenade.grenade_type)
