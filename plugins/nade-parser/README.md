@@ -38,12 +38,14 @@ Viewer invokes this CLI once per file with separate process arguments, never
 a shell or the Go directory parser (which can swallow per-file failures).
 Up to four CLI processes run concurrently by default. Set
 `NADE_PARSER_MAX_WORKERS=1..8` before launching Viewer to override that limit;
-`1` restores serial execution. Results are committed to the parser workspace in
-sorted demo-path order through a single SQLite writer, so worker completion order
-does not affect exports. Progress reports scanning, actual committed demos /
-total, and finalization. Only one batch job runs at a time. Any subprocess, JSON,
-metadata conflict or write failure aborts the job and cleans temporary spool
-files. Errors identify the failing demo where applicable.
+`1` restores serial execution. Results are committed to the parser workspace by
+a single SQLite writer; exports use stable demo-path ordering regardless of
+worker completion order. Progress reports scanning, completed demos among the
+selected files / total, and finalization. Unchanged demos count immediately;
+new demos count after each successful workspace commit. The workspace demo
+total also includes previous runs. Only one batch job runs at a time. Any
+subprocess, JSON, metadata conflict or write failure aborts the job and
+cleans temporary spool files. Errors identify the failing demo where applicable.
 Canonical grenade objects and compatible root metadata are preserved while
 combining results. JSON/MessagePack export and explicit Viewer import use that
 same combined result. No valid demo fixture is bundled for end-to-end parsing.

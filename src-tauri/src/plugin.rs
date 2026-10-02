@@ -70,6 +70,13 @@ impl ParserStatus {
         self.last_io_sample = None;
     }
 
+    fn reset(&mut self) {
+        *self = Self {
+            stage: "idle".into(),
+            ..Self::default()
+        };
+    }
+
     fn update_elapsed(&mut self) {
         if let Some(started_at) = self.started_at.as_ref() {
             self.elapsed_ms = started_at.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
@@ -110,6 +117,40 @@ impl ParserStatus {
         }
     }
 }
+/// Counts every cached or committed demo while independently tracking gaps in
+/// discovery order for the final completeness check.
+struct SessionProgress {
+    completed: usize,
+    next_missing: usize,
+    out_of_order: BTreeSet<usize>,
+}
+
+impl SessionProgress {
+    fn new(cached: BTreeSet<usize>) -> Self {
+        let completed = cached.len();
+        let mut progress = Self {
+            completed,
+            next_missing: 0,
+            out_of_order: cached,
+        };
+        progress.advance_contiguous();
+        progress
+    }
+
+    fn record_commit(&mut self, ordinal: usize) -> usize {
+        self.completed += 1;
+        self.out_of_order.insert(ordinal);
+        self.advance_contiguous();
+        self.completed
+    }
+
+    fn advance_contiguous(&mut self) {
+        while self.out_of_order.remove(&self.next_missing) {
+            self.next_missing += 1;
+        }
+    }
+}
+
 fn exe(app: &AppHandle) -> PathBuf {
     app.path()
         .app_local_data_dir()
@@ -824,13 +865,9 @@ pub(crate) fn run_nade_parser_batch(
             let mut sent = vec![false; jobs.len()];
             let mut sent_count = 0usize;
             let mut active_disks: HashMap<String, usize> = HashMap::new();
-            let mut next_commit = 0usize;
             let mut in_flight = 0usize;
-            let mut completed_ordinals = cached_ordinals.clone();
-            while completed_ordinals.remove(&next_commit) {
-                next_commit += 1;
-            }
-            worker_state.lock().unwrap().completed = next_commit;
+            let mut progress = SessionProgress::new(cached_ordinals);
+            worker_state.lock().unwrap().completed = progress.completed;
 
             std::thread::scope(|scope| -> Result<(), String> {
                 for _ in 0..worker_count {
@@ -924,11 +961,8 @@ pub(crate) fn run_nade_parser_batch(
                         failure = Some(error);
                         break 'coordinator;
                     }
-                    completed_ordinals.insert(result.job.ordinal);
-                    while completed_ordinals.remove(&next_commit) {
-                        next_commit += 1;
-                    }
-                    worker_state.lock().unwrap().completed = next_commit;
+                    worker_state.lock().unwrap().completed =
+                        progress.record_commit(result.job.ordinal);
                 }
 
                 drop(job_sender);
@@ -945,10 +979,9 @@ pub(crate) fn run_nade_parser_batch(
             if worker_control.is_cancelled() {
                 return Err("Parsing cancelled".into());
             }
-            if next_commit < worker_state.lock().unwrap().total {
+            if progress.next_missing < worker_state.lock().unwrap().total {
                 return Err("Parser results ended before every demo was committed".into());
             }
-            worker_state.lock().unwrap().completed = next_commit;
             if deduplicate {
                 if worker_control.is_cancelled() {
                     return Err("Parsing cancelled".into());
@@ -1042,12 +1075,16 @@ pub(crate) fn get_parser_workspace_counts(app: AppHandle) -> Result<(i64, i64, i
 
 #[tauri::command]
 pub(crate) fn clear_parser_workspace(app: AppHandle) -> Result<(), String> {
-    if state(&app).lock().unwrap().running {
+    let parser_state = state(&app);
+    let mut status = parser_state.lock().unwrap();
+    if status.running {
         return Err("Cannot clear the parser workspace while parsing is running".into());
     }
 
     let mut connection = workspace_connection(&app)?;
-    parser_store::clear(&mut connection).map_err(|e| e.to_string())
+    parser_store::clear(&mut connection).map_err(|e| e.to_string())?;
+    status.reset();
+    Ok(())
 }
 #[tauri::command]
 pub(crate) fn save_parser_output(
@@ -1248,6 +1285,39 @@ mod tests {
         assert!(control.is_cancelled());
         control.reset();
         assert!(!control.is_cancelled());
+    }
+
+    #[test]
+    fn session_progress_counts_cached_and_out_of_order_commits() {
+        let mut progress = SessionProgress::new(BTreeSet::from([0, 3]));
+        assert_eq!(progress.completed, 2);
+        assert_eq!(progress.next_missing, 1);
+
+        assert_eq!(progress.record_commit(4), 3);
+        assert_eq!(progress.next_missing, 1);
+        assert_eq!(progress.record_commit(2), 4);
+        assert_eq!(progress.next_missing, 1);
+        assert_eq!(progress.record_commit(1), 5);
+        assert_eq!(progress.next_missing, 5);
+    }
+
+    #[test]
+    fn parser_status_reset_clears_previous_session() {
+        let mut status = ParserStatus::default();
+        status.start("parsing");
+        status.total = 87;
+        status.completed = 14;
+        status.current = Some("demo.dem".into());
+        status.finish(Err("failed".into()));
+
+        status.reset();
+        assert!(!status.running);
+        assert_eq!(status.stage, "idle");
+        assert_eq!(status.completed, 0);
+        assert_eq!(status.total, 0);
+        assert!(status.current.is_none());
+        assert!(status.error.is_none());
+        assert!(status.started_at.is_none());
     }
 
     #[test]

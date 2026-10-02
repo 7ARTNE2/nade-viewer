@@ -213,6 +213,23 @@ export default function NadeParserTool({ refreshImports }: Props) {
       if (confirmation === 'uninstall') setInstalled(false);
       else {
         setCounts([0, 0, 0]);
+        setStatus((previous) => ({
+          ...previous,
+          running: false,
+          stage: 'idle',
+          completed: 0,
+          total: 0,
+          current: undefined,
+          output: undefined,
+          error: undefined,
+          elapsed_ms: 0,
+          workers: 0,
+          worker_mode: '',
+          active_parsers: 0,
+          disk_read_bytes_per_sec: 0,
+          disk_write_bytes_per_sec: 0,
+        }));
+        countedCompletedRef.current = 0;
         setSource('raw');
       }
       setMessage(
@@ -619,8 +636,8 @@ export default function NadeParserTool({ refreshImports }: Props) {
                 <h2>{tr('Live processing', 'Текущая обработка')}</h2>
                 <small>
                   {tr(
-                    'Follow your parsing session',
-                    'Следите за ходом разбора',
+                    'Completed demos in this run; the workspace includes previous runs.',
+                    'Завершённые демо текущего запуска; база включает прошлые запуски.',
                   )}
                 </small>
               </div>
@@ -631,7 +648,7 @@ export default function NadeParserTool({ refreshImports }: Props) {
             </div>
             <div className="tools-progress">
               <div className="parser-section-label">
-                {tr('Session progress', 'Прогресс сессии')}
+                {tr('Current run progress', 'Прогресс текущего запуска')}
               </div>
               <div className="tools-progress-meta">
                 <b>
