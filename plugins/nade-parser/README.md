@@ -18,6 +18,9 @@ nade-parser.exe --parse --demo match.dem --output result.json
 ```
 
 The output contains version 1 canonical_grenades with the trajectory data used by Nade Viewer.
+Each parsed throw also carries a `usage_events` entry with its demo, tick, player,
+SteamID64, and team. Viewer combines these events when it deduplicates lineups;
+reparse older exports to populate the full usage snapshot.
 The CLI sorts parsed throws deterministically by throw tick and projectile entity
 ID, with a serialized-record fallback for exact ties. The CLI does not
 deduplicate throws. Tools optionally applies Viewer Rust deduplication to the

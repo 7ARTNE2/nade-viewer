@@ -3,21 +3,22 @@ package models
 // GrenadeData представляет данные о гранате для отправки в Django API.
 // Поля соответствуют данным, которые использует Nade Viewer.
 type GrenadeData struct {
-	Map                string   `json:"map" msgpack:"map"`
-	Side               string   `json:"side" msgpack:"side"`
-	GrenadeType        string   `json:"grenade_type" msgpack:"grenade_type"`
-	ThrowKeys          string   `json:"throw_keys,omitempty" msgpack:"throw_keys,omitempty"`
-	UsageCount         int      `json:"usage_count,omitempty" msgpack:"usage_count,omitempty"`
-	UsageThrowers      []string `json:"usage_throwers,omitempty" msgpack:"usage_throwers,omitempty"`
-	Coordinates        string   `json:"coordinates,omitempty" msgpack:"coordinates,omitempty"`
-	Author             string   `json:"author,omitempty" msgpack:"author,omitempty"`
-	DemoFilename       string   `json:"demo_filename,omitempty" msgpack:"demo_filename,omitempty"`
-	ThrowTick          int      `json:"throw_tick,omitempty" msgpack:"throw_tick,omitempty"`
-	Tickrate           float64  `json:"tickrate,omitempty" msgpack:"tickrate,omitempty"`
-	RoundTimeSeconds   *float64 `json:"round_time_seconds,omitempty" msgpack:"round_time_seconds,omitempty"`
-	ThrowerSteamID64   int64    `json:"thrower_steamid64,omitempty" msgpack:"thrower_steamid64,omitempty"`
-	ThrowerEntityID    *int     `json:"thrower_entity_id,omitempty" msgpack:"thrower_entity_id,omitempty"`
-	ProjectileEntityID *int     `json:"projectile_entity_id,omitempty" msgpack:"projectile_entity_id,omitempty"`
+	Map                string       `json:"map" msgpack:"map"`
+	Side               string       `json:"side" msgpack:"side"`
+	GrenadeType        string       `json:"grenade_type" msgpack:"grenade_type"`
+	ThrowKeys          string       `json:"throw_keys,omitempty" msgpack:"throw_keys,omitempty"`
+	UsageCount         int          `json:"usage_count,omitempty" msgpack:"usage_count,omitempty"`
+	UsageThrowers      []string     `json:"usage_throwers,omitempty" msgpack:"usage_throwers,omitempty"`
+	UsageEvents        []UsageEvent `json:"usage_events,omitempty" msgpack:"usage_events,omitempty"`
+	Coordinates        string       `json:"coordinates,omitempty" msgpack:"coordinates,omitempty"`
+	Author             string       `json:"author,omitempty" msgpack:"author,omitempty"`
+	DemoFilename       string       `json:"demo_filename,omitempty" msgpack:"demo_filename,omitempty"`
+	ThrowTick          int          `json:"throw_tick,omitempty" msgpack:"throw_tick,omitempty"`
+	Tickrate           float64      `json:"tickrate,omitempty" msgpack:"tickrate,omitempty"`
+	RoundTimeSeconds   *float64     `json:"round_time_seconds,omitempty" msgpack:"round_time_seconds,omitempty"`
+	ThrowerSteamID64   int64        `json:"thrower_steamid64,omitempty" msgpack:"thrower_steamid64,omitempty"`
+	ThrowerEntityID    *int         `json:"thrower_entity_id,omitempty" msgpack:"thrower_entity_id,omitempty"`
+	ProjectileEntityID *int         `json:"projectile_entity_id,omitempty" msgpack:"projectile_entity_id,omitempty"`
 
 	// Игровые координаты начала полёта. Z нужен дедупликации, хотя Viewer его не отображает.
 	StartPosX float64 `json:"start_pos_x,omitempty" msgpack:"start_pos_x,omitempty"`
@@ -39,6 +40,15 @@ type GrenadeData struct {
 	Team1       string  `json:"team1,omitempty" msgpack:"team1,omitempty"`
 	Team2       string  `json:"team2,omitempty" msgpack:"team2,omitempty"`
 	IsManual    bool    `json:"is_manual" msgpack:"is_manual"`
+}
+
+// UsageEvent identifies one actual throw before lineup deduplication.
+type UsageEvent struct {
+	DemoFilename     string `json:"demo_filename,omitempty" msgpack:"demo_filename,omitempty"`
+	ThrowTick        int    `json:"throw_tick,omitempty" msgpack:"throw_tick,omitempty"`
+	Thrower          string `json:"thrower,omitempty" msgpack:"thrower,omitempty"`
+	ThrowerSteamID64 int64  `json:"thrower_steamid64,omitempty" msgpack:"thrower_steamid64,omitempty"`
+	ThrowerTeam      string `json:"thrower_team,omitempty" msgpack:"thrower_team,omitempty"`
 }
 
 // TrajectoryPoint представляет одну точку траектории

@@ -199,6 +199,43 @@ fn merge_cluster(cluster: Cluster) -> Value {
         }
     }
 
+    // Keep one real event per throw. Pre-aggregated legacy rows without a
+    // complete event list must use the summary fallback instead.
+    let mut events = Vec::new();
+    let mut complete = true;
+    for item in &cluster.items {
+        if let Some(existing) = item.get("usage_events").and_then(Value::as_array) {
+            if existing.len() as i64 == usage(item) {
+                events.extend(existing.iter().cloned());
+                continue;
+            }
+        }
+        if usage(item) != 1 {
+            complete = false;
+            break;
+        }
+        let mut event = serde_json::Map::new();
+        for field in [
+            "demo_filename",
+            "throw_tick",
+            "thrower",
+            "thrower_steamid64",
+            "thrower_team",
+        ] {
+            if let Some(value) = item.get(field) {
+                event.insert(field.to_owned(), value.clone());
+            }
+        }
+        events.push(Value::Object(event));
+    }
+    if let Some(output) = representative.as_object_mut() {
+        if complete {
+            output.insert("usage_events".into(), Value::Array(events));
+        } else {
+            output.remove("usage_events");
+        }
+    }
+
     representative
 }
 
@@ -278,6 +315,45 @@ mod tests {
         assert_eq!(result.len(), 1);
         assert_eq!(result[0]["usage_count"], 5);
         assert_eq!(result[0]["usage_throwers"], json!(["Alice", "Bob"]));
+    }
+
+    #[test]
+    fn merged_lineup_keeps_every_throw_for_usage_snapshot() {
+        let mut first = grenade("de_mirage", [0.0, 0.0, 0.0], [100.0, 0.0, 0.0]);
+        first["demo_filename"] = "match-a.dem".into();
+        first["throw_tick"] = 12.into();
+        first["thrower"] = "Alice".into();
+        first["thrower_steamid64"] = json!(76561198000000001_u64);
+        first["thrower_team"] = "Red".into();
+        let mut second = grenade("de_mirage", [2.0, 0.0, 0.0], [105.0, 0.0, 0.0]);
+        second["usage_events"] = json!([{
+            "demo_filename": "match-b.dem", "throw_tick": 23,
+            "thrower": "Bob", "thrower_steamid64": 76561198000000002_u64,
+            "thrower_team": "Blue"
+        }]);
+        let result = deduplicate(vec![first, second]);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0]["usage_count"], 2);
+        assert_eq!(
+            result[0]["usage_events"],
+            json!([
+                {"demo_filename": "match-a.dem", "throw_tick": 12, "thrower": "Alice",
+                 "thrower_steamid64": 76561198000000001_u64, "thrower_team": "Red"},
+                {"demo_filename": "match-b.dem", "throw_tick": 23, "thrower": "Bob",
+                 "thrower_steamid64": 76561198000000002_u64, "thrower_team": "Blue"}
+            ])
+        );
+    }
+
+    #[test]
+    fn incomplete_legacy_aggregate_uses_summary_fallback() {
+        let mut first = grenade("de_mirage", [0.0, 0.0, 0.0], [100.0, 0.0, 0.0]);
+        first["usage_count"] = 4.into();
+        first["usage_events"] = json!([{"throw_tick": 1}]);
+        let second = grenade("de_mirage", [2.0, 0.0, 0.0], [105.0, 0.0, 0.0]);
+        let result = deduplicate(vec![first, second]);
+        assert_eq!(result[0]["usage_count"], 5);
+        assert!(result[0].get("usage_events").is_none());
     }
 
     #[test]

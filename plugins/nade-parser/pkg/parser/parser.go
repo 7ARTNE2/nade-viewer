@@ -840,6 +840,18 @@ func ConvertToGrenadeDataWithOptions(parsed *models.ParsedGrenade, options Outpu
 	}
 
 	// Координаты начала
+	// Preserve each actual throw for usage history after lineup deduplication.
+	event := models.UsageEvent{
+		DemoFilename: parsed.DemoFilename,
+		ThrowTick:    parsed.ThrowTick,
+		Thrower:      parsed.ThrowerName,
+		ThrowerTeam:  parsed.ThrowerTeam,
+	}
+	if options.IncludeThrowerSteamID64 {
+		event.ThrowerSteamID64 = parsed.ThrowerSteamID64
+	}
+	data.UsageEvents = []models.UsageEvent{event}
+
 	if parsed.StartPos != nil {
 		data.StartPosX = parsed.StartPos.X
 		data.StartPosY = parsed.StartPos.Y

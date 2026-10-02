@@ -63,6 +63,7 @@ func DeduplicateGrenades(grenades []models.GrenadeData) ([]models.GrenadeData, D
 			clusterUsage := totalUsage(clusterItems)
 			representative.UsageCount = clusterUsage
 			representative.UsageThrowers = uniqueThrowers(clusterItems)
+			representative.UsageEvents = clusterUsageEvents(clusterItems)
 
 			if representative.ThrowKeys == "" {
 				representative.ThrowKeys = dominantThrowKeys(clusterItems)
@@ -258,6 +259,26 @@ func totalUsage(items []models.GrenadeData) int {
 		total += normalizedUsage(item)
 	}
 	return total
+}
+
+// Incomplete legacy aggregates cannot be expanded into actual throws.
+// Omit events in that case so Viewer falls back to usage_count.
+func clusterUsageEvents(items []models.GrenadeData) []models.UsageEvent {
+	var events []models.UsageEvent
+	for _, item := range items {
+		if len(item.UsageEvents) == normalizedUsage(item) {
+			events = append(events, item.UsageEvents...)
+		} else if normalizedUsage(item) == 1 {
+			events = append(events, models.UsageEvent{
+				DemoFilename: item.DemoFilename, ThrowTick: item.ThrowTick,
+				Thrower: item.Thrower, ThrowerSteamID64: item.ThrowerSteamID64,
+				ThrowerTeam: item.ThrowerTeam,
+			})
+		} else {
+			return nil
+		}
+	}
+	return events
 }
 
 func uniqueThrowers(items []models.GrenadeData) []string {

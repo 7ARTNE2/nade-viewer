@@ -528,3 +528,21 @@ func TestConvertToGrenadeDataWithOptions_ControlsSupportedIDs(t *testing.T) {
 		t.Fatalf("expected all configurable ID fields to be omitted, got %+v", data)
 	}
 }
+
+func TestConvertToGrenadeData_EmitsUsageEvent(t *testing.T) {
+	parsed := &models.ParsedGrenade{
+		DemoFilename: "match.dem", ThrowTick: 123, ThrowerName: "Alice",
+		ThrowerSteamID64: 76561198000000001, ThrowerTeam: "Red",
+	}
+	got := ConvertToGrenadeData(parsed)
+	if len(got.UsageEvents) != 1 || got.UsageEvents[0] != (models.UsageEvent{
+		DemoFilename: "match.dem", ThrowTick: 123, Thrower: "Alice",
+		ThrowerSteamID64: 76561198000000001, ThrowerTeam: "Red",
+	}) {
+		t.Fatalf("unexpected usage event: %+v", got.UsageEvents)
+	}
+	withoutIDs := ConvertToGrenadeDataWithOptions(parsed, OutputOptions{})
+	if withoutIDs.UsageEvents[0].ThrowerSteamID64 != 0 {
+		t.Fatalf("disabled SteamID must also be omitted from usage events")
+	}
+}

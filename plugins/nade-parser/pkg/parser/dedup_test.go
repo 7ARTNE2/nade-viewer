@@ -393,3 +393,24 @@ func TestDeduplicateGrenades_PreservesPreviouslyAggregatedUsageThrowers(t *testi
 		}
 	}
 }
+
+func TestDeduplicateGrenades_PreservesUsageEvents(t *testing.T) {
+	first := models.GrenadeData{Map: "Mirage", Side: "T", GrenadeType: "smoke",
+		DemoFilename: "a.dem", ThrowTick: 12, Thrower: "Alice",
+		UsageEvents: []models.UsageEvent{{DemoFilename: "a.dem", ThrowTick: 12, Thrower: "Alice"}}}
+	second := first
+	second.DemoFilename = "b.dem"
+	second.ThrowTick = 23
+	second.Thrower = "Bob"
+	second.UsageEvents = []models.UsageEvent{{DemoFilename: "b.dem", ThrowTick: 23, Thrower: "Bob"}}
+	result, _ := DeduplicateGrenades([]models.GrenadeData{first, second})
+	if len(result) != 1 || result[0].UsageCount != 2 || len(result[0].UsageEvents) != 2 ||
+		result[0].UsageEvents[0].Thrower != "Alice" || result[0].UsageEvents[1].Thrower != "Bob" {
+		t.Fatalf("merged usage events missing: %+v", result)
+	}
+	first.UsageCount = 4
+	result, _ = DeduplicateGrenades([]models.GrenadeData{first, second})
+	if result[0].UsageCount != 5 || len(result[0].UsageEvents) != 0 {
+		t.Fatalf("incomplete legacy aggregate must fall back to summary: %+v", result)
+	}
+}
