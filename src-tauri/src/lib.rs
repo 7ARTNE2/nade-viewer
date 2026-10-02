@@ -4706,11 +4706,19 @@ async fn delete_import(
         if let Some(screenshot_root) = screenshot_root {
             let _ = fs::remove_dir_all(screenshot_root);
         }
-        conn.execute_batch("PRAGMA wal_checkpoint(PASSIVE); PRAGMA optimize;")?;
+        compact_deleted_import(&conn)?;
         Ok(active)
     })
     .await
     .map_err(|error| AppError::Message(format!("Snapshot deletion worker failed: {error}")))?
+}
+
+/// Return pages released by a deleted snapshot to the filesystem. VACUUM must
+/// run outside the deletion transaction; in WAL mode its output also needs a
+/// checkpoint before the main database file reflects the smaller size.
+fn compact_deleted_import(conn: &Connection) -> AppResult<()> {
+    conn.execute_batch("VACUUM; PRAGMA optimize; PRAGMA wal_checkpoint(TRUNCATE);")?;
+    Ok(())
 }
 
 fn delete_import_from_conn(
@@ -6950,6 +6958,49 @@ mod tests {
                 "Invalid cluster id"
             );
         }
+    }
+
+    #[test]
+    fn deleting_snapshot_compacts_file_backed_wal_database() {
+        let (state, root) = temporary_test_state("delete-compaction");
+        let mut conn = open_conn(&state).unwrap();
+        init_schema(&conn).unwrap();
+        for id in 1..=2 {
+            insert_import(&conn, id);
+        }
+        conn.execute(
+            "INSERT INTO grenades(import_id, source_index, map, side, grenade_type, trajectory_json)
+             VALUES (1, 0, 'de_test', 'T', 'smoke', zeroblob(2097152))",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO grenades(import_id, source_index, map, side, grenade_type, trajectory_json)
+             VALUES (2, 0, 'de_test', 'T', 'smoke', zeroblob(4096))",
+            [],
+        )
+        .unwrap();
+        set_active_import_in_conn(&conn, 2).unwrap();
+        conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")
+            .unwrap();
+        let before = fs::metadata(&state.db_path).unwrap().len();
+
+        assert_eq!(
+            delete_import_from_conn(&mut conn, 1).unwrap().unwrap().id,
+            2
+        );
+        compact_deleted_import(&conn).unwrap();
+
+        let after = fs::metadata(&state.db_path).unwrap().len();
+        assert!(after < before / 2, "database size: {before} -> {after}");
+        assert_eq!(
+            count(&conn, "SELECT COUNT(*) FROM grenades WHERE import_id=2"),
+            1
+        );
+        let wal_path = state.db_path.with_extension("sqlite-wal");
+        assert!(!wal_path.exists() || fs::metadata(wal_path).unwrap().len() == 0);
+        drop(conn);
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
