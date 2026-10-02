@@ -11,7 +11,10 @@ import { Check, ChevronDown, Cpu } from 'lucide-react';
 import { useI18n } from '../i18n';
 
 const MAX_WORKERS = 8;
-const OPTIONS = Array.from({ length: MAX_WORKERS }, (_, index) => index + 1);
+const OPTIONS: Array<number | null> = [
+  null,
+  ...Array.from({ length: MAX_WORKERS }, (_, index) => index + 1),
+];
 
 type MenuPosition = {
   left: number;
@@ -21,17 +24,19 @@ type MenuPosition = {
 };
 
 type Props = {
-  value: number;
-  onChange: (value: number) => void;
+  value: number | null;
+  onChange: (value: number | null) => void;
   disabled?: boolean;
 };
 
 function WorkerBars({ level }: { level: number }) {
   return (
     <span className="workers-bars" aria-hidden="true">
-      {OPTIONS.map((count) => (
-        <i key={count} className={count <= level ? 'on' : ''} />
-      ))}
+      {OPTIONS.filter((count): count is number => count !== null).map(
+        (count) => (
+          <i key={count} className={count <= level ? 'on' : ''} />
+        ),
+      )}
     </span>
   );
 }
@@ -47,13 +52,13 @@ export default function WorkersSelect({
   const menuRef = useRef<HTMLDivElement>(null);
   const optionRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const [open, setOpen] = useState(false);
-  const [activeIndex, setActiveIndex] = useState(value - 1);
+  const [activeIndex, setActiveIndex] = useState(value ?? 0);
   const [position, setPosition] = useState<MenuPosition | null>(null);
 
   const label = tr('Parallel workers', 'Параллельные воркеры');
   const optionMeta = (count: number) => {
     if (count === 1) return tr('Light disk load', 'Лёгкая нагрузка на диск');
-    if (count === 2) return tr('Recommended', 'Рекомендуется');
+    if (count === 2) return null;
     if (count === MAX_WORKERS)
       return tr('Max throughput', 'Максимальная скорость');
     return null;
@@ -63,7 +68,10 @@ export default function WorkersSelect({
       return count === 1 ? 'воркер' : count < 5 ? 'воркера' : 'воркеров';
     return count === 1 ? 'worker' : 'workers';
   };
-  const triggerMeta = optionMeta(value) ?? workerWord(value);
+  const triggerMeta =
+    value === null
+      ? tr('1 HDD / 5 SSD', '1 HDD / 5 SSD')
+      : (optionMeta(value) ?? workerWord(value));
 
   const close = (restoreFocus = false) => {
     setOpen(false);
@@ -108,7 +116,7 @@ export default function WorkersSelect({
 
   useEffect(() => {
     if (!open) return;
-    setActiveIndex(Math.max(0, Math.min(value - 1, OPTIONS.length - 1)));
+    setActiveIndex(Math.max(0, Math.min(value ?? 0, OPTIONS.length - 1)));
     window.requestAnimationFrame(() => menuRef.current?.focus());
   }, [open, value]);
 
@@ -145,7 +153,7 @@ export default function WorkersSelect({
     optionRefs.current[activeIndex]?.scrollIntoView({ block: 'nearest' });
   }, [activeIndex]);
 
-  const selectOption = (count: number) => {
+  const selectOption = (count: number | null) => {
     onChange(count);
     close(true);
   };
@@ -211,10 +219,10 @@ export default function WorkersSelect({
           <Cpu size={14} aria-hidden="true" />
         </span>
         <span className="workers-select-value">
-          <strong>{value}</strong>
+          <strong>{value ?? tr('Auto', '\u0410\u0432\u0442\u043e')}</strong>
           <small>{triggerMeta}</small>
         </span>
-        <WorkerBars level={value} />
+        <WorkerBars level={value ?? 0} />
         <ChevronDown
           className={open ? 'open' : ''}
           size={15}
@@ -262,11 +270,15 @@ export default function WorkersSelect({
                     onClick={() => selectOption(count)}
                   >
                     <span className="workers-select-option-copy">
-                      <strong>{count}</strong>
-                      <WorkerBars level={count} />
+                      <strong>
+                        {count ?? tr('Auto', '\u0410\u0432\u0442\u043e')}
+                      </strong>
+                      {count !== null && <WorkerBars level={count} />}
                     </span>
                     <span className="workers-select-option-meta">
-                      {optionMeta(count) ?? workerWord(count)}
+                      {count === null
+                        ? tr('1 HDD / 5 SSD', '1 HDD / 5 SSD')
+                        : (optionMeta(count) ?? workerWord(count))}
                     </span>
                     {count === value ? (
                       <Check size={14} strokeWidth={2.5} aria-hidden="true" />

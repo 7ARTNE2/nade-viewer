@@ -1,7 +1,7 @@
 use crate::parser_store;
 use serde::Serialize;
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeSet, HashMap},
     fs::File,
     path::{Path, PathBuf},
     process::{Command, Stdio},
@@ -42,6 +42,8 @@ pub(crate) struct ParserStatus {
     pub current: Option<String>,
     pub elapsed_ms: u64,
     pub workers: usize,
+    pub worker_mode: String,
+    pub active_parsers: usize,
     pub disk_read_bytes_per_sec: u64,
     pub disk_write_bytes_per_sec: u64,
     #[serde(skip)]
@@ -60,6 +62,8 @@ impl ParserStatus {
         self.total = 0;
         self.current = None;
         self.elapsed_ms = 0;
+        self.active_parsers = 0;
+        self.worker_mode.clear();
         self.disk_read_bytes_per_sec = 0;
         self.disk_write_bytes_per_sec = 0;
         self.started_at = Some(Instant::now());
@@ -91,6 +95,7 @@ impl ParserStatus {
         self.update_elapsed();
         self.started_at = None;
         self.running = false;
+        self.active_parsers = 0;
         self.current = None;
         match result {
             Ok(output) => {
@@ -258,7 +263,9 @@ pub(crate) fn get_nade_parser_status(app: AppHandle) -> ParserStatus {
     let mut status = parser_state.lock().unwrap();
     if status.running {
         status.update_elapsed();
-        status.update_io_rate(&parser_control.children.lock().unwrap());
+        let children = parser_control.children.lock().unwrap();
+        status.active_parsers = children.len();
+        status.update_io_rate(&children);
     }
     status.clone()
 }
@@ -370,7 +377,7 @@ fn is_demo(p: &Path) -> bool {
         .is_some_and(|s| s.eq_ignore_ascii_case("dem"))
 }
 
-const DEFAULT_PARSER_WORKERS: usize = 4;
+const AUTO_SSD_WORKERS: usize = 5;
 const MAX_PARSER_WORKERS: usize = 8;
 
 #[derive(Clone)]
@@ -379,6 +386,7 @@ struct ParseJob {
     file: PathBuf,
     size: u64,
     modified: i64,
+    disk: DiskGroup,
 }
 
 struct ParseJobResult {
@@ -395,18 +403,175 @@ fn bounded_worker_count(configured: usize, available: usize, job_count: usize) -
         .min(job_count.max(1))
 }
 
-fn parser_worker_count(requested: Option<usize>, job_count: usize) -> usize {
-    let configured = requested
-        .or_else(|| {
-            std::env::var("NADE_PARSER_MAX_WORKERS")
-                .ok()
-                .and_then(|value| value.parse::<usize>().ok())
-        })
-        .unwrap_or(DEFAULT_PARSER_WORKERS);
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+struct DiskGroup {
+    key: String,
+    limit: usize,
+}
+
+// A conservative unknown group never causes competing reads from an unidentified device.
+fn disk_group(path: &Path) -> DiskGroup {
+    #[cfg(windows)]
+    {
+        if let Some(group) = windows_disk_group(path) {
+            return group;
+        }
+    }
+    let _ = path;
+    DiskGroup {
+        key: "unknown".into(),
+        limit: 1,
+    }
+}
+
+#[cfg(windows)]
+fn volume_drive_letter(path: &Path) -> Option<u8> {
+    // canonicalize() returns verbatim Windows paths (\\?\F:\...), not F:\...
+    let path = path.to_str()?;
+    let path = path.strip_prefix("\\\\?\\").unwrap_or(path);
+    let bytes = path.as_bytes();
+    if bytes.len() < 3 || bytes[1] != b':' || bytes[2] != b'\\' {
+        return None;
+    }
+    let letter = bytes[0].to_ascii_uppercase();
+    letter.is_ascii_alphabetic().then_some(letter)
+}
+
+#[cfg(windows)]
+fn windows_disk_group(path: &Path) -> Option<DiskGroup> {
+    unsafe extern "system" {
+        fn CreateFileW(
+            name: *const u16,
+            access: u32,
+            share: u32,
+            security: *mut std::ffi::c_void,
+            creation: u32,
+            flags: u32,
+            template: *mut std::ffi::c_void,
+        ) -> *mut std::ffi::c_void;
+        fn DeviceIoControl(
+            handle: *mut std::ffi::c_void,
+            control: u32,
+            input: *const u8,
+            input_len: u32,
+            output: *mut u8,
+            output_len: u32,
+            returned: *mut u32,
+            overlapped: *mut std::ffi::c_void,
+        ) -> i32;
+        fn CloseHandle(handle: *mut std::ffi::c_void) -> i32;
+    }
+    struct Handle(*mut std::ffi::c_void);
+    impl Drop for Handle {
+        fn drop(&mut self) {
+            unsafe {
+                CloseHandle(self.0);
+            }
+        }
+    }
+    fn open(name: &str) -> Option<Handle> {
+        use std::os::windows::ffi::OsStrExt;
+        let wide: Vec<u16> = std::ffi::OsStr::new(name)
+            .encode_wide()
+            .chain(Some(0))
+            .collect();
+        let handle = unsafe {
+            CreateFileW(
+                wide.as_ptr(),
+                0,
+                3,
+                std::ptr::null_mut(),
+                3,
+                0,
+                std::ptr::null_mut(),
+            )
+        };
+        if handle as isize == -1 || handle.is_null() {
+            None
+        } else {
+            Some(Handle(handle))
+        }
+    }
+    fn ioctl(handle: &Handle, code: u32, input: &[u8], output: &mut [u8]) -> Option<usize> {
+        let mut returned = 0;
+        let ok = unsafe {
+            DeviceIoControl(
+                handle.0,
+                code,
+                input.as_ptr(),
+                input.len() as u32,
+                output.as_mut_ptr(),
+                output.len() as u32,
+                &mut returned,
+                std::ptr::null_mut(),
+            )
+        };
+        (ok != 0).then_some(returned as usize)
+    }
+    let letter = volume_drive_letter(path)?;
+    let volume = open(&format!(r"\\.\{}:", letter as char))?;
+    let mut extents = [0u8; 4096];
+    let len = ioctl(&volume, 0x00560000, &[], &mut extents)?;
+    if len < 32 {
+        return None;
+    }
+    let count = u32::from_ne_bytes(extents[0..4].try_into().ok()?) as usize;
+    if count != 1 || count > (len - 8) / 24 {
+        return None;
+    }
+    let mut disks = Vec::with_capacity(count);
+    let mut seek = false;
+    for i in 0..count {
+        let offset = 8 + i * 24;
+        let id = u32::from_ne_bytes(extents[offset..offset + 4].try_into().ok()?);
+        let physical = open(&format!(r"\\.\PhysicalDrive{id}"))?;
+        let mut descriptor = [0u8; 16];
+        // STORAGE_PROPERTY_QUERY: StorageDeviceSeekPenaltyProperty (7), PropertyStandardQuery (0).
+        let result = ioctl(
+            &physical,
+            0x002d1400,
+            &[7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            &mut descriptor,
+        )?;
+        if result < 9 || u32::from_ne_bytes(descriptor[4..8].try_into().ok()?) < 9 {
+            return None;
+        }
+        seek |= descriptor[8] != 0;
+        disks.push(id);
+    }
+    disks.sort_unstable();
+    disks.dedup();
+    Some(DiskGroup {
+        key: format!("physical:{disks:?}"),
+        limit: if seek { 1 } else { AUTO_SSD_WORKERS },
+    })
+}
+
+fn parser_worker_count(requested: Option<usize>, jobs: &[ParseJob]) -> usize {
+    let configured = requested.unwrap_or_else(|| {
+        jobs.iter()
+            .map(|job| (&job.disk.key, job.disk.limit))
+            .collect::<HashMap<_, _>>()
+            .into_values()
+            .sum::<usize>()
+            .min(MAX_PARSER_WORKERS)
+    });
     let available = std::thread::available_parallelism()
         .map(usize::from)
         .unwrap_or(1);
-    bounded_worker_count(configured, available, job_count)
+    bounded_worker_count(configured, available, jobs.len())
+}
+
+fn next_scheduled_job(
+    jobs: &[ParseJob],
+    sent: &[bool],
+    active: &HashMap<String, usize>,
+    automatic: bool,
+) -> Option<usize> {
+    jobs.iter().enumerate().position(|(index, job)| {
+        !sent[index]
+            && (!automatic || active.get(&job.disk.key).copied().unwrap_or(0) < job.disk.limit)
+    })
 }
 
 fn spool_path(workspace_path: &Path, ordinal: usize, suffix: &str) -> PathBuf {
@@ -601,7 +766,8 @@ pub(crate) fn run_nade_parser_batch(
         }
         parser_control.reset();
         status.start("scanning");
-        status.workers = workers.unwrap_or(DEFAULT_PARSER_WORKERS);
+        status.workers = workers.unwrap_or(0);
+        status.worker_mode = if workers.is_some() { "manual" } else { "auto" }.into();
     }
     let worker_state = s.clone();
     let worker_control = parser_control.clone();
@@ -619,6 +785,7 @@ pub(crate) fn run_nade_parser_batch(
             cleanup_stale_spool_files(&workspace_path);
             let mut store = parser_store::open(&workspace_path).map_err(|e| e.to_string())?;
             let mut jobs = Vec::new();
+            let mut disk_groups = HashMap::new();
             let mut cached_ordinals = BTreeSet::new();
             for (ordinal, file) in files.into_iter().enumerate() {
                 let (size, modified) =
@@ -628,8 +795,20 @@ pub(crate) fn run_nade_parser_batch(
                 {
                     cached_ordinals.insert(ordinal);
                 } else {
+                    #[cfg(windows)]
+                    let root = volume_drive_letter(&file);
+                    #[cfg(not(windows))]
+                    let root = file
+                        .components()
+                        .next()
+                        .map(|component| component.as_os_str().to_os_string());
+                    let group = disk_groups
+                        .entry(root)
+                        .or_insert_with(|| disk_group(&file))
+                        .clone();
                     jobs.push(ParseJob {
                         ordinal,
+                        disk: group,
                         file,
                         size,
                         modified,
@@ -637,16 +816,21 @@ pub(crate) fn run_nade_parser_batch(
                 }
             }
 
-            let worker_count = parser_worker_count(workers, jobs.len());
+            let worker_count = parser_worker_count(workers, &jobs);
             worker_state.lock().unwrap().workers = worker_count;
-            let changed_ordinals = jobs.iter().map(|job| job.ordinal).collect::<BTreeSet<_>>();
             let (job_sender, job_receiver) = std::sync::mpsc::sync_channel(worker_count);
             let job_receiver = Arc::new(Mutex::new(job_receiver));
             let (result_sender, result_receiver) = std::sync::mpsc::sync_channel(worker_count);
-            let mut next_job = 0usize;
+            let mut sent = vec![false; jobs.len()];
+            let mut sent_count = 0usize;
+            let mut active_disks: HashMap<String, usize> = HashMap::new();
             let mut next_commit = 0usize;
             let mut in_flight = 0usize;
-            let mut reorder = std::collections::BTreeMap::new();
+            let mut completed_ordinals = cached_ordinals.clone();
+            while completed_ordinals.remove(&next_commit) {
+                next_commit += 1;
+            }
+            worker_state.lock().unwrap().completed = next_commit;
 
             std::thread::scope(|scope| -> Result<(), String> {
                 for _ in 0..worker_count {
@@ -680,21 +864,30 @@ pub(crate) fn run_nade_parser_batch(
                 drop(result_sender);
 
                 let mut failure = None;
-                'coordinator: while next_job < jobs.len() || in_flight > 0 {
+                'coordinator: while sent_count < jobs.len() || in_flight > 0 {
                     if worker_control.is_cancelled() {
                         failure = Some("Parsing cancelled".into());
                         break;
                     }
-                    while next_job < jobs.len() && in_flight + reorder.len() < worker_count {
+                    while in_flight < worker_count {
+                        let Some(index) =
+                            next_scheduled_job(&jobs, &sent, &active_disks, workers.is_none())
+                        else {
+                            break;
+                        };
                         if worker_control.is_cancelled() {
                             failure = Some("Parsing cancelled".into());
                             break 'coordinator;
                         }
-                        if let Err(error) = job_sender.send(jobs[next_job].clone()) {
+                        if let Err(error) = job_sender.send(jobs[index].clone()) {
                             failure = Some(error.to_string());
                             break 'coordinator;
                         }
-                        next_job += 1;
+                        sent[index] = true;
+                        sent_count += 1;
+                        *active_disks
+                            .entry(jobs[index].disk.key.clone())
+                            .or_default() += 1;
                         in_flight += 1;
                     }
 
@@ -706,54 +899,41 @@ pub(crate) fn run_nade_parser_batch(
                         }
                     };
                     in_flight -= 1;
-                    reorder.insert(result.job.ordinal, result);
-
-                    loop {
-                        while next_commit < worker_state.lock().unwrap().total
-                            && cached_ordinals.contains(&next_commit)
-                        {
-                            cached_ordinals.remove(&next_commit);
-                            next_commit += 1;
-                            worker_state.lock().unwrap().completed = next_commit;
-                        }
-
-                        let Some(result) = reorder.remove(&next_commit) else {
-                            break;
-                        };
-                        worker_state.lock().unwrap().current =
-                            Some(result.job.file.display().to_string());
-                        if let Err(error) = &result.result {
-                            failure = Some(error.clone());
-                            cleanup_parse_result(&result);
-                            break 'coordinator;
-                        }
-
-                        let import_result = parser_store::import_demo_file(
-                            &mut store,
-                            &result.job.file.display().to_string(),
-                            result.job.size,
-                            result.job.modified,
-                            &result.output_path,
-                        )
-                        .map_err(|error| {
-                            format!("{}: invalid output: {error}", result.job.file.display())
-                        });
-                        cleanup_parse_result(&result);
-                        if let Err(error) = import_result {
-                            failure = Some(error);
-                            break 'coordinator;
-                        }
-                        next_commit += 1;
-                        worker_state.lock().unwrap().completed = next_commit;
+                    if let Some(count) = active_disks.get_mut(&result.job.disk.key) {
+                        *count -= 1;
                     }
+                    worker_state.lock().unwrap().current =
+                        Some(result.job.file.display().to_string());
+                    if let Err(error) = &result.result {
+                        failure = Some(error.clone());
+                        cleanup_parse_result(&result);
+                        break 'coordinator;
+                    }
+                    let import_result = parser_store::import_demo_file(
+                        &mut store,
+                        &result.job.file.display().to_string(),
+                        result.job.size,
+                        result.job.modified,
+                        &result.output_path,
+                    )
+                    .map_err(|error| {
+                        format!("{}: invalid output: {error}", result.job.file.display())
+                    });
+                    cleanup_parse_result(&result);
+                    if let Err(error) = import_result {
+                        failure = Some(error);
+                        break 'coordinator;
+                    }
+                    completed_ordinals.insert(result.job.ordinal);
+                    while completed_ordinals.remove(&next_commit) {
+                        next_commit += 1;
+                    }
+                    worker_state.lock().unwrap().completed = next_commit;
                 }
 
                 drop(job_sender);
                 for result in result_receiver {
                     cleanup_parse_result(&result);
-                }
-                for pending in reorder.values() {
-                    cleanup_parse_result(pending);
                 }
                 if let Some(error) = failure {
                     Err(error)
@@ -765,15 +945,8 @@ pub(crate) fn run_nade_parser_batch(
             if worker_control.is_cancelled() {
                 return Err("Parsing cancelled".into());
             }
-            while next_commit < worker_state.lock().unwrap().total {
-                if cached_ordinals.remove(&next_commit) {
-                    next_commit += 1;
-                    continue;
-                }
-                if changed_ordinals.contains(&next_commit) {
-                    return Err("Parser results ended before every demo was committed".into());
-                }
-                next_commit += 1;
+            if next_commit < worker_state.lock().unwrap().total {
+                return Err("Parser results ended before every demo was committed".into());
             }
             worker_state.lock().unwrap().completed = next_commit;
             if deduplicate {
@@ -800,6 +973,7 @@ pub(crate) fn run_nade_parser_batch(
             status.update_elapsed();
             status.started_at = None;
             status.running = false;
+            status.active_parsers = 0;
             status.current = None;
             status.stage = "cancelled".into();
             status.error = None;
@@ -939,6 +1113,131 @@ mod tests {
         assert_eq!(bounded_worker_count(0, 16, 100), 1);
         assert_eq!(bounded_worker_count(99, 16, 100), MAX_PARSER_WORKERS);
         assert_eq!(bounded_worker_count(4, 16, 0), 1);
+    }
+
+    #[test]
+    fn automatic_scheduler_respects_per_disk_limits() {
+        let make = |ordinal: usize, key: &str, limit: usize| ParseJob {
+            ordinal,
+            file: PathBuf::from(format!("{ordinal}.dem")),
+            size: 0,
+            modified: 0,
+            disk: DiskGroup {
+                key: key.into(),
+                limit,
+            },
+        };
+        let jobs = vec![
+            make(0, "hdd", 1),
+            make(1, "hdd", 1),
+            make(2, "ssd", 5),
+            make(3, "ssd", 5),
+        ];
+        let mut active = HashMap::new();
+        active.insert("hdd".into(), 1);
+        active.insert("ssd".into(), 1);
+        assert_eq!(
+            next_scheduled_job(&jobs, &[true, false, true, false], &active, true),
+            Some(3)
+        );
+        active.insert("ssd".into(), 5);
+        assert_eq!(
+            next_scheduled_job(&jobs, &[true, false, true, false], &active, true),
+            None
+        );
+        assert_eq!(
+            next_scheduled_job(&jobs, &[true, false, true, false], &active, false),
+            Some(1)
+        );
+        active.insert("hdd".into(), 0);
+        assert_eq!(
+            next_scheduled_job(&jobs, &[true, false, true, false], &active, true),
+            Some(1)
+        );
+        assert_eq!(
+            parser_worker_count(None, &jobs),
+            bounded_worker_count(
+                6,
+                std::thread::available_parallelism()
+                    .map(usize::from)
+                    .unwrap_or(1),
+                4
+            )
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn canonical_windows_paths_keep_their_drive_for_disk_detection() {
+        assert_eq!(
+            volume_drive_letter(Path::new(r"F:\Dev\newdemos\a.dem")),
+            Some(b'F')
+        );
+        assert_eq!(
+            volume_drive_letter(Path::new(r"\\?\F:\Dev\newdemos\a.dem")),
+            Some(b'F')
+        );
+        assert_eq!(
+            volume_drive_letter(Path::new(r"D:\prodemos\a.dem")),
+            Some(b'D')
+        );
+        assert_eq!(
+            volume_drive_letter(Path::new(r"\\?\D:\prodemos\a.dem")),
+            Some(b'D')
+        );
+        assert_eq!(
+            volume_drive_letter(Path::new(r"\\server\share\a.dem")),
+            None
+        );
+        assert_eq!(
+            volume_drive_letter(Path::new(r"\\?\UNC\server\share\a.dem")),
+            None
+        );
+        let directory = std::env::current_dir().unwrap();
+        let canonical = std::fs::canonicalize(&directory).unwrap();
+        assert_eq!(
+            volume_drive_letter(&directory),
+            volume_drive_letter(&canonical)
+        );
+        assert_eq!(disk_group(&directory), disk_group(&canonical));
+    }
+
+    #[test]
+    fn auto_capacity_tracks_physical_disk() {
+        let make = |ordinal: usize, key: &str, limit: usize| ParseJob {
+            ordinal,
+            file: PathBuf::from(format!("{ordinal}.dem")),
+            size: 0,
+            modified: 0,
+            disk: DiskGroup {
+                key: key.into(),
+                limit,
+            },
+        };
+        let available = std::thread::available_parallelism()
+            .map(usize::from)
+            .unwrap_or(1);
+        let ssd: Vec<_> = (0..8)
+            .map(|index| make(index, "ssd", AUTO_SSD_WORKERS))
+            .collect();
+        assert_eq!(
+            parser_worker_count(None, &ssd),
+            bounded_worker_count(5, available, 8)
+        );
+        let hdd: Vec<_> = (0..8).map(|index| make(index, "hdd", 1)).collect();
+        assert_eq!(parser_worker_count(None, &hdd), 1);
+        let mixed = [
+            hdd[0].clone(),
+            ssd[0].clone(),
+            ssd[1].clone(),
+            ssd[2].clone(),
+            ssd[3].clone(),
+            ssd[4].clone(),
+        ];
+        assert_eq!(
+            parser_worker_count(None, &mixed),
+            bounded_worker_count(6, available, 6)
+        );
     }
 
     #[test]

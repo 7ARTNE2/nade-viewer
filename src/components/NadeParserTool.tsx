@@ -42,6 +42,8 @@ type Status = {
   current?: string;
   elapsed_ms: number;
   workers: number;
+  worker_mode: string;
+  active_parsers: number;
   disk_read_bytes_per_sec: number;
   disk_write_bytes_per_sec: number;
 };
@@ -74,14 +76,16 @@ export default function NadeParserTool({ refreshImports }: Props) {
     completed: 0,
     total: 0,
     elapsed_ms: 0,
-    workers: 4,
+    workers: 0,
+    worker_mode: 'auto',
+    active_parsers: 0,
     disk_read_bytes_per_sec: 0,
     disk_write_bytes_per_sec: 0,
   });
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [dedup, setDedup] = useState(false);
-  const [workers, setWorkers] = useState(2);
+  const [workers, setWorkers] = useState<number | null>(null);
   const [stopping, setStopping] = useState(false);
   const [paths, setPaths] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
@@ -522,8 +526,8 @@ export default function NadeParserTool({ refreshImports }: Props) {
                   <b>{tr('Parallel workers', 'Параллельные воркеры')}</b>
                   <small>
                     {tr(
-                      'Use fewer workers for HDD or constrained storage.',
-                      'Для HDD или медленного диска используйте меньше воркеров.',
+                      'Auto: 1 parser per HDD and 5 per SSD.',
+                      '\u0410\u0432\u0442\u043e: 1 \u043f\u0430\u0440\u0441\u0435\u0440 \u043d\u0430 HDD \u0438 5 \u043d\u0430 SSD.',
                     )}
                   </small>
                 </span>
@@ -687,10 +691,20 @@ export default function NadeParserTool({ refreshImports }: Props) {
                 <strong>{formatDuration(status.elapsed_ms)}</strong>
               </div>
             )}
-            {status.running && status.workers > 0 && (
+            {status.running && status.worker_mode && (
               <div className="tools-worker-status">
-                <span>{tr('Active worker limit', 'Лимит воркеров')}</span>
-                <b>{status.workers}</b>
+                <span>
+                  {tr(
+                    'Mode / active / limit',
+                    '\u0420\u0435\u0436\u0438\u043c / \u0430\u043a\u0442\u0438\u0432\u043d\u044b\u0435 / \u043b\u0438\u043c\u0438\u0442',
+                  )}
+                </span>
+                <b>
+                  {status.worker_mode === 'auto'
+                    ? tr('Auto', '\u0410\u0432\u0442\u043e')
+                    : `${tr('Manual', '\u0412\u0440\u0443\u0447\u043d\u0443\u044e')} (${status.workers})`}{' '}
+                  / {status.active_parsers} / {status.workers || '?'}
+                </b>
               </div>
             )}
             {status.running && (
