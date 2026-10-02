@@ -158,8 +158,6 @@ function Shell() {
       if (importsRequestRef.current !== requestId) return;
       if (active.status === 'fulfilled') {
         setActive(active.value);
-        if (!active.value && location.pathname !== '/import')
-          navigate('/import', { replace: true });
       }
       if (all.status === 'fulfilled')
         setImports(Array.isArray(all.value) ? all.value : []);
@@ -184,7 +182,7 @@ function Shell() {
     } finally {
       if (importsRequestRef.current === requestId) setLoading(false);
     }
-  }, [locale, location.pathname, navigate]);
+  }, [locale]);
 
   useEffect(() => {
     refreshImports().catch(() => setLoading(false));
