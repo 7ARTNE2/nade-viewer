@@ -153,11 +153,13 @@ func (p *DemoParser) Parse() ([]*models.ParsedGrenade, error) {
 
 		// История кнопок/позиций для throw description и lineup (общие helper-ы).
 		attackHistory := historyFor(p.playerAttackHistory, thrower.EntityID).snapshotWith(thrower.ButtonsPressedState)
+		previous := lastPositionSnapshot(p.playerPositionHistory, thrower.EntityID)
+		pitch, yaw := playerViewAngles(thrower, previous)
 		posHistory := historyFor(p.playerPositionHistory, thrower.EntityID).snapshotWith(PositionSnapshot{
 			Tick:     currentTick,
 			Position: thrower.Position(),
-			Pitch:    float64(thrower.ViewDirectionY()),
-			Yaw:      float64(thrower.ViewDirectionX()),
+			Pitch:    pitch,
+			Yaw:      yaw,
 		})
 
 		rawThrowDesc := getThrowKeys(thrower, attackHistory)
@@ -280,11 +282,13 @@ func (p *DemoParser) Parse() ([]*models.ParsedGrenade, error) {
 				continue
 			}
 			historyFor(p.playerAttackHistory, player.EntityID).push(player.ButtonsPressedState)
+			previous := lastPositionSnapshot(p.playerPositionHistory, player.EntityID)
+			pitch, yaw := playerViewAngles(player, previous)
 			historyFor(p.playerPositionHistory, player.EntityID).push(PositionSnapshot{
 				Tick:     tick,
 				Position: player.Position(),
-				Pitch:    float64(player.ViewDirectionY()),
-				Yaw:      float64(player.ViewDirectionX()),
+				Pitch:    pitch,
+				Yaw:      yaw,
 			})
 		}
 

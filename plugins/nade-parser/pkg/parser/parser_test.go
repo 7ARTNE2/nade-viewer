@@ -29,6 +29,31 @@ func TestHistoryRing_OrdersAndTrimsHistory(t *testing.T) {
 	}
 }
 
+func TestPlayerViewAnglesFallsBackWithoutPawn(t *testing.T) {
+	previous := PositionSnapshot{Pitch: -12.5, Yaw: 101.25}
+	for _, player := range []*common.Player{nil, {}} {
+		pitch, yaw := playerViewAngles(player, previous)
+		if pitch != previous.Pitch || yaw != previous.Yaw {
+			t.Fatalf("expected last known angles (%v, %v), got (%v, %v)", previous.Pitch, previous.Yaw, pitch, yaw)
+		}
+	}
+}
+
+func TestLastPositionSnapshotAfterHistoryWrap(t *testing.T) {
+	histories := make(map[int]*historyRing[PositionSnapshot])
+	if got := lastPositionSnapshot(histories, 7); got != (PositionSnapshot{}) {
+		t.Fatalf("expected empty fallback, got %+v", got)
+	}
+	history := historyFor(histories, 7)
+	for tick := 1; tick <= attackHistorySize+2; tick++ {
+		history.push(PositionSnapshot{Tick: tick, Pitch: float64(tick), Yaw: float64(-tick)})
+	}
+	got := lastPositionSnapshot(histories, 7)
+	if got.Tick != attackHistorySize+2 || got.Pitch != float64(got.Tick) || got.Yaw != float64(-got.Tick) {
+		t.Fatalf("expected newest angles after ring wrap, got %+v", got)
+	}
+}
+
 func TestResolveForwardJumpRunupReturnsStartOfFinalForwardHold(t *testing.T) {
 	w := uint64(common.ButtonForward)
 	jump := uint64(common.ButtonJump)

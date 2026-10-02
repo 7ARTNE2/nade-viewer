@@ -15,7 +15,7 @@ func main() {
 	output := flag.String("output", "", "Result path")
 	flag.Parse()
 	if *info {
-		fmt.Println(`{"name":"nade-parser","version":"0.2.0","protocol_version":2}`)
+		fmt.Println(`{"name":"nade-parser","version":"0.2.1","protocol_version":2}`)
 		return
 	}
 	if !*parse || *demo == "" || *output == "" {

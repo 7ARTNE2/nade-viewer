@@ -127,6 +127,14 @@ func historyFor[T any](histories map[int]*historyRing[T], id int) *historyRing[T
 	return history
 }
 
+func lastPositionSnapshot(histories map[int]*historyRing[PositionSnapshot], id int) PositionSnapshot {
+	history := histories[id]
+	if history == nil || history.len == 0 {
+		return PositionSnapshot{}
+	}
+	return history.values[(history.start+history.len-1)%attackHistorySize]
+}
+
 type LineupOrigin struct {
 	Position models.TrajectoryPoint
 }
@@ -719,7 +727,32 @@ func formatCoordinates(pos models.TrajectoryPoint, pitch, yaw float64) string {
 	return fmt.Sprintf("setpos %.6f %.6f %.6f; setang %.6f %.6f;", pos.X, pos.Y, pos.Z, pitch, yaw)
 }
 
-// getPlayerState получает состояние игрока в момент броска
+// playerViewAngles uses the last known angles when a pawn lacks eye angles.
+// ViewDirectionX/Y use PropertyValueMust and panic for such frames.
+func playerViewAngles(player *common.Player, fallback PositionSnapshot) (pitch, yaw float64) {
+	if player == nil {
+		return fallback.Pitch, fallback.Yaw
+	}
+	pawn := player.PlayerPawnEntity()
+	if pawn == nil {
+		return fallback.Pitch, fallback.Yaw
+	}
+	value, ok := pawn.PropertyValue("m_angEyeAngles")
+	if !ok {
+		return fallback.Pitch, fallback.Yaw
+	}
+	switch angles := value.Any.(type) {
+	case [3]float32:
+		return float64(angles[0]), float64(angles[1])
+	case []float32:
+		if len(angles) >= 2 {
+			return float64(angles[0]), float64(angles[1])
+		}
+	}
+	return fallback.Pitch, fallback.Yaw
+}
+
+// getPlayerState records the player position and view at throw time.
 func getPlayerState(player *common.Player, throwDesc string, startPosOverride *models.TrajectoryPoint, lineupSnapshot *PositionSnapshot) *models.PlayerState {
 	if player == nil {
 		return nil
@@ -737,16 +770,14 @@ func getPlayerState(player *common.Player, throwDesc string, startPosOverride *m
 			Y: startPosOverride.Y,
 			Z: startPosOverride.Z,
 		}
-		eyeAngle = float64(player.ViewDirectionX())
-		pitch = float64(player.ViewDirectionY())
+		pitch, eyeAngle = playerViewAngles(player, PositionSnapshot{})
 	} else if lineupSnapshot != nil {
 		pos = lineupSnapshot.Position
 		eyeAngle = lineupSnapshot.Yaw
 		pitch = lineupSnapshot.Pitch
 	} else {
 		pos = player.Position()
-		eyeAngle = float64(player.ViewDirectionX())
-		pitch = float64(player.ViewDirectionY())
+		pitch, eyeAngle = playerViewAngles(player, PositionSnapshot{})
 	}
 
 	return &models.PlayerState{
