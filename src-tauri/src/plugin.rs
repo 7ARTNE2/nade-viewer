@@ -31,6 +31,66 @@ pub(crate) struct PluginInfo {
     pub path: Option<String>,
     pub version: Option<String>,
 }
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ParserWorkspace {
+    Production,
+    Test,
+}
+
+impl ParserWorkspace {
+    fn id(self) -> &'static str {
+        match self {
+            Self::Production => "production",
+            Self::Test => "test",
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Production => "Production",
+            Self::Test => "Test",
+        }
+    }
+
+    fn from_id(id: &str) -> Result<Self, String> {
+        match id {
+            "production" => Ok(Self::Production),
+            "test" => Ok(Self::Test),
+            _ => Err(format!("Unknown parser workspace: {id}")),
+        }
+    }
+
+    fn filename(self) -> &'static str {
+        match self {
+            Self::Production => "parser-workspace.sqlite",
+            Self::Test => "parser-workspace-test.sqlite",
+        }
+    }
+}
+
+pub(crate) struct ParserWorkspaceState(pub Mutex<ParserWorkspace>);
+
+impl Default for ParserWorkspaceState {
+    fn default() -> Self {
+        Self(Mutex::new(ParserWorkspace::Test))
+    }
+}
+
+#[derive(Serialize, Clone)]
+pub(crate) struct ParserWorkspaceInfo {
+    pub id: String,
+    pub label: String,
+    pub path: String,
+    pub active: bool,
+    pub counts: (i64, i64, i64),
+}
+
+#[derive(Serialize, Clone)]
+pub(crate) struct ParserWorkspaceCatalog {
+    pub active: String,
+    pub workspaces: Vec<ParserWorkspaceInfo>,
+}
 #[derive(Serialize, Clone, Default)]
 pub(crate) struct ParserStatus {
     pub running: bool,
@@ -745,16 +805,75 @@ fn cleanup_stale_spool_files(workspace_path: &Path) {
     }
 }
 
-fn workspace_path(app: &AppHandle) -> Result<PathBuf, String> {
+fn workspace_path_for(app: &AppHandle, workspace: ParserWorkspace) -> Result<PathBuf, String> {
     Ok(app
         .path()
         .app_local_data_dir()
         .map_err(|e| e.to_string())?
-        .join("parser-workspace.sqlite"))
+        .join(workspace.filename()))
+}
+
+fn selected_workspace(app: &AppHandle) -> ParserWorkspace {
+    *app.state::<ParserWorkspaceState>()
+        .inner()
+        .0
+        .lock()
+        .unwrap()
+}
+
+fn require_confirmation(workspace: ParserWorkspace, confirmed: bool) -> Result<(), String> {
+    if workspace == ParserWorkspace::Production && !confirmed {
+        return Err("Production workspace requires explicit confirmation".into());
+    }
+    Ok(())
 }
 
 pub(crate) fn workspace_connection(app: &AppHandle) -> Result<rusqlite::Connection, String> {
-    parser_store::open(&workspace_path(app)?).map_err(|e| e.to_string())
+    parser_store::open(&workspace_path_for(app, selected_workspace(app))?)
+        .map_err(|e| e.to_string())
+}
+
+pub(crate) fn parser_workspace_catalog(app: &AppHandle) -> Result<ParserWorkspaceCatalog, String> {
+    let active = selected_workspace(app);
+    let mut workspaces = Vec::new();
+    for workspace in [ParserWorkspace::Test, ParserWorkspace::Production] {
+        let path = workspace_path_for(app, workspace)?;
+        let connection = parser_store::open(&path).map_err(|e| e.to_string())?;
+        workspaces.push(ParserWorkspaceInfo {
+            id: workspace.id().into(),
+            label: workspace.label().into(),
+            path: path.display().to_string(),
+            active: workspace == active,
+            counts: parser_store::counts(&connection).map_err(|e| e.to_string())?,
+        });
+    }
+    Ok(ParserWorkspaceCatalog {
+        active: active.id().into(),
+        workspaces,
+    })
+}
+
+#[tauri::command]
+pub(crate) fn get_parser_workspaces(app: AppHandle) -> Result<ParserWorkspaceCatalog, String> {
+    parser_workspace_catalog(&app)
+}
+
+#[tauri::command]
+pub(crate) fn set_parser_workspace(
+    app: AppHandle,
+    workspace: String,
+) -> Result<ParserWorkspaceCatalog, String> {
+    let next = ParserWorkspace::from_id(&workspace)?;
+    if state(&app).lock().unwrap().running {
+        return Err("Cannot switch parser workspace while parsing is running".into());
+    }
+    *app.state::<ParserWorkspaceState>()
+        .inner()
+        .0
+        .lock()
+        .unwrap() = next;
+    state(&app).lock().unwrap().reset();
+    parser_workspace_catalog(&app)
 }
 
 pub(crate) fn ensure_dataset_ready(
@@ -777,8 +896,9 @@ pub(crate) fn run_nade_parser(
     demo_path: String,
     deduplicate: bool,
     workers: Option<usize>,
+    confirmed: bool,
 ) -> Result<(), String> {
-    run_nade_parser_batch(app, vec![demo_path], deduplicate, workers)
+    run_nade_parser_batch(app, vec![demo_path], deduplicate, workers, confirmed)
 }
 #[tauri::command]
 pub(crate) fn run_nade_parser_batch(
@@ -786,6 +906,7 @@ pub(crate) fn run_nade_parser_batch(
     paths: Vec<String>,
     deduplicate: bool,
     workers: Option<usize>,
+    confirmed: bool,
 ) -> Result<(), String> {
     let executable = exe(&app);
     if !executable.is_file() {
@@ -797,7 +918,9 @@ pub(crate) fn run_nade_parser_batch(
             "Worker count must be between 1 and {MAX_PARSER_WORKERS}"
         ));
     }
-    let workspace_path = workspace_path(&app)?;
+    let workspace = selected_workspace(&app);
+    require_confirmation(workspace, confirmed)?;
+    let workspace_path = workspace_path_for(&app, workspace)?;
     let s = state(&app);
     let parser_control = control(&app);
     {
@@ -1039,8 +1162,10 @@ pub(crate) fn stop_nade_parser(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub(crate) fn deduplicate_parser_workspace(app: AppHandle) -> Result<(), String> {
-    let workspace_path = workspace_path(&app)?;
+pub(crate) fn deduplicate_parser_workspace(app: AppHandle, confirmed: bool) -> Result<(), String> {
+    let workspace = selected_workspace(&app);
+    require_confirmation(workspace, confirmed)?;
+    let workspace_path = workspace_path_for(&app, workspace)?;
     let s = state(&app);
     {
         let mut status = s.lock().unwrap();
@@ -1074,13 +1199,15 @@ pub(crate) fn get_parser_workspace_counts(app: AppHandle) -> Result<(i64, i64, i
 }
 
 #[tauri::command]
-pub(crate) fn clear_parser_workspace(app: AppHandle) -> Result<(), String> {
+pub(crate) fn clear_parser_workspace(app: AppHandle, confirmed: bool) -> Result<(), String> {
     let parser_state = state(&app);
     let mut status = parser_state.lock().unwrap();
     if status.running {
         return Err("Cannot clear the parser workspace while parsing is running".into());
     }
 
+    let workspace = selected_workspace(&app);
+    require_confirmation(workspace, confirmed)?;
     let mut connection = workspace_connection(&app)?;
     parser_store::clear(&mut connection).map_err(|e| e.to_string())?;
     status.reset();
@@ -1150,6 +1277,26 @@ mod tests {
         assert_eq!(bounded_worker_count(0, 16, 100), 1);
         assert_eq!(bounded_worker_count(99, 16, 100), MAX_PARSER_WORKERS);
         assert_eq!(bounded_worker_count(4, 16, 0), 1);
+    }
+
+    #[test]
+    fn parser_workspace_ids_and_files_are_stable() {
+        assert_eq!(ParserWorkspace::Production.id(), "production");
+        assert_eq!(
+            ParserWorkspace::Production.filename(),
+            "parser-workspace.sqlite"
+        );
+        assert_eq!(ParserWorkspace::Test.id(), "test");
+        assert_eq!(
+            ParserWorkspace::Test.filename(),
+            "parser-workspace-test.sqlite"
+        );
+        assert_eq!(
+            ParserWorkspace::from_id("production"),
+            Ok(ParserWorkspace::Production)
+        );
+        assert_eq!(ParserWorkspace::from_id("test"), Ok(ParserWorkspace::Test));
+        assert!(ParserWorkspace::from_id("unknown").is_err());
     }
 
     #[test]

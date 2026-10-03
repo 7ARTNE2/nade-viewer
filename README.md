@@ -368,6 +368,21 @@ lineups, Core flags, view history, onboarding state, and the minimum-usage
 setting, usage events, player rosters, and tournament metadata. Deleting an
 import in the UI deletes that import's local data; it does not delete the source file.
 
+### Nade Parser workspaces
+
+Nade Parser keeps parsing data in two independent SQLite workspaces under the
+same application data directory:
+
+- `parser-workspace.sqlite` is the `Production` workspace. Existing databases,
+  including large libraries, are preserved in place.
+- `parser-workspace-test.sqlite` is the isolated `Test` workspace. It is created
+  automatically when first opened.
+
+The parser starts in `Test` after every application launch. Select `Production`
+only when you intentionally need to work with the existing library. Parsing,
+deduplication, and clearing Production require explicit confirmation. Counts,
+exports, and parser imports always use the workspace selected in Nade Parser.
+
 Older local databases are migrated automatically on startup. The migration
 preserves the old `throw_description` values as `throw_keys` and adds any
 missing columns required by the current importer. Close Nade Viewer before

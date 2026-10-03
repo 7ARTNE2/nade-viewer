@@ -814,6 +814,7 @@ pub fn run() {
             parser_status.stage = "idle".into();
             app.manage(std::sync::Arc::new(std::sync::Mutex::new(parser_status)));
             app.manage(std::sync::Arc::new(crate::plugin::ParserControl::default()));
+            app.manage(crate::plugin::ParserWorkspaceState::default());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -833,6 +834,8 @@ pub fn run() {
             plugin::select_demo_folders,
             plugin::run_nade_parser_batch,
             plugin::stop_nade_parser,
+            plugin::get_parser_workspaces,
+            plugin::set_parser_workspace,
             plugin::deduplicate_parser_workspace,
             plugin::get_parser_workspace_counts,
             plugin::clear_parser_workspace,

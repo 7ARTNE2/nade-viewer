@@ -30,6 +30,7 @@ import { importParserWorkspace } from '../lib/tauri';
 import { useI18n } from '../i18n';
 import DestructiveConfirmDialog from './DestructiveConfirmDialog';
 import WorkersSelect from './WorkersSelect';
+import ParserWorkspaceSelect from './ParserWorkspaceSelect';
 
 type Props = { refreshImports?: () => Promise<void> };
 type Status = {
@@ -47,6 +48,14 @@ type Status = {
   disk_read_bytes_per_sec: number;
   disk_write_bytes_per_sec: number;
 };
+type WorkspaceInfo = {
+  id: 'production' | 'test';
+  label: string;
+  path: string;
+  active: boolean;
+  counts: [number, number, number];
+};
+type WorkspaceCatalog = { active: 'production' | 'test'; workspaces: WorkspaceInfo[] };
 
 function formatDuration(milliseconds: number) {
   if (milliseconds < 10_000) return `${(milliseconds / 1000).toFixed(1)} s`;
@@ -91,8 +100,10 @@ export default function NadeParserTool({ refreshImports }: Props) {
   const [busy, setBusy] = useState(false);
   const [source, setSource] = useState<'raw' | 'canonical'>('raw');
   const [counts, setCounts] = useState<[number, number, number]>([0, 0, 0]);
+  const [workspace, setWorkspace] = useState<'production' | 'test'>('test');
+  const [workspaces, setWorkspaces] = useState<WorkspaceInfo[]>([]);
   const [confirmation, setConfirmation] = useState<
-    'uninstall' | 'clear' | null
+    'uninstall' | 'clear' | 'production-run' | 'production-dedup' | null
   >(null);
   const [confirmationError, setConfirmationError] = useState('');
   const [confirmBusy, setConfirmBusy] = useState(false);
@@ -103,9 +114,11 @@ export default function NadeParserTool({ refreshImports }: Props) {
     const info = await invoke<{ installed: boolean }>('get_nade_parser_info');
     setInstalled(info.installed);
     setStatus(await invoke<Status>('get_nade_parser_status'));
-    setCounts(
-      await invoke<[number, number, number]>('get_parser_workspace_counts'),
-    );
+    const catalog = await invoke<WorkspaceCatalog>('get_parser_workspaces');
+    setWorkspace(catalog.active);
+    setWorkspaces(catalog.workspaces);
+    const active = catalog.workspaces.find((entry) => entry.active);
+    setCounts(active?.counts ?? [0, 0, 0]);
   };
   useEffect(() => {
     refresh().catch((e) => setError(String(e)));
@@ -188,7 +201,9 @@ export default function NadeParserTool({ refreshImports }: Props) {
     }
   };
   const locked = busy || status.running || confirmBusy;
-  const openConfirmation = (kind: 'uninstall' | 'clear') => {
+  const openConfirmation = (
+    kind: 'uninstall' | 'clear' | 'production-run' | 'production-dedup',
+  ) => {
     if (locked) return;
     setConfirmationError('');
     setConfirmation(kind);
@@ -204,14 +219,25 @@ export default function NadeParserTool({ refreshImports }: Props) {
     setError('');
     setMessage('');
     try {
-      await invoke(
-        confirmation === 'uninstall'
-          ? 'uninstall_nade_parser'
-          : 'clear_parser_workspace',
-      );
+      if (confirmation === 'uninstall') {
+        await invoke('uninstall_nade_parser');
+      } else if (confirmation === 'clear') {
+        await invoke('clear_parser_workspace', { confirmed: true });
+      } else if (confirmation === 'production-run') {
+        await invoke('run_nade_parser_batch', {
+          paths,
+          deduplicate: dedup,
+          workers,
+          confirmed: true,
+        });
+        setStatus(await invoke<Status>('get_nade_parser_status'));
+      } else {
+        await invoke('deduplicate_parser_workspace', { confirmed: true });
+        setStatus(await invoke<Status>('get_nade_parser_status'));
+      }
       // Commit the successful action before refreshing so a refresh failure never invites a retry.
       if (confirmation === 'uninstall') setInstalled(false);
-      else {
+      else if (confirmation === 'clear') {
         setCounts([0, 0, 0]);
         setStatus((previous) => ({
           ...previous,
@@ -235,6 +261,10 @@ export default function NadeParserTool({ refreshImports }: Props) {
       setMessage(
         confirmation === 'uninstall'
           ? tr('Plugin removed.', 'Плагин удалён.')
+          : confirmation === 'production-run'
+            ? tr('Production parsing started.', 'Парсинг в Production запущен.')
+            : confirmation === 'production-dedup'
+              ? tr('Production deduplication started.', 'Дедупликация Production запущена.')
           : tr('Parser database cleared.', 'База данных парсера очищена.'),
       );
       try {
@@ -249,6 +279,12 @@ export default function NadeParserTool({ refreshImports }: Props) {
       confirmingRef.current = false;
       setConfirmBusy(false);
     }
+  };
+  const workspaceIsProduction = workspace === 'production';
+  const workspaceCounts = {
+    production:
+      workspaces.find((entry) => entry.id === 'production')?.counts[0] ?? 0,
+    test: workspaces.find((entry) => entry.id === 'test')?.counts[0] ?? 0,
   };
   const stages: Record<string, string> = {
     idle: tr('Ready', 'Готово'),
@@ -425,6 +461,31 @@ export default function NadeParserTool({ refreshImports }: Props) {
       {installed && (
         <div className="tools-grid">
           <div className="tools-card tools-input">
+            <div className="parser-workspace-row">
+              <ParserWorkspaceSelect
+                value={workspace}
+                counts={workspaceCounts}
+                disabled={locked}
+                onChange={(next) => {
+                  void action(async () => {
+                    const catalog = await invoke<WorkspaceCatalog>(
+                      'set_parser_workspace',
+                      { workspace: next },
+                    );
+                    setWorkspace(catalog.active);
+                    setWorkspaces(catalog.workspaces);
+                    const active = catalog.workspaces.find((entry) => entry.active);
+                    setCounts(active?.counts ?? [0, 0, 0]);
+                    setSource('raw');
+                  });
+                }}
+              />
+              <span className={`parser-workspace-note ${workspaceIsProduction ? 'is-production' : ''}`}>
+                {workspaceIsProduction
+                  ? tr('Main library workspace', 'Основная база библиотеки')
+                  : tr('Isolated test workspace', 'Изолированная тестовая база')}
+              </span>
+            </div>
             <div className="tools-card-title">
               <span className="parser-panel-icon">
                 <FolderOpen size={18} aria-hidden="true" />
@@ -602,24 +663,20 @@ export default function NadeParserTool({ refreshImports }: Props) {
                 className="btn primary tools-run"
                 disabled={locked || !installed || !paths.length}
                 onClick={() =>
-                  void action(async () => {
-                    await invoke('run_nade_parser_batch', {
-                      paths,
-                      deduplicate: dedup,
-                      workers,
-                    });
-                    const nextStatus = await invoke<Status>(
-                      'get_nade_parser_status',
-                    );
-                    setStatus(nextStatus);
-                    if (!nextStatus.running) {
-                      setCounts(
-                        await invoke<[number, number, number]>(
-                          'get_parser_workspace_counts',
-                        ),
-                      );
-                    }
-                  })
+                  void (workspaceIsProduction
+                    ? openConfirmation('production-run')
+                    : action(async () => {
+                        await invoke('run_nade_parser_batch', {
+                          paths,
+                          deduplicate: dedup,
+                          workers,
+                          confirmed: false,
+                        });
+                        const nextStatus = await invoke<Status>(
+                          'get_nade_parser_status',
+                        );
+                        setStatus(nextStatus);
+                      }))
                 }
               >
                 <Play size={15} />
@@ -845,20 +902,24 @@ export default function NadeParserTool({ refreshImports }: Props) {
                 className="btn"
                 disabled={locked}
                 onClick={() =>
-                  void action(async () => {
-                    await invoke('deduplicate_parser_workspace');
-                    const nextStatus = await invoke<Status>(
-                      'get_nade_parser_status',
-                    );
-                    setStatus(nextStatus);
-                    if (!nextStatus.running) {
-                      setCounts(
-                        await invoke<[number, number, number]>(
-                          'get_parser_workspace_counts',
-                        ),
-                      );
-                    }
-                  })
+                  void (workspaceIsProduction
+                    ? openConfirmation('production-dedup')
+                    : action(async () => {
+                        await invoke('deduplicate_parser_workspace', {
+                          confirmed: false,
+                        });
+                        const nextStatus = await invoke<Status>(
+                          'get_nade_parser_status',
+                        );
+                        setStatus(nextStatus);
+                        if (!nextStatus.running) {
+                          setCounts(
+                            await invoke<[number, number, number]>(
+                              'get_parser_workspace_counts',
+                            ),
+                          );
+                        }
+                      }))
                 }
               >
                 <RefreshCw size={14} />
@@ -964,6 +1025,8 @@ export default function NadeParserTool({ refreshImports }: Props) {
           title={
             confirmation === 'uninstall'
               ? 'Nade Parser'
+              : confirmation === 'production-run' || confirmation === 'production-dedup'
+                ? 'Production'
               : tr('Parser workspace', 'Рабочая база парсера')
           }
           description={
@@ -972,6 +1035,16 @@ export default function NadeParserTool({ refreshImports }: Props) {
                   'Parsing will be unavailable until you install the plugin again. Your parser data and Viewer libraries will be preserved.',
                   'Парсинг будет недоступен до повторной установки плагина. Данные парсера и библиотеки Viewer сохранятся.',
                 )
+              : confirmation === 'production-run'
+                ? tr(
+                    'You are about to parse demos into the Production workspace containing your large library. Continue only if this is intentional.',
+                    'Вы собираетесь запустить парсинг в Production-базе с большой библиотекой. Продолжайте только если это сделано намеренно.',
+                  )
+                : confirmation === 'production-dedup'
+                  ? tr(
+                      'Recomputing the canonical set will rewrite the Production workspace. Continue only if this is intentional.',
+                      'Пересчёт канонического набора перезапишет Production-базу. Продолжайте только если это сделано намеренно.',
+                    )
               : tr(
                   'Raw throws, indexed demos and the canonical set will be permanently removed. Imported Viewer libraries will be preserved.',
                   'Исходные броски, обработанные демо и канонический набор будут удалены без возможности восстановления. Импортированные библиотеки Viewer сохранятся.',
@@ -1001,11 +1074,19 @@ export default function NadeParserTool({ refreshImports }: Props) {
           confirmLabel={
             confirmation === 'uninstall'
               ? tr('Remove plugin', 'Удалить плагин')
+              : confirmation === 'production-run'
+                ? tr('Start in Production', 'Запустить в Production')
+                : confirmation === 'production-dedup'
+                  ? tr('Recompute Production', 'Пересчитать Production')
               : tr('Clear database', 'Очистить базу')
           }
           pendingLabel={
             confirmation === 'uninstall'
               ? tr('Removing...', 'Удаление...')
+              : confirmation === 'production-run'
+                ? tr('Starting...', 'Запуск...')
+                : confirmation === 'production-dedup'
+                  ? tr('Recomputing...', 'Пересчёт...')
               : tr('Clearing...', 'Очистка...')
           }
           busy={confirmBusy}
