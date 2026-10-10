@@ -286,9 +286,9 @@ struct MapFilters {
     grenade_type: Option<String>,
     side: Option<String>,
     search: Option<String>,
-    thrower_team: Option<String>,
-    thrower_steamid64: Option<String>,
-    tournament: Option<String>,
+    thrower_team: Option<Vec<String>>,
+    thrower_steamid64: Option<Vec<String>>,
+    tournament: Option<Vec<String>>,
     min_usage: Option<i64>,
     radar_level: Option<String>,
     is_core: Option<bool>,
@@ -2930,6 +2930,19 @@ fn configure_conn(conn: &Connection) -> AppResult<()> {
     Ok(())
 }
 
+fn normalized_selection(values: &[String]) -> Vec<&str> {
+    let mut seen = HashSet::new();
+    values
+        .iter()
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty() && seen.insert(*value))
+        .collect()
+}
+
+fn selection_placeholders(count: usize) -> String {
+    vec!["?"; count].join(", ")
+}
+
 fn filter_sql(
     filters: &MapFilters,
     args: &mut Vec<Box<dyn rusqlite::ToSql>>,
@@ -2963,50 +2976,36 @@ fn filter_sql(
         parts.push(format!("{alias}.usage_count >= ?"));
         args.push(Box::new(min_usage));
     }
-    if let Some(team) = filters
-        .thrower_team
-        .as_deref()
-        .map(str::trim)
-        .filter(|v| !v.is_empty())
-    {
-        parts.push(format!(
-            "(LOWER(COALESCE({alias}.thrower_team, '')) LIKE ? ESCAPE '\\' OR EXISTS (SELECT 1 FROM grenade_usage_events ue WHERE ue.grenade_id={alias}.id AND LOWER(COALESCE(ue.thrower_team, '')) LIKE ? ESCAPE '\\'))"
-        ));
-        args.push(Box::new(format!(
-            "%{}%",
-            escape_like_pattern(&team.to_lowercase())
-        )));
-        args.push(Box::new(format!(
-            "%{}%",
-            escape_like_pattern(&team.to_lowercase())
-        )));
+    let teams = normalized_selection(filters.thrower_team.as_deref().unwrap_or_default());
+    if !teams.is_empty() {
+        let conditions: Vec<_> = teams.iter().map(|team| {
+            let pattern = format!("%{}%", escape_like_pattern(&team.to_lowercase()));
+            args.push(Box::new(pattern.clone()));
+            args.push(Box::new(pattern));
+            format!("(LOWER(COALESCE({alias}.thrower_team, '')) LIKE ? ESCAPE '\\' OR EXISTS (SELECT 1 FROM grenade_usage_events ue WHERE ue.grenade_id={alias}.id AND LOWER(COALESCE(ue.thrower_team, '')) LIKE ? ESCAPE '\\'))")
+        }).collect();
+        parts.push(format!("({})", conditions.join(" OR ")));
     }
-    if let Some(steamid64) = filters
-        .thrower_steamid64
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-    {
-        parts.push(format!(
-            "({alias}.thrower_steamid64 = ? OR EXISTS (SELECT 1 FROM grenade_usage_events ue WHERE ue.grenade_id={alias}.id AND ue.thrower_steamid64 = ?))"
-        ));
-        args.push(Box::new(steamid64.to_string()));
-        args.push(Box::new(steamid64.to_string()));
+    let players = normalized_selection(filters.thrower_steamid64.as_deref().unwrap_or_default());
+    if !players.is_empty() {
+        let placeholders = selection_placeholders(players.len());
+        parts.push(format!("({alias}.thrower_steamid64 IN ({placeholders}) OR EXISTS (SELECT 1 FROM grenade_usage_events ue WHERE ue.grenade_id={alias}.id AND ue.thrower_steamid64 IN ({placeholders})))"));
+        for _ in 0..2 {
+            for value in &players {
+                args.push(Box::new((*value).to_string()));
+            }
+        }
     }
-    if let Some(tournament) = filters
-        .tournament
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-    {
-        // Keyed by demo_filename on both sides so SQLite can use the
-        // demo_metadata primary key instead of walking every demo in the
-        // tournament for each candidate grenade.
-        parts.push(format!(
-            "(EXISTS (SELECT 1 FROM demo_metadata dm WHERE dm.import_id={alias}.import_id AND dm.demo_filename={alias}.demo_filename AND dm.tournament = ?) OR EXISTS (SELECT 1 FROM grenade_usage_events ue JOIN demo_metadata dm ON dm.import_id=ue.import_id AND dm.demo_filename=ue.demo_filename WHERE ue.grenade_id={alias}.id AND dm.tournament = ?))"
-        ));
-        args.push(Box::new(tournament.to_string()));
-        args.push(Box::new(tournament.to_string()));
+    let tournaments = normalized_selection(filters.tournament.as_deref().unwrap_or_default());
+    if !tournaments.is_empty() {
+        let placeholders = selection_placeholders(tournaments.len());
+        // Keep demo_filename lookups so SQLite can use the metadata primary key.
+        parts.push(format!("(EXISTS (SELECT 1 FROM demo_metadata dm WHERE dm.import_id={alias}.import_id AND dm.demo_filename={alias}.demo_filename AND dm.tournament IN ({placeholders})) OR EXISTS (SELECT 1 FROM grenade_usage_events ue JOIN demo_metadata dm ON dm.import_id=ue.import_id AND dm.demo_filename=ue.demo_filename WHERE ue.grenade_id={alias}.id AND dm.tournament IN ({placeholders})))"));
+        for _ in 0..2 {
+            for value in &tournaments {
+                args.push(Box::new((*value).to_string()));
+            }
+        }
     }
     if filters.is_core.unwrap_or(false) {
         parts.push(format!("{alias}.is_core = 1"));
@@ -4432,7 +4431,7 @@ fn import_players_from_conn(
     import_id: i64,
     team_name: Option<&str>,
     map: Option<&str>,
-    tournament: Option<&str>,
+    tournament: &[String],
 ) -> AppResult<Vec<ImportPlayer>> {
     let mut players = Vec::new();
     let mut seen = HashSet::new();
@@ -4463,17 +4462,33 @@ fn import_players_from_conn(
         }
     };
 
-    let player_sql = "SELECT DISTINCT steamid64, player_name, team_name, side
+    let mut player_sql = "SELECT DISTINCT steamid64, player_name, team_name, side
          FROM import_map_players
          WHERE import_id=?1
            AND (?2 IS NULL OR map=?2)
-           AND (?3 IS NULL OR team_name=?3)
-           AND (?4 IS NULL OR tournament=?4)
-         ORDER BY team_name, player_name, steamid64, side";
-    let mut stmt = conn.prepare(player_sql)?;
-    let rows = stmt.query_map(params![import_id, map, team_name, tournament], |row| {
-        Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
-    })?;
+           AND (?3 IS NULL OR team_name=?3)"
+        .to_string();
+    let mut args: Vec<Box<dyn rusqlite::ToSql>> = vec![
+        Box::new(import_id),
+        Box::new(map.map(str::to_string)),
+        Box::new(team_name.map(str::to_string)),
+    ];
+    let tournaments = normalized_selection(tournament);
+    if !tournaments.is_empty() {
+        player_sql.push_str(&format!(
+            " AND tournament IN ({})",
+            selection_placeholders(tournaments.len())
+        ));
+        for value in tournaments {
+            args.push(Box::new(value.to_string()));
+        }
+    }
+    player_sql.push_str(" ORDER BY team_name, player_name, steamid64, side");
+    let mut stmt = conn.prepare(&player_sql)?;
+    let rows = stmt.query_map(
+        rusqlite::params_from_iter(args.iter().map(|arg| &**arg)),
+        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+    )?;
     for row in rows {
         let (steamid64, name, team, side) = row?;
         add_player(steamid64, name, team, side);
@@ -4490,7 +4505,7 @@ fn import_players_from_conn(
 
 fn get_import_teams_blocking(
     map: Option<String>,
-    tournament: Option<String>,
+    tournament: Option<Vec<String>>,
     state: &AppState,
 ) -> AppResult<Vec<ImportTeam>> {
     let conn = open_conn(state)?;
@@ -4501,7 +4516,7 @@ fn get_import_teams_blocking(
         import_id,
         None,
         map.as_deref(),
-        tournament.as_deref(),
+        tournament.as_deref().unwrap_or_default(),
     )?;
     Ok(import_teams_from_players(players))
 }
@@ -4529,7 +4544,7 @@ fn import_teams_from_players(players: Vec<ImportPlayer>) -> Vec<ImportTeam> {
 #[tauri::command]
 async fn get_import_teams(
     map: Option<String>,
-    tournament: Option<String>,
+    tournament: Option<Vec<String>>,
     state: tauri::State<'_, AppState>,
 ) -> AppResult<Vec<ImportTeam>> {
     let state = state.inner().clone();
@@ -4541,7 +4556,7 @@ async fn get_import_teams(
 fn get_import_players_blocking(
     team_name: Option<String>,
     map: Option<String>,
-    tournament: Option<String>,
+    tournament: Option<Vec<String>>,
     state: &AppState,
 ) -> AppResult<Vec<ImportPlayer>> {
     let conn = open_conn(state)?;
@@ -4555,10 +4570,7 @@ fn get_import_players_blocking(
             .map(str::trim)
             .filter(|value| !value.is_empty()),
         map.as_deref(),
-        tournament
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty()),
+        tournament.as_deref().unwrap_or_default(),
     )
 }
 
@@ -4566,7 +4578,7 @@ fn get_import_players_blocking(
 async fn get_import_players(
     team_name: Option<String>,
     map: Option<String>,
-    tournament: Option<String>,
+    tournament: Option<Vec<String>>,
     state: tauri::State<'_, AppState>,
 ) -> AppResult<Vec<ImportPlayer>> {
     let state = state.inner().clone();
@@ -6002,7 +6014,7 @@ mod tests {
                 canonical_report.import_id,
                 None,
                 Some("de_test"),
-                None,
+                &[],
             )
             .unwrap()[0]
                 .name,
@@ -6014,7 +6026,7 @@ mod tests {
                 canonical_report.import_id,
                 Some("Alpha"),
                 Some("de_test"),
-                Some("Cup"),
+                &["Cup".to_string()],
             )
             .unwrap()[0]
                 .steamid64,
@@ -6560,9 +6572,9 @@ mod tests {
         .unwrap();
 
         let filters = MapFilters {
-            thrower_steamid64: Some("76561198000000001".to_string()),
-            thrower_team: Some("alpha".to_string()),
-            tournament: Some("Alpha".to_string()),
+            thrower_steamid64: Some(vec!["76561198000000001".to_string()]),
+            thrower_team: Some(vec!["alpha".to_string()]),
+            tournament: Some(vec!["Alpha".to_string()]),
             ..Default::default()
         };
         let mut args: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
@@ -6578,6 +6590,175 @@ mod tests {
             )
             .unwrap();
         assert_eq!(id, 10);
+    }
+
+    #[test]
+    fn multiple_event_filters_union_values_and_intersect_categories_without_duplicates() {
+        let conn = Connection::open_in_memory().unwrap();
+        init_schema(&conn).unwrap();
+        insert_import(&conn, 1);
+        conn.execute_batch(
+            "INSERT INTO grenades(id, import_id, source_index, map, side, grenade_type, thrower_steamid64, thrower_team, demo_filename)
+             VALUES (10, 1, 0, 'de_test', 'T', 'smoke', 'p1', 'Team Alpha', 'a.dem'),
+                    (11, 1, 1, 'de_test', 'T', 'smoke', 'p3', 'Team Gamma', 'c.dem'),
+                    (12, 1, 2, 'de_test', 'T', 'smoke', 'p3', 'Team Gamma', 'c.dem');
+             INSERT INTO demo_metadata(import_id, demo_filename, tournament, demo_date)
+             VALUES (1, 'a.dem', 'Alpha', '2024-01-01'),
+                    (1, 'b.dem', 'Beta', '2024-01-02'),
+                    (1, 'c.dem', 'Gamma', '2024-01-03');
+             INSERT INTO grenade_usage_events(import_id, grenade_id, demo_filename, thrower_steamid64, thrower_team)
+             VALUES (1, 10, 'b.dem', 'p2', 'Team Beta'),
+                    (1, 11, 'b.dem', 'p2', 'Team Beta'),
+                    (1, 11, 'b.dem', 'p2', 'Team Beta');",
+        ).unwrap();
+        let selection =
+            |values: &[&str]| Some(values.iter().map(|value| value.to_string()).collect());
+        let query = |filters: MapFilters| {
+            let mut args: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+            let sql = format!(
+                "SELECT g.id FROM grenades g WHERE g.import_id=1{} ORDER BY g.id",
+                filter_sql(&filters, &mut args, "g")
+            );
+            conn.prepare(&sql)
+                .unwrap()
+                .query_map(
+                    rusqlite::params_from_iter(args.iter().map(|arg| &**arg)),
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap()
+                .collect::<Result<Vec<_>, _>>()
+                .unwrap()
+        };
+        assert_eq!(
+            query(MapFilters {
+                thrower_team: selection(&["alpha", "beta"]),
+                thrower_steamid64: selection(&["p1", "p2"]),
+                tournament: selection(&["Alpha", "Beta"]),
+                ..Default::default()
+            }),
+            vec![10, 11]
+        );
+        assert_eq!(
+            query(MapFilters {
+                thrower_team: selection(&["alpha", "beta"]),
+                thrower_steamid64: selection(&["p1", "p2"]),
+                tournament: selection(&["Alpha", "Missing"]),
+                ..Default::default()
+            }),
+            vec![10]
+        );
+        assert_eq!(
+            query(MapFilters {
+                thrower_steamid64: selection(&["p3", "p2"]),
+                ..Default::default()
+            }),
+            vec![10, 11, 12]
+        );
+        assert_eq!(
+            query(MapFilters {
+                thrower_team: selection(&[]),
+                thrower_steamid64: selection(&[" "]),
+                tournament: selection(&[]),
+                ..Default::default()
+            }),
+            vec![10, 11, 12]
+        );
+        assert_eq!(
+            query(MapFilters {
+                thrower_team: selection(&[" alpha ", "alpha", ""]),
+                tournament: selection(&["Alpha", "Alpha"]),
+                ..Default::default()
+            }),
+            vec![10]
+        );
+        assert!(query(MapFilters {
+            tournament: selection(&["Alpha') OR 1=1 --"]),
+            ..Default::default()
+        })
+        .is_empty());
+    }
+
+    #[test]
+    fn player_options_union_tournaments_and_remain_scoped_to_map_team_and_import() {
+        let conn = Connection::open_in_memory().unwrap();
+        init_schema(&conn).unwrap();
+        insert_import(&conn, 1);
+        insert_import(&conn, 2);
+        conn.execute_batch(
+            "INSERT INTO import_map_players(import_id, map, tournament, steamid64, player_name, team_name, side)
+             VALUES (1, 'de_test', 'Alpha', 'p1', 'Alice', 'Red', 'T'),
+                    (1, 'de_test', 'Beta', 'p1', 'Alice', 'Blue', 'T'),
+                    (1, 'de_test', 'Beta', 'p2', 'Bob', 'Blue', 'CT'),
+                    (1, 'de_test', 'Gamma', 'p3', 'Carol', 'Green', 'T'),
+                    (1, 'de_other', 'Alpha', 'p4', 'Dan', 'Red', 'T'),
+                    (2, 'de_test', 'Alpha', 'p5', 'Eve', 'Red', 'T');",
+        ).unwrap();
+        let tournaments = vec![
+            "Alpha".to_string(),
+            " Beta ".to_string(),
+            "Alpha".to_string(),
+        ];
+        let players =
+            import_players_from_conn(&conn, 1, None, Some("de_test"), &tournaments).unwrap();
+        assert_eq!(players.len(), 3);
+        let teams = import_teams_from_players(players);
+        assert_eq!(teams.len(), 2);
+        assert_eq!(teams[0].team_name, "Blue");
+        assert_eq!(teams[0].player_count, 2);
+        assert_eq!(teams[1].player_count, 1);
+        let blue = import_players_from_conn(&conn, 1, Some("Blue"), Some("de_test"), &tournaments)
+            .unwrap();
+        assert_eq!(blue.len(), 2);
+        assert_eq!(
+            import_players_from_conn(&conn, 1, None, Some("de_test"), &[])
+                .unwrap()
+                .len(),
+            4
+        );
+        assert!(import_players_from_conn(
+            &conn,
+            1,
+            None,
+            Some("de_test"),
+            &["Missing".to_string()]
+        )
+        .unwrap()
+        .is_empty());
+    }
+
+    #[test]
+    fn team_selection_treats_like_metacharacters_as_literals() {
+        let conn = Connection::open_in_memory().unwrap();
+        init_schema(&conn).unwrap();
+        insert_import(&conn, 1);
+        conn.execute_batch(
+            "INSERT INTO grenades(import_id, source_index, map, side, grenade_type, thrower_team)
+             VALUES (1, 0, 'de_test', 'T', 'smoke', '100% real'),
+                    (1, 1, 'de_test', 'T', 'smoke', '1000 real'),
+                    (1, 2, 'de_test', 'T', 'smoke', 'under_score'),
+                    (1, 3, 'de_test', 'T', 'smoke', 'underXscore');",
+        )
+        .unwrap();
+        let filters = MapFilters {
+            thrower_team: Some(vec!["%".to_string(), "_".to_string()]),
+            ..Default::default()
+        };
+        let mut args: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+        let sql = format!(
+            "SELECT g.source_index FROM grenades g WHERE 1=1{} ORDER BY g.source_index",
+            filter_sql(&filters, &mut args, "g")
+        );
+        let found = conn
+            .prepare(&sql)
+            .unwrap()
+            .query_map(
+                rusqlite::params_from_iter(args.iter().map(|arg| &**arg)),
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert_eq!(found, vec![0, 2]);
     }
 
     #[test]

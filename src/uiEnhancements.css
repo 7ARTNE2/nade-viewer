@@ -440,6 +440,9 @@
   color: rgb(var(--filter-accent-rgb));
 }
 
+.tactical-filter-options button>.tactical-filter-checkbox{display:flex;align-items:center;justify-content:center;flex:0 0 16px;width:16px;height:16px;border:1px solid var(--dim);border-radius:3px}
+.tactical-filter-options button.selected>.tactical-filter-checkbox{border-color:rgb(var(--filter-accent-rgb));color:rgb(var(--filter-accent-rgb))}
+
 @keyframes tactical-filter-rainbow-frame {
   50% {
     background-position:

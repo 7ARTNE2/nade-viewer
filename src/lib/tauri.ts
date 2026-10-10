@@ -76,14 +76,14 @@ export function listImports() {
   return invoke<ImportSummary[]>('list_imports');
 }
 
-export function getImportTeams(map?: string, tournament?: string) {
+export function getImportTeams(map?: string, tournament?: string[]) {
   return invoke<ImportTeamOption[]>('get_import_teams', { map, tournament });
 }
 
 export function getImportPlayers(
   teamName?: string,
   map?: string,
-  tournament?: string,
+  tournament?: string[],
 ) {
   return invoke<ImportPlayerOption[]>('get_import_players', {
     teamName,

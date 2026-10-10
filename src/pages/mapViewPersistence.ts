@@ -1,5 +1,6 @@
 import type { IconTheme } from '../components/MapCanvas';
 import type { MapFilters } from '../types/domain';
+import { normalizeFilterSelection } from '../lib/mapFilterSelection';
 
 export const radarLevels = [
   { key: 'default', label: 'Main' },
@@ -24,9 +25,9 @@ export const defaultMapFilters = (): MapFilters => ({
   grenade_type: 'smoke',
   side: 'T',
   search: '',
-  thrower_team: '',
-  thrower_steamid64: '',
-  tournament: '',
+  thrower_team: [],
+  thrower_steamid64: [],
+  tournament: [],
   min_usage: 0,
   is_core: false,
   is_insta: false,
@@ -38,9 +39,9 @@ export function filtersMatchDefault(filters: MapFilters) {
     filters.grenade_type === defaults.grenade_type &&
     filters.side === defaults.side &&
     (filters.search ?? '') === defaults.search &&
-    (filters.thrower_team ?? '') === defaults.thrower_team &&
-    (filters.thrower_steamid64 ?? '') === defaults.thrower_steamid64 &&
-    (filters.tournament ?? '') === defaults.tournament &&
+    !filters.thrower_team?.length &&
+    !filters.thrower_steamid64?.length &&
+    !filters.tournament?.length &&
     (filters.min_usage ?? 0) === defaults.min_usage &&
     Boolean(filters.is_core) === Boolean(defaults.is_core) &&
     Boolean(filters.is_insta) === Boolean(defaults.is_insta)
@@ -79,7 +80,15 @@ export function readStoredMapViewState(key: string): StoredMapViewState | null {
         ? parsed.selectedClusterId
         : null;
     return {
-      filters: { ...defaultMapFilters(), ...(parsed.filters ?? {}) },
+      filters: {
+        ...defaultMapFilters(),
+        ...(parsed.filters ?? {}),
+        thrower_team: normalizeFilterSelection(parsed.filters?.thrower_team),
+        thrower_steamid64: normalizeFilterSelection(
+          parsed.filters?.thrower_steamid64,
+        ),
+        tournament: normalizeFilterSelection(parsed.filters?.tournament),
+      },
       selectedClusterId,
       clusterPage: normalizeStoredNumber(parsed.clusterPage, 0),
       grenadePage: normalizeStoredNumber(parsed.grenadePage, 0),

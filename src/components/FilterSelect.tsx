@@ -21,9 +21,10 @@ export type FilterSelectOption = {
 type Props = {
   label: string;
   accent?: 'tournament' | 'team' | 'player';
-  value: string;
+  value: string[];
   options: FilterSelectOption[];
-  onChange: (value: string) => void;
+  onChange: (value: string[]) => void;
+  selectedCountLabel: (count: number) => string;
   icon: ReactNode;
   searchPlaceholder: string;
   emptyLabel: string;
@@ -45,6 +46,7 @@ export default function FilterSelect({
   value,
   options,
   onChange,
+  selectedCountLabel,
   icon,
   searchPlaceholder,
   emptyLabel,
@@ -61,10 +63,15 @@ export default function FilterSelect({
   const [query, setQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
   const [position, setPosition] = useState<MenuPosition | null>(null);
-  const selected = options.find((option) => option.value === value) ?? {
-    value,
-    label: value || options[0]?.label || label,
-  };
+  const isSelected = (option: FilterSelectOption) =>
+    option.value ? value.includes(option.value) : value.length === 0;
+  const selected =
+    value.length > 1
+      ? { label: selectedCountLabel(value.length), meta: undefined }
+      : (options.find((option) => option.value === (value[0] ?? '')) ?? {
+          label: value[0] || options[0]?.label || label,
+          meta: undefined,
+        });
   const filteredOptions = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase();
     if (!normalized) return options;
@@ -115,18 +122,15 @@ export default function FilterSelect({
 
   const openMenu = () => {
     if (disabled || loading) return;
+    setActiveIndex(Math.max(0, options.findIndex(isSelected)));
     calculatePosition();
     setOpen(true);
   };
 
   useEffect(() => {
     if (!open) return;
-    const selectedIndex = filteredOptions.findIndex(
-      (option) => option.value === value,
-    );
-    setActiveIndex(Math.max(0, selectedIndex));
     window.requestAnimationFrame(() => searchRef.current?.focus());
-  }, [open, value]);
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -169,8 +173,14 @@ export default function FilterSelect({
   }, [activeIndex]);
 
   const selectOption = (option: FilterSelectOption) => {
-    onChange(option.value);
-    close(true);
+    if (disabled || loading) return;
+    onChange(
+      !option.value
+        ? []
+        : value.includes(option.value)
+          ? value.filter((item) => item !== option.value)
+          : [...value, option.value],
+    );
   };
 
   const handleMenuKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -194,9 +204,17 @@ export default function FilterSelect({
       setActiveIndex(event.key === 'Home' ? 0 : filteredOptions.length - 1);
       return;
     }
-    if (event.key === 'Enter') {
+    if (
+      event.key === 'Enter' ||
+      (event.key === ' ' && event.target !== searchRef.current)
+    ) {
       event.preventDefault();
-      selectOption(filteredOptions[activeIndex]);
+      const focusedIndex = optionRefs.current.findIndex(
+        (node) => node === event.target,
+      );
+      selectOption(
+        filteredOptions[focusedIndex >= 0 ? focusedIndex : activeIndex],
+      );
     }
   };
 
@@ -215,7 +233,7 @@ export default function FilterSelect({
 
   return (
     <div
-      className={`tactical-filter-select ${accent ? `accent-${accent}` : ''} ${value ? 'has-value' : ''} ${loading ? 'is-loading' : ''}`}
+      className={`tactical-filter-select ${accent ? `accent-${accent}` : ''} ${value.length ? 'has-value' : ''} ${loading ? 'is-loading' : ''}`}
     >
       <span className="tactical-filter-label">
         {icon}
@@ -287,12 +305,22 @@ export default function FilterSelect({
                   onChange={(event) => setQuery(event.target.value)}
                   placeholder={searchPlaceholder}
                   aria-label={searchPlaceholder}
+                  role="combobox"
+                  aria-expanded={open}
+                  aria-controls={menuId}
+                  aria-autocomplete="list"
+                  aria-activedescendant={
+                    filteredOptions.length
+                      ? `${menuId}-option-${activeIndex}`
+                      : undefined
+                  }
                 />
               </label>
               <div
                 id={menuId}
                 className="tactical-filter-options"
                 role="listbox"
+                aria-multiselectable="true"
                 aria-label={label}
               >
                 {filteredOptions.map((option, index) => (
@@ -301,10 +329,13 @@ export default function FilterSelect({
                       optionRefs.current[index] = node;
                     }}
                     key={option.value || '__all'}
-                    className={`${option.value === value ? 'selected' : ''} ${index === activeIndex ? 'highlighted' : ''}`}
+                    id={`${menuId}-option-${index}`}
+                    className={`${isSelected(option) ? 'selected' : ''} ${index === activeIndex ? 'highlighted' : ''}`}
                     type="button"
                     role="option"
-                    aria-selected={option.value === value}
+                    aria-selected={isSelected(option)}
+                    aria-disabled={disabled || loading}
+                    tabIndex={-1}
                     onMouseEnter={() => setActiveIndex(index)}
                     onClick={() => selectOption(option)}
                   >
@@ -312,9 +343,14 @@ export default function FilterSelect({
                       <strong>{option.label}</strong>
                       {option.meta ? <small>{option.meta}</small> : null}
                     </span>
-                    {option.value === value ? (
-                      <Check size={14} strokeWidth={2.5} aria-hidden="true" />
-                    ) : null}
+                    <span
+                      className="tactical-filter-checkbox"
+                      aria-hidden="true"
+                    >
+                      {isSelected(option) ? (
+                        <Check size={12} strokeWidth={2.5} />
+                      ) : null}
+                    </span>
                   </button>
                 ))}
                 {query.trim() && !hasMatchingValue ? (

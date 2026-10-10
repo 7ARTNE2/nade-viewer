@@ -41,6 +41,7 @@ import {
   updateSiteSettings,
 } from '../lib/tauri';
 import { formatNumber, grenadeLabel } from '../lib/format';
+import { reconcilePlayerSelections } from '../lib/mapFilterSelection';
 import type {
   GrenadePreview,
   ImportPlayerOption,
@@ -127,6 +128,17 @@ export default function MapPage({
   const allPlayersCacheRef = useRef(
     new globalThis.Map<string, ImportPlayerOption[]>(),
   );
+  const playerScopeKey = JSON.stringify([
+    activeImportId,
+    decodedMap,
+    filters.tournament ?? [],
+  ]);
+  const currentPlayerScopeRef = useRef(playerScopeKey);
+  currentPlayerScopeRef.current = playerScopeKey;
+  const [loadedPlayerScope, setLoadedPlayerScope] = useState<string | null>(
+    null,
+  );
+  const playerOptionsAvailable = loadedPlayerScope === playerScopeKey;
   const [mapSelectorOpen, setMapSelectorOpen] = useState(false);
   const [spawns, setSpawns] = useState<SpawnPoint[]>([]);
   const [selectedCluster, setSelectedCluster] = useState<LandingCluster | null>(
@@ -218,26 +230,41 @@ export default function MapPage({
     let cancelled = false;
     const cacheKey = `${activeImportId ?? 'active'}:${decodedMap}`;
     const cachedPlayers = allPlayersCacheRef.current.get(cacheKey);
-    if (!filters.tournament && cachedPlayers) {
-      setPlayers(cachedPlayers);
+    const acceptPlayers = (nextPlayers: ImportPlayerOption[]) => {
+      if (cancelled || currentPlayerScopeRef.current !== playerScopeKey) return;
+      const normalizedPlayers = Array.isArray(nextPlayers) ? nextPlayers : [];
+      setPlayers(normalizedPlayers);
+      setLoadedPlayerScope(playerScopeKey);
+      setFilters((state) =>
+        JSON.stringify([activeImportId, decodedMap, state.tournament ?? []]) ===
+        playerScopeKey
+          ? reconcilePlayerSelections(state, normalizedPlayers)
+          : state,
+      );
+      if (!filters.tournament?.length)
+        allPlayersCacheRef.current.set(cacheKey, normalizedPlayers);
+    };
+    if (!filters.tournament?.length && cachedPlayers) {
+      acceptPlayers(cachedPlayers);
       setPlayersLoading(false);
       return () => {
         cancelled = true;
       };
     }
     setPlayersLoading(true);
-    if (!cachedPlayers) setPlayers([]);
+    setLoadedPlayerScope(null);
     getImportPlayers(undefined, decodedMap, filters.tournament)
-      .then((nextPlayers) => {
-        if (cancelled) return;
-        const normalizedPlayers = Array.isArray(nextPlayers) ? nextPlayers : [];
-        setPlayers(normalizedPlayers);
-        if (!filters.tournament)
-          allPlayersCacheRef.current.set(cacheKey, normalizedPlayers);
-      })
+      .then(acceptPlayers)
       .catch((error) => {
         console.error('Unable to load player filter options', error);
-        if (!cancelled) setPlayers([]);
+        if (!cancelled)
+          showToast(
+            tr(
+              'Unable to load player filter options. Select tournaments again to retry.',
+              'Не удалось загрузить команды и игроков. Повторите выбор турниров.',
+            ),
+            { tone: 'error' },
+          );
       })
       .finally(() => {
         if (!cancelled) setPlayersLoading(false);
@@ -245,7 +272,7 @@ export default function MapPage({
     return () => {
       cancelled = true;
     };
-  }, [activeImportId, decodedMap, filters.tournament]);
+  }, [activeImportId, decodedMap, playerScopeKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -253,8 +280,17 @@ export default function MapPage({
     setTournaments([]);
     getImportTournaments(decodedMap)
       .then((nextTournaments) => {
-        if (!cancelled)
-          setTournaments(Array.isArray(nextTournaments) ? nextTournaments : []);
+        if (cancelled) return;
+        const available = Array.isArray(nextTournaments) ? nextTournaments : [];
+        setTournaments(available);
+        setFilters((state) => {
+          const selected = (state.tournament ?? []).filter((name) =>
+            available.some((option) => option.name === name),
+          );
+          return selected.length === (state.tournament ?? []).length
+            ? state
+            : { ...state, tournament: selected };
+        });
       })
       .catch((error) => {
         console.error('Unable to load tournament filter options', error);
@@ -563,9 +599,9 @@ export default function MapPage({
     filters.grenade_type !== 'all',
     filters.side !== 'Any',
     Boolean(filters.search?.trim()),
-    Boolean(filters.thrower_team?.trim()),
-    Boolean(filters.thrower_steamid64?.trim()),
-    Boolean(filters.tournament?.trim()),
+    Boolean(filters.thrower_team?.length),
+    Boolean(filters.thrower_steamid64?.length),
+    Boolean(filters.tournament?.length),
     filters.is_core,
     filters.is_insta,
   ].filter(Boolean).length;
@@ -584,39 +620,36 @@ export default function MapPage({
   const selectableMaps = maps.filter(
     (map) => map.grenade_count > 0 || map.name === decodedMap,
   );
-  const allFilterablePlayers = Array.from(
-    players
-      .filter((player) => player.steamid64)
-      .reduce((bySteamId, player) => {
-        const existing = bySteamId.get(player.steamid64);
-        if (!existing) {
-          bySteamId.set(player.steamid64, {
-            player: { ...player },
-            teams: new Set(player.team_name ? [player.team_name] : []),
-          });
+  const deduplicatePlayers = (source: ImportPlayerOption[]) =>
+    Array.from(
+      source
+        .filter((player) => player.steamid64)
+        .reduce((bySteamId, player) => {
+          const existing = bySteamId.get(player.steamid64);
+          if (!existing) {
+            bySteamId.set(player.steamid64, {
+              player: { ...player },
+              teams: new Set(player.team_name ? [player.team_name] : []),
+            });
+            return bySteamId;
+          }
+          if (player.team_name) existing.teams.add(player.team_name);
+          if (!existing.player.name && player.name)
+            existing.player.name = player.name;
           return bySteamId;
-        }
-        if (player.team_name) existing.teams.add(player.team_name);
-        if (!existing.player.name && player.name)
-          existing.player.name = player.name;
-        return bySteamId;
-      }, new globalThis.Map<string, { player: ImportPlayerOption; teams: Set<string> }>())
-      .values(),
-    ({ player, teams }) => ({
-      ...player,
-      team_name: Array.from(teams).sort().join(', '),
-    }),
-  );
-  const filterablePlayers = filters.thrower_team
-    ? Array.from(
-        new globalThis.Map<string, ImportPlayerOption>(
-          players
-            .filter(
-              (player) =>
-                player.steamid64 && player.team_name === filters.thrower_team,
-            )
-            .map((player) => [player.steamid64, player]),
-        ).values(),
+        }, new globalThis.Map<string, { player: ImportPlayerOption; teams: Set<string> }>())
+        .values(),
+      ({ player, teams }) => ({
+        ...player,
+        team_name: Array.from(teams).sort().join(', '),
+      }),
+    );
+  const allFilterablePlayers = deduplicatePlayers(players);
+  const filterablePlayers = filters.thrower_team?.length
+    ? deduplicatePlayers(
+        players.filter((player) =>
+          filters.thrower_team?.includes(player.team_name),
+        ),
       )
     : allFilterablePlayers;
   const teams = Array.from(
@@ -632,9 +665,6 @@ export default function MapPage({
       player_count: steamIds.size,
     }),
   ).sort((left, right) => left.team_name.localeCompare(right.team_name));
-  const selectedPlayer = filterablePlayers.find(
-    (player) => player.steamid64 === filters.thrower_steamid64,
-  );
   const teamFilterOptions: FilterSelectOption[] = [
     {
       value: '',
@@ -666,7 +696,7 @@ export default function MapPage({
       value: '',
       label: tr('All players', 'Все игроки'),
       meta: count(
-        allFilterablePlayers.length,
+        filterablePlayers.length,
         'player',
         'players',
         'игрок',
@@ -731,14 +761,26 @@ export default function MapPage({
     setFilters(defaultMapFilters());
   };
 
+  const updateTeamSelection = (values: string[]) => {
+    setFilters((state) => {
+      const next = { ...state, thrower_team: values };
+      return playerOptionsAvailable
+        ? reconcilePlayerSelections(next, players)
+        : next;
+    });
+  };
+
   const clearFilter = (
     key: 'search' | 'thrower_team' | 'thrower_steamid64' | 'tournament',
+    value?: string,
   ) => {
-    setFilters((state) =>
-      key === 'thrower_team'
-        ? { ...state, thrower_team: '', thrower_steamid64: '' }
-        : { ...state, [key]: '' },
-    );
+    if (key === 'search') {
+      setFilters((state) => ({ ...state, search: '' }));
+      return;
+    }
+    const values = (filters[key] ?? []).filter((item) => item !== value);
+    if (key === 'thrower_team') updateTeamSelection(values);
+    else setFilters((state) => ({ ...state, [key]: values }));
   };
 
   const applySiteSettings = async () => {
@@ -1120,26 +1162,28 @@ export default function MapPage({
                   <X size={11} aria-hidden="true" />
                 </button>
               ) : null}
-              {filters.thrower_team?.trim() ? (
+              {(filters.thrower_team ?? []).map((team) => (
                 <button
+                  key={team}
                   type="button"
                   className="filter-summary-chip"
-                  onClick={() => clearFilter('thrower_team')}
+                  onClick={() => clearFilter('thrower_team', team)}
                   aria-label={tr(
                     'Clear team filter',
                     'Сбросить фильтр команды',
                   )}
                 >
                   <Users size={11} aria-hidden="true" />
-                  <span>{filters.thrower_team.trim()}</span>
+                  <span>{team}</span>
                   <X size={11} aria-hidden="true" />
                 </button>
-              ) : null}
-              {filters.thrower_steamid64?.trim() ? (
+              ))}
+              {(filters.thrower_steamid64 ?? []).map((steamId) => (
                 <button
+                  key={steamId}
                   type="button"
                   className="filter-summary-chip"
-                  onClick={() => clearFilter('thrower_steamid64')}
+                  onClick={() => clearFilter('thrower_steamid64', steamId)}
                   aria-label={tr(
                     'Clear player filter',
                     'Сбросить фильтр игрока',
@@ -1147,26 +1191,29 @@ export default function MapPage({
                 >
                   <UserRound size={11} aria-hidden="true" />
                   <span>
-                    {selectedPlayer?.name || filters.thrower_steamid64}
+                    {allFilterablePlayers.find(
+                      (player) => player.steamid64 === steamId,
+                    )?.name || steamId}
                   </span>
                   <X size={11} aria-hidden="true" />
                 </button>
-              ) : null}
-              {filters.tournament?.trim() ? (
+              ))}
+              {(filters.tournament ?? []).map((tournament) => (
                 <button
+                  key={tournament}
                   type="button"
                   className="filter-summary-chip"
-                  onClick={() => clearFilter('tournament')}
+                  onClick={() => clearFilter('tournament', tournament)}
                   aria-label={tr(
                     'Clear tournament filter',
                     'Сбросить фильтр турнира',
                   )}
                 >
                   <Trophy size={11} aria-hidden="true" />
-                  <span>{filters.tournament.trim()}</span>
+                  <span>{tournament}</span>
                   <X size={11} aria-hidden="true" />
                 </button>
-              ) : null}
+              ))}
             </span>
           </div>
           <div className="segmented">
@@ -1249,8 +1296,11 @@ export default function MapPage({
               <FilterSelect
                 label={tr('Tournament', 'Турнир')}
                 accent="tournament"
-                value={filters.tournament ?? ''}
+                value={filters.tournament ?? []}
                 options={tournamentFilterOptions}
+                selectedCountLabel={(n) =>
+                  tr(`Selected: ${n}`, `Выбрано: ${n}`)
+                }
                 icon={null}
                 searchPlaceholder={tr('Search tournaments', 'Найти турнир')}
                 emptyLabel={tr('No tournaments found', 'Турниры не найдены')}
@@ -1260,8 +1310,6 @@ export default function MapPage({
                   setFilters((state) => ({
                     ...state,
                     tournament: value,
-                    thrower_team: '',
-                    thrower_steamid64: '',
                   }))
                 }
               />
@@ -1269,29 +1317,29 @@ export default function MapPage({
                 <FilterSelect
                   label={tr('Team', 'Команда')}
                   accent="team"
-                  value={filters.thrower_team ?? ''}
+                  value={filters.thrower_team ?? []}
                   options={teamFilterOptions}
+                  selectedCountLabel={(n) =>
+                    tr(`Selected: ${n}`, `Выбрано: ${n}`)
+                  }
                   icon={null}
                   searchPlaceholder={tr('Search teams', 'Найти команду')}
                   emptyLabel={tr('No teams found', 'Команды не найдены')}
-                  disabled={playersLoading}
-                  onChange={(value) =>
-                    setFilters((state) => ({
-                      ...state,
-                      thrower_team: value,
-                      thrower_steamid64: '',
-                    }))
-                  }
+                  disabled={playersLoading || !playerOptionsAvailable}
+                  onChange={updateTeamSelection}
                 />
                 <FilterSelect
                   label={tr('Player', 'Игрок')}
                   accent="player"
-                  value={filters.thrower_steamid64 ?? ''}
+                  value={filters.thrower_steamid64 ?? []}
                   options={playerFilterOptions}
+                  selectedCountLabel={(n) =>
+                    tr(`Selected: ${n}`, `Выбрано: ${n}`)
+                  }
                   icon={null}
                   searchPlaceholder={tr('Search players', 'Найти игрока')}
                   emptyLabel={tr('No players found', 'Игроки не найдены')}
-                  disabled={playersLoading}
+                  disabled={playersLoading || !playerOptionsAvailable}
                   onChange={(value) =>
                     setFilters((state) => ({
                       ...state,

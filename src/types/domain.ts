@@ -110,9 +110,9 @@ export type MapFilters = {
   grenade_type?: string;
   side?: string;
   search?: string;
-  thrower_team?: string;
-  thrower_steamid64?: string;
-  tournament?: string;
+  thrower_team?: string[];
+  thrower_steamid64?: string[];
+  tournament?: string[];
   min_usage?: number;
   radar_level?: 'default' | 'lower';
   is_core?: boolean;
