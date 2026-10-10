@@ -583,7 +583,26 @@ export default function MapCanvas({
       className={`map-canvas icon-theme-${iconTheme}`}
       data-tour="map-canvas"
     >
-      {radarControl}
+      <div className="map-top-left-overlays" data-map-control="1">
+        {selectedCluster ? (
+          <div className="map-caption">
+            <span>
+              {count(
+                selectedCluster.count,
+                'grenade selected',
+                'grenades selected',
+                'граната выбрана',
+                'гранаты выбрано',
+                'гранат выбрано',
+              )}
+            </span>
+            <span>
+              {selectedCluster.unique_types.map(grenadeLabel).join(', ')}
+            </span>
+          </div>
+        ) : null}
+        {radarControl}
+      </div>
       <div className="map-toolbar-floating" data-map-control="1">
         <button
           onClick={() => zoomAt(1.18)}
@@ -1006,23 +1025,6 @@ export default function MapCanvas({
               </div>
             </div>
           </div>
-          {selectedCluster ? (
-            <div className="map-caption">
-              <span>
-                {count(
-                  selectedCluster.count,
-                  'grenade selected',
-                  'grenades selected',
-                  'граната выбрана',
-                  'гранаты выбрано',
-                  'гранат выбрано',
-                )}
-              </span>
-              <span>
-                {selectedCluster.unique_types.map(grenadeLabel).join(', ')}
-              </span>
-            </div>
-          ) : null}
         </div>
         {activeGroup ? (
           <div

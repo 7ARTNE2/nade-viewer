@@ -58,6 +58,12 @@
 .map-toolbar .insta-toolbar-toggle{color:#ff9877}.map-toolbar .insta-toolbar-toggle.active{border-color:rgba(255,116,71,.4);background:rgba(255,116,71,.12);color:#ffa083}
 
 .map-stage{width:100%;height:100%}
+
+/* Keep the floor switch and selected-cluster caption in one left-side stack. */
+.map-top-left-overlays{position:absolute;z-index:50;top:12px;left:12px;display:grid;max-width:calc(100% - 24px);gap:8px;pointer-events:none}
+.map-top-left-overlays>*{pointer-events:auto}
+.map-top-left-overlays .map-caption{position:static;max-width:100%;box-sizing:border-box}
+.map-top-left-overlays .radar-switch{position:static;justify-self:start}
 .map-image{position:absolute;object-fit:contain}
 
 /* Keep the radar and every overlay in one browser-scaled coordinate space. */
@@ -80,12 +86,12 @@
 .map-heading span{font-size:11px;line-height:1.3}
 .map-workspace .toggle{font-size:12px}
 /* Compact radar level control on the map. */
-.map-canvas>.radar-switch{position:absolute;z-index:50;top:12px;right:12px;gap:1px;padding:3px;border:1px solid rgba(255,255,255,.12);border-radius:9px;background:rgba(10,13,17,.94);box-shadow:0 6px 18px rgba(0,0,0,.34)}
-.map-canvas>.radar-switch button{display:inline-flex;min-width:0;height:27px;align-items:center;justify-content:center;gap:5px;padding:0 9px;border-radius:6px;color:#abb4bf;font-size:10px;font-weight:700;letter-spacing:.01em;white-space:nowrap;transition:background 150ms ease,color 150ms ease,box-shadow 150ms ease}
-.map-canvas>.radar-switch button:hover{background:rgba(255,255,255,.07);color:var(--text)}
-.map-canvas>.radar-switch button.active{background:#252c30;color:var(--text);box-shadow:inset 0 0 0 1px rgba(var(--acid-rgb),.18),0 1px 4px rgba(0,0,0,.24)}
-.map-canvas>.radar-switch button.active:hover{background:#303937}
-.map-canvas>.radar-switch button:focus-visible{z-index:1;outline:2px solid var(--acid);outline-offset:2px}
+.map-top-left-overlays .radar-switch{gap:1px;padding:3px;border:1px solid rgba(255,255,255,.12);border-radius:9px;background:rgba(10,13,17,.94);box-shadow:0 6px 18px rgba(0,0,0,.34)}
+.map-top-left-overlays .radar-switch button{display:inline-flex;min-width:0;height:27px;align-items:center;justify-content:center;gap:5px;padding:0 9px;border-radius:6px;color:#abb4bf;font-size:10px;font-weight:700;letter-spacing:.01em;white-space:nowrap;transition:background 150ms ease,color 150ms ease,box-shadow 150ms ease}
+.map-top-left-overlays .radar-switch button:hover{background:rgba(255,255,255,.07);color:var(--text)}
+.map-top-left-overlays .radar-switch button.active{background:#252c30;color:var(--text);box-shadow:inset 0 0 0 1px rgba(var(--acid-rgb),.18),0 1px 4px rgba(0,0,0,.24)}
+.map-top-left-overlays .radar-switch button.active:hover{background:#303937}
+.map-top-left-overlays .radar-switch button:focus-visible{z-index:1;outline:2px solid var(--acid);outline-offset:2px}
 .radar-switch-indicator{width:4px;height:4px;flex:none;border-radius:50%;background:currentColor;opacity:.5}
 .radar-switch button.active .radar-switch-indicator{background:var(--acid);opacity:1;box-shadow:0 0 5px rgba(var(--acid-rgb),.35)}
 .section-title,.block-title{font-size:11px;line-height:1.35}
