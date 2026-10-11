@@ -165,6 +165,8 @@ export default function MapCanvas({
   const fittedClusterRef = useRef<string | null>(null);
   const viewAnimationTimerRef = useRef<number | null>(null);
   const viewAnimationFrameRef = useRef<number | null>(null);
+  const copiedGrenadeTimerRef = useRef<number | null>(null);
+  const copyRequestRef = useRef(0);
   const [stageSize, setStageSize] = useState({ width: 0, height: 0 });
   const [view, setView] = useState({ s: 1, tx: 0, ty: 0 });
   const [viewAnimating, setViewAnimating] = useState(false);
@@ -359,8 +361,12 @@ export default function MapCanvas({
   };
   const copyGrenadeCoordinates = async (grenade: GrenadePreview) => {
     if (!grenade.coordinates) return;
+    const request = ++copyRequestRef.current;
     try {
       await navigator.clipboard.writeText(grenade.coordinates);
+      if (request !== copyRequestRef.current) return;
+      if (copiedGrenadeTimerRef.current !== null)
+        window.clearTimeout(copiedGrenadeTimerRef.current);
       setCopiedGrenadeId(grenade.id);
       showToast(
         tr(
@@ -369,8 +375,12 @@ export default function MapCanvas({
         ),
         { tone: 'success', duration: 1960 },
       );
-      window.setTimeout(() => setCopiedGrenadeId(null), 1400);
+      copiedGrenadeTimerRef.current = window.setTimeout(() => {
+        setCopiedGrenadeId(null);
+        copiedGrenadeTimerRef.current = null;
+      }, 1400);
     } catch (error) {
+      if (request !== copyRequestRef.current) return;
       console.error(error);
       showToast(
         tr('Could not copy coordinates', 'Не удалось скопировать координаты'),
@@ -499,6 +509,9 @@ export default function MapCanvas({
 
   useEffect(
     () => () => {
+      copyRequestRef.current += 1;
+      if (copiedGrenadeTimerRef.current !== null)
+        window.clearTimeout(copiedGrenadeTimerRef.current);
       if (viewAnimationTimerRef.current !== null)
         window.clearTimeout(viewAnimationTimerRef.current);
       if (viewAnimationFrameRef.current !== null)
@@ -838,9 +851,7 @@ export default function MapCanvas({
                   return (
                     <g
                       key={`trajectory-${grenade.id}`}
-                      className={
-                        onGrenadeOpen ? 'trajectory-interactive' : undefined
-                      }
+                      className={`${onGrenadeOpen ? 'trajectory-interactive' : ''} ${copiedGrenadeId === grenade.id ? 'trajectory-copied' : ''}`}
                       style={
                         {
                           '--trajectory-active-width': 3.5 / view.s,
