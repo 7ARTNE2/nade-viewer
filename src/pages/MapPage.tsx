@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import MapCanvas, { type IconTheme } from '../components/MapCanvas';
 import GrenadeList from '../components/GrenadeList';
+import ThrowMotionIcon from '../components/ThrowMotionIcon';
 import FilterSelect, {
   type FilterSelectOption,
 } from '../components/FilterSelect';
@@ -604,6 +605,8 @@ export default function MapPage({
     Boolean(filters.tournament?.length),
     filters.is_core,
     filters.is_insta,
+    (filters.movement ?? 'all') !== 'all',
+    (filters.jump ?? 'all') !== 'all',
   ].filter(Boolean).length;
   const filterSummary = activeFilterCount
     ? count(
@@ -1270,6 +1273,86 @@ export default function MapPage({
                     : tr('CT', 'КТ')}
               </button>
             ))}
+          </div>
+          <div className="throw-filter-row">
+            <div
+              className={`throw-filter-group ${(filters.movement ?? 'all') !== 'all' ? 'has-value' : ''}`}
+            >
+              <span className="tactical-filter-label">
+                {tr('Movement', 'Движение')}
+                <span className="throw-filter-indicator" aria-hidden="true" />
+              </span>
+              <div
+                className="throw-filter-options"
+                role="group"
+                aria-label={tr('Movement', 'Движение')}
+              >
+                {(['all', 'moving', 'stationary'] as const).map((movement) => {
+                  const label =
+                    movement === 'all'
+                      ? tr('All movement types', 'Любое движение')
+                      : movement === 'moving'
+                        ? tr('Moving', 'В движении')
+                        : tr('Stationary', 'Без движения');
+                  return (
+                    <button
+                      key={movement}
+                      type="button"
+                      aria-label={label}
+                      data-tip={label}
+                      aria-pressed={(filters.movement ?? 'all') === movement}
+                      data-filtered={movement !== 'all' ? 'true' : undefined}
+                      onClick={() => {
+                        restoredClusterIdRef.current = null;
+                        restoredGrenadePageRef.current = 0;
+                        setFilters((state) => ({ ...state, movement }));
+                      }}
+                    >
+                      <ThrowMotionIcon kind={movement} />
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            <div
+              className={`throw-filter-group ${(filters.jump ?? 'all') !== 'all' ? 'has-value' : ''}`}
+            >
+              <span className="tactical-filter-label">
+                {tr('Jump', 'Прыжок')}
+                <span className="throw-filter-indicator" aria-hidden="true" />
+              </span>
+              <div
+                className="throw-filter-options"
+                role="group"
+                aria-label={tr('Jump', 'Прыжок')}
+              >
+                {(['all', 'jumping', 'grounded'] as const).map((jump) => {
+                  const label =
+                    jump === 'all'
+                      ? tr('With or without jump', 'С прыжком или без')
+                      : jump === 'jumping'
+                        ? tr('With jump', 'С прыжком')
+                        : tr('Without jump', 'Без прыжка');
+                  return (
+                    <button
+                      key={jump}
+                      type="button"
+                      aria-label={label}
+                      data-tip={label}
+                      aria-pressed={(filters.jump ?? 'all') === jump}
+                      data-filtered={jump !== 'all' ? 'true' : undefined}
+                      onClick={() => {
+                        restoredClusterIdRef.current = null;
+                        restoredGrenadePageRef.current = 0;
+                        setFilters((state) => ({ ...state, jump }));
+                      }}
+                    >
+                      <ThrowMotionIcon kind={jump} />
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           </div>
           <label className="mini-field filter-search-visible">
             <Search size={14} />

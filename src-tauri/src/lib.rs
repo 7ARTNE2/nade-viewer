@@ -293,6 +293,24 @@ struct MapFilters {
     radar_level: Option<String>,
     is_core: Option<bool>,
     is_insta: Option<bool>,
+    movement: Option<MovementFilter>,
+    jump: Option<JumpFilter>,
+}
+
+#[derive(Clone, Copy, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum MovementFilter {
+    All,
+    Moving,
+    Stationary,
+}
+
+#[derive(Clone, Copy, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum JumpFilter {
+    All,
+    Jumping,
+    Grounded,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -2975,6 +2993,34 @@ fn filter_sql(
     if let Some(min_usage) = filters.min_usage.filter(|v| *v > 0) {
         parts.push(format!("{alias}.usage_count >= ?"));
         args.push(Box::new(min_usage));
+    }
+    // Pad the normalized key sequence with '+' to match whole movement keys,
+    // rather than letters inside JUMP, SHIFT, or human-readable instructions.
+    let throw_keys = format!(
+        "('+' || LOWER(REPLACE(REPLACE(REPLACE(REPLACE(COALESCE({alias}.throw_keys, ''), ' ', ''), CHAR(9), ''), CHAR(10), ''), CHAR(13), '')) || '+')"
+    );
+    if let Some(MovementFilter::Moving | MovementFilter::Stationary) = filters.movement {
+        let movement = ["w", "a", "s", "d", "forward", "left", "back", "right"]
+            .iter()
+            .map(|key| format!("INSTR({throw_keys}, '+{key}+') > 0"))
+            .collect::<Vec<_>>()
+            .join(" OR ");
+        let negate = if matches!(filters.movement, Some(MovementFilter::Stationary)) {
+            "NOT "
+        } else {
+            ""
+        };
+        parts.push(format!("{negate}({movement})"));
+    }
+    if let Some(JumpFilter::Jumping | JumpFilter::Grounded) = filters.jump {
+        let negate = if matches!(filters.jump, Some(JumpFilter::Grounded)) {
+            "NOT "
+        } else {
+            ""
+        };
+        parts.push(format!(
+            "{negate}(INSTR({throw_keys}, 'jump') > 0 OR INSTR({throw_keys}, '+space+') > 0)"
+        ));
     }
     let teams = normalized_selection(filters.thrower_team.as_deref().unwrap_or_default());
     if !teams.is_empty() {
@@ -6545,6 +6591,119 @@ mod tests {
             demo_tournament_from_filename("Кубок_match_2024-01-02.dem").as_deref(),
             Some("Кубок")
         );
+    }
+
+    #[test]
+    fn throw_filters_classify_keys_and_intersect_with_other_filters() {
+        let conn = Connection::open_in_memory().unwrap();
+        init_schema(&conn).unwrap();
+        insert_import(&conn, 1);
+        let samples = [
+            (Some("M1+W"), true, false),
+            (Some("M1+A"), true, false),
+            (Some("M1+S"), true, false),
+            (Some("M1+D"), true, false),
+            (Some(" M1 + fOrWaRd + JUMP "), true, true),
+            (Some("M1+Left+Space"), true, true),
+            (Some("M1+Back+Jump throw"), true, true),
+            (Some("M1+Right+CTRL+SHIFT"), true, false),
+            (Some("M1+JUMP"), false, true),
+            (Some("M1+Space"), false, true),
+            (Some("Jump throw"), false, true),
+            (Some("M1+CTRL+SHIFT"), false, false),
+            (Some("M2"), false, false),
+            (Some(""), false, false),
+            (None, false, false),
+            (Some("M1+WALK+DRAW"), false, false),
+            (Some("  M1 + w + sPaCe  "), true, true),
+            (Some("M1+ W\t + JUMP\r\n"), true, true),
+            (Some("M1+SPACEBAR"), false, false),
+            (Some("M1+W+A+S+D+JUMP"), true, true),
+        ];
+        for (index, (keys, _, _)) in samples.iter().enumerate() {
+            conn.execute(
+                "INSERT INTO grenades(id, import_id, source_index, map, side, grenade_type, throw_keys)
+                 VALUES (?1, 1, ?1, 'de_test', ?2, ?3, ?4)",
+                rusqlite::params![
+                    index as i64,
+                    if index % 2 == 0 { "T" } else { "CT" },
+                    if index % 3 == 0 { "flash" } else { "smoke" },
+                    keys
+                ],
+            )
+            .unwrap();
+        }
+        let query = |filters: MapFilters| {
+            let mut args: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+            let sql = format!(
+                "SELECT g.id FROM grenades g WHERE 1=1{} ORDER BY g.id",
+                filter_sql(&filters, &mut args, "g")
+            );
+            conn.prepare(&sql)
+                .unwrap()
+                .query_map(
+                    rusqlite::params_from_iter(args.iter().map(|arg| &**arg)),
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap()
+                .collect::<rusqlite::Result<Vec<_>>>()
+                .unwrap()
+        };
+        // Exercise each filter independently and all four intersections.
+        for movement in [None, Some(true), Some(false)] {
+            for jump in [None, Some(true), Some(false)] {
+                for scoped in [false, true] {
+                    let filters = MapFilters {
+                        movement: movement.map(|moving| {
+                            if moving {
+                                MovementFilter::Moving
+                            } else {
+                                MovementFilter::Stationary
+                            }
+                        }),
+                        jump: jump.map(|jumping| {
+                            if jumping {
+                                JumpFilter::Jumping
+                            } else {
+                                JumpFilter::Grounded
+                            }
+                        }),
+                        grenade_type: scoped.then(|| "smoke".to_string()),
+                        side: scoped.then(|| "T".to_string()),
+                        ..Default::default()
+                    };
+                    let expected: Vec<i64> = samples
+                        .iter()
+                        .enumerate()
+                        .filter(|(index, (_, moving, jumping))| {
+                            movement.is_none_or(|value| value == *moving)
+                                && jump.is_none_or(|value| value == *jumping)
+                                && (!scoped || (index % 2 == 0 && index % 3 != 0))
+                        })
+                        .map(|(index, _)| index as i64)
+                        .collect();
+                    assert_eq!(
+                        query(filters),
+                        expected,
+                        "movement={movement:?}, jump={jump:?}, scoped={scoped}"
+                    );
+                }
+            }
+        }
+        assert_eq!(
+            query(MapFilters {
+                movement: Some(MovementFilter::All),
+                jump: Some(JumpFilter::All),
+                ..Default::default()
+            })
+            .len(),
+            samples.len()
+        );
+        let legacy: MapFilters = serde_json::from_str("{}").unwrap();
+        assert_eq!(query(legacy).len(), samples.len());
+        let selected: MapFilters =
+            serde_json::from_str(r#"{"movement":"stationary","jump":"jumping"}"#).unwrap();
+        assert_eq!(query(selected), vec![8, 9, 10]);
     }
 
     #[test]

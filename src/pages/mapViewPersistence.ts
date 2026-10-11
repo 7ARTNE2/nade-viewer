@@ -24,6 +24,8 @@ export type StoredMapViewState = {
 export const defaultMapFilters = (): MapFilters => ({
   grenade_type: 'smoke',
   side: 'T',
+  movement: 'all',
+  jump: 'all',
   search: '',
   thrower_team: [],
   thrower_steamid64: [],
@@ -38,6 +40,8 @@ export function filtersMatchDefault(filters: MapFilters) {
   return (
     filters.grenade_type === defaults.grenade_type &&
     filters.side === defaults.side &&
+    (filters.movement ?? 'all') === defaults.movement &&
+    (filters.jump ?? 'all') === defaults.jump &&
     (filters.search ?? '') === defaults.search &&
     !filters.thrower_team?.length &&
     !filters.thrower_steamid64?.length &&
@@ -83,6 +87,16 @@ export function readStoredMapViewState(key: string): StoredMapViewState | null {
       filters: {
         ...defaultMapFilters(),
         ...(parsed.filters ?? {}),
+        movement:
+          parsed.filters?.movement === 'moving' ||
+          parsed.filters?.movement === 'stationary'
+            ? parsed.filters.movement
+            : 'all',
+        jump:
+          parsed.filters?.jump === 'jumping' ||
+          parsed.filters?.jump === 'grounded'
+            ? parsed.filters.jump
+            : 'all',
         thrower_team: normalizeFilterSelection(parsed.filters?.thrower_team),
         thrower_steamid64: normalizeFilterSelection(
           parsed.filters?.thrower_steamid64,

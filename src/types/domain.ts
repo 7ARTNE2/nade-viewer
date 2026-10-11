@@ -109,6 +109,8 @@ export type MapSummary = {
 export type MapFilters = {
   grenade_type?: string;
   side?: string;
+  movement?: 'all' | 'moving' | 'stationary';
+  jump?: 'all' | 'jumping' | 'grounded';
   search?: string;
   thrower_team?: string[];
   thrower_steamid64?: string[];
