@@ -1,0 +1,57 @@
+:root {
+  /* Both silhouettes share an exact tip and hotspot to avoid hover jumps. */
+  --cursor-default: url('/cursors/tactical-default.svg') 4 3, default;
+  --cursor-pointer: url('/cursors/tactical-pointer.svg') 4 3, pointer;
+  --cursor-text: url('/cursors/tactical-text.svg') 16 16, text;
+  --cursor-grab: url('/cursors/tactical-grab.svg') 16 16, grab;
+  --cursor-grabbing: url('/cursors/tactical-grabbing.svg') 16 16, grabbing;
+  --cursor-zoom-in: url('/cursors/tactical-zoom-in.svg') 13 13, zoom-in;
+  --cursor-zoom-out: url('/cursors/tactical-zoom-out.svg') 13 13, zoom-out;
+  --cursor-wait: url('/cursors/tactical-wait.svg') 16 16, wait;
+  --cursor-progress: url('/cursors/tactical-progress.svg') 4 3, progress;
+  --cursor-not-allowed:
+    url('/cursors/tactical-not-allowed.svg') 16 16, not-allowed;
+}
+
+html {
+  cursor: var(--cursor-default);
+}
+
+/* Keep base controls low-specificity so their interaction states win. */
+:where(
+  button,
+  a[href],
+  [role='button'],
+  select,
+  input[type='button'],
+  input[type='submit'],
+  input[type='reset'],
+  input[type='checkbox'],
+  input[type='radio'],
+  input[type='range']
+) {
+  cursor: var(--cursor-pointer);
+}
+
+:where(
+  input:not([type]),
+  input[type='text'],
+  input[type='search'],
+  input[type='email'],
+  input[type='url'],
+  input[type='tel'],
+  input[type='password'],
+  input[type='number'],
+  textarea,
+  [contenteditable=''],
+  [contenteditable='true'],
+  [contenteditable='plaintext-only']
+) {
+  cursor: var(--cursor-text);
+}
+
+/* Disabled state must also win over text fields and styled custom controls. */
+:is(input, select, textarea):disabled,
+[aria-disabled='true'] {
+  cursor: var(--cursor-not-allowed) !important;
+}

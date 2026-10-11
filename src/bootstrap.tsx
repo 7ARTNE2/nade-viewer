@@ -5,6 +5,7 @@ import App from './App';
 import AppErrorBoundary from './components/AppErrorBoundary';
 import { I18nProvider } from './i18n';
 import { ToastProvider } from './components/Toast';
+import './cursors.css';
 import './styles.css';
 import './uiEnhancements.css';
 
