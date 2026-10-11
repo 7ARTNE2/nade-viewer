@@ -721,6 +721,12 @@ export default function MapCanvas({
               <span>
                 <i className="legend-line he" /> HE
               </span>
+              <small>
+                {tr(
+                  'Click a trajectory to open the lineup. Right-click to copy coordinates.',
+                  'Нажмите на траекторию, чтобы открыть раскидку. ПКМ: копировать координаты.',
+                )}
+              </small>
             </div>
             <div className="legend-group legend-spawns">
               <strong>{tr('Spawns', 'Спавны')}</strong>
@@ -826,8 +832,49 @@ export default function MapCanvas({
                         }
                       : null;
                   const [firstX, firstY] = trajectory[0];
+                  const trajectoryPoints = trajectory
+                    .map(([x, y]) => `${x},${y}`)
+                    .join(' ');
                   return (
-                    <g key={`trajectory-${grenade.id}`}>
+                    <g
+                      key={`trajectory-${grenade.id}`}
+                      className={
+                        onGrenadeOpen ? 'trajectory-interactive' : undefined
+                      }
+                      role={onGrenadeOpen ? 'button' : undefined}
+                      tabIndex={onGrenadeOpen ? 0 : undefined}
+                      data-map-control={onGrenadeOpen ? '1' : undefined}
+                      aria-label={
+                        onGrenadeOpen
+                          ? tr(
+                              `${grenadeLabel(grenade.grenade_type)} grenade #${grenade.id} trajectory. Open details. Right-click to copy coordinates.`,
+                              `Траектория гранаты ${grenadeLabel(grenade.grenade_type)} #${grenade.id}. Открыть детали. ПКМ для копирования координат.`,
+                            )
+                          : undefined
+                      }
+                      onPointerEnter={
+                        onGrenadeOpen
+                          ? (event) => showPreview(event, grenade)
+                          : undefined
+                      }
+                      onPointerLeave={() => setPreview(null)}
+                      onClick={() => onGrenadeOpen?.(grenade.id)}
+                      onKeyDown={(event) => {
+                        if (
+                          onGrenadeOpen &&
+                          (event.key === 'Enter' || event.key === ' ')
+                        ) {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          onGrenadeOpen(grenade.id);
+                        }
+                      }}
+                      onContextMenu={
+                        onGrenadeOpen
+                          ? (event) => copyPointCoordinates(event, [grenade])
+                          : undefined
+                      }
+                    >
                       {start ? (
                         <line
                           className="trajectory-connector"
@@ -842,9 +889,8 @@ export default function MapCanvas({
                         />
                       ) : null}
                       <polyline
-                        points={trajectory
-                          .map(([x, y]) => `${x},${y}`)
-                          .join(' ')}
+                        className="trajectory-line"
+                        points={trajectoryPoints}
                         fill="none"
                         stroke={
                           typeColor[grenade.grenade_type] ??
@@ -856,6 +902,23 @@ export default function MapCanvas({
                         strokeLinecap="round"
                         strokeLinejoin="round"
                       />
+                      {onGrenadeOpen ? (
+                        <polyline
+                          className="trajectory-hit-area"
+                          points={
+                            start
+                              ? `${start.x},${start.y} ${trajectoryPoints}`
+                              : trajectoryPoints
+                          }
+                          fill="none"
+                          stroke="transparent"
+                          strokeWidth={12 / view.s}
+                          vectorEffect="non-scaling-stroke"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          aria-hidden="true"
+                        />
+                      ) : null}
                     </g>
                   );
                 })}
