@@ -841,6 +841,12 @@ export default function MapCanvas({
                       className={
                         onGrenadeOpen ? 'trajectory-interactive' : undefined
                       }
+                      style={
+                        {
+                          '--trajectory-active-width': 3.5 / view.s,
+                          '--trajectory-glow-radius': `${2 / view.s}px`,
+                        } as CSSProperties
+                      }
                       role={onGrenadeOpen ? 'button' : undefined}
                       tabIndex={onGrenadeOpen ? 0 : undefined}
                       data-map-control={onGrenadeOpen ? '1' : undefined}
