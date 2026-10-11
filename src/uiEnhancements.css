@@ -1864,9 +1864,6 @@
   flex-direction: column;
 }
 
-.detail-order-keys {
-}
-
 .detail-order-coordinates {
   order: 4;
 }
