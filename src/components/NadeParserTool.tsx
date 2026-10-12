@@ -55,7 +55,10 @@ type WorkspaceInfo = {
   active: boolean;
   counts: [number, number, number];
 };
-type WorkspaceCatalog = { active: 'production' | 'test'; workspaces: WorkspaceInfo[] };
+type WorkspaceCatalog = {
+  active: 'production' | 'test';
+  workspaces: WorkspaceInfo[];
+};
 
 function formatDuration(milliseconds: number) {
   if (milliseconds < 10_000) return `${(milliseconds / 1000).toFixed(1)} s`;
@@ -264,8 +267,11 @@ export default function NadeParserTool({ refreshImports }: Props) {
           : confirmation === 'production-run'
             ? tr('Production parsing started.', 'Парсинг в Production запущен.')
             : confirmation === 'production-dedup'
-              ? tr('Production deduplication started.', 'Дедупликация Production запущена.')
-          : tr('Parser database cleared.', 'База данных парсера очищена.'),
+              ? tr(
+                  'Production deduplication started.',
+                  'Дедупликация Production запущена.',
+                )
+              : tr('Parser database cleared.', 'База данных парсера очищена.'),
       );
       try {
         await refresh();
@@ -474,16 +480,23 @@ export default function NadeParserTool({ refreshImports }: Props) {
                     );
                     setWorkspace(catalog.active);
                     setWorkspaces(catalog.workspaces);
-                    const active = catalog.workspaces.find((entry) => entry.active);
+                    const active = catalog.workspaces.find(
+                      (entry) => entry.active,
+                    );
                     setCounts(active?.counts ?? [0, 0, 0]);
                     setSource('raw');
                   });
                 }}
               />
-              <span className={`parser-workspace-note ${workspaceIsProduction ? 'is-production' : ''}`}>
+              <span
+                className={`parser-workspace-note ${workspaceIsProduction ? 'is-production' : ''}`}
+              >
                 {workspaceIsProduction
                   ? tr('Main library workspace', 'Основная база библиотеки')
-                  : tr('Isolated test workspace', 'Изолированная тестовая база')}
+                  : tr(
+                      'Isolated test workspace',
+                      'Изолированная тестовая база',
+                    )}
               </span>
             </div>
             <div className="tools-card-title">
@@ -1025,9 +1038,10 @@ export default function NadeParserTool({ refreshImports }: Props) {
           title={
             confirmation === 'uninstall'
               ? 'Nade Parser'
-              : confirmation === 'production-run' || confirmation === 'production-dedup'
+              : confirmation === 'production-run' ||
+                  confirmation === 'production-dedup'
                 ? 'Production'
-              : tr('Parser workspace', 'Рабочая база парсера')
+                : tr('Parser workspace', 'Рабочая база парсера')
           }
           description={
             confirmation === 'uninstall'
@@ -1045,10 +1059,10 @@ export default function NadeParserTool({ refreshImports }: Props) {
                       'Recomputing the canonical set will rewrite the Production workspace. Continue only if this is intentional.',
                       'Пересчёт канонического набора перезапишет Production-базу. Продолжайте только если это сделано намеренно.',
                     )
-              : tr(
-                  'Raw throws, indexed demos and the canonical set will be permanently removed. Imported Viewer libraries will be preserved.',
-                  'Исходные броски, обработанные демо и канонический набор будут удалены без возможности восстановления. Импортированные библиотеки Viewer сохранятся.',
-                )
+                  : tr(
+                      'Raw throws, indexed demos and the canonical set will be permanently removed. Imported Viewer libraries will be preserved.',
+                      'Исходные броски, обработанные демо и канонический набор будут удалены без возможности восстановления. Импортированные библиотеки Viewer сохранятся.',
+                    )
           }
           metadata={
             confirmation === 'uninstall' ? (
@@ -1078,7 +1092,7 @@ export default function NadeParserTool({ refreshImports }: Props) {
                 ? tr('Start in Production', 'Запустить в Production')
                 : confirmation === 'production-dedup'
                   ? tr('Recompute Production', 'Пересчитать Production')
-              : tr('Clear database', 'Очистить базу')
+                  : tr('Clear database', 'Очистить базу')
           }
           pendingLabel={
             confirmation === 'uninstall'
@@ -1087,7 +1101,7 @@ export default function NadeParserTool({ refreshImports }: Props) {
                 ? tr('Starting...', 'Запуск...')
                 : confirmation === 'production-dedup'
                   ? tr('Recomputing...', 'Пересчёт...')
-              : tr('Clearing...', 'Очистка...')
+                  : tr('Clearing...', 'Очистка...')
           }
           busy={confirmBusy}
           error={confirmationError}

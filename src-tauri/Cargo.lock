@@ -2418,7 +2418,7 @@ dependencies = [
 
 [[package]]
 name = "nade-viewer"
-version = "0.5.8"
+version = "0.5.9"
 dependencies = [
  "chrono",
  "image",
