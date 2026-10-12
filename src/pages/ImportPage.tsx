@@ -175,15 +175,7 @@ export default function ImportPage({
       if (token !== runTokenRef.current) return;
       setStatus(await getImportStatus());
       await onImported();
-      if (report.kind === 'core_nades') {
-        showToast(
-          tr(
-            `Imported ${formatNumber(report.grenade_count)} Core Nades snapshot`,
-            `Импортирован снимок Core Nades: ${formatNumber(report.grenade_count)} гранат`,
-          ),
-          { tone: 'success', duration: 1960 },
-        );
-      } else if (report.kind === 'screenshot_archive') {
+      if (report.kind === 'screenshot_archive') {
         showToast(
           tr(
             `Imported ${formatNumber(report.grenade_count)} lineups and ${formatNumber(report.screenshot_count)} screenshots`,
@@ -333,8 +325,8 @@ export default function ImportPage({
           <h1>{tr('Bring your lineups in.', 'Импортируйте раскидки.')}</h1>
           <p className="muted wide">
             {tr(
-              'Load a grenade index or a curated Core Nades collection in JSON or MessagePack. Everything stays on this device.',
-              'Загрузите индекс гранат или коллекцию Core Nades в JSON или MessagePack. Все данные останутся на этом устройстве.',
+              'Load a grenade index in JSON or MessagePack. Everything stays on this device.',
+              'Загрузите индекс гранат в JSON или MessagePack. Все данные останутся на этом устройстве.',
             )}
           </p>
           <div className="import-features">
@@ -442,8 +434,8 @@ export default function ImportPage({
                   {busy
                     ? progressText
                     : tr(
-                        'grenade_index.json, Core Nades JSON/MessagePack, or Nadegrid Screenshot ZIP',
-                        'grenade_index.json, JSON/MessagePack Core Nades или ZIP скриншотов Nadegrid',
+                        'grenade_index JSON/MessagePack or Nadegrid Screenshot ZIP',
+                        'grenade_index в JSON/MessagePack или ZIP скриншотов Nadegrid',
                       )}
                 </span>
               </div>

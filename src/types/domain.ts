@@ -29,7 +29,7 @@ export type LibraryUpdate = {
 export type ImportSummary = {
   id: number;
   source_path: string;
-  kind: 'grenade_index' | 'core_nades' | 'screenshot_archive' | string;
+  kind: 'grenade_index' | 'screenshot_archive' | string;
   label?: string | null;
   imported_at: string;
   parser_version?: number | null;
@@ -65,21 +65,9 @@ export type OnboardingState = {
   completed: boolean;
 };
 
-export type CoreNadesExportReport = {
-  path: string;
-  grenade_count: number;
-};
-
 export type JsonImportReport =
   | {
       kind: 'grenade_index';
-      import_id: number;
-      grenade_count: number;
-      map_count: number;
-      source_path: string;
-    }
-  | {
-      kind: 'core_nades';
       import_id: number;
       grenade_count: number;
       map_count: number;
@@ -117,7 +105,6 @@ export type MapFilters = {
   tournament?: string[];
   min_usage?: number;
   radar_level?: 'default' | 'lower';
-  is_core?: boolean;
   is_insta?: boolean;
 };
 
@@ -145,7 +132,6 @@ export type GrenadePreview = {
   map: string;
   side: 'T' | 'CT' | 'Any' | string;
   grenade_type: 'smoke' | 'flash' | 'molotov' | 'HE' | string;
-  is_core: boolean;
   throw_keys?: string | null;
   coordinates?: string | null;
   thrower?: string | null;

@@ -9,16 +9,15 @@ Current application version: **0.5.9**.
 
 ## Features
 
-- Imports canonical `grenade_index`, Core Nades JSON/MessagePack snapshots, and Nadegrid
+- Imports canonical `grenade_index` JSON/MessagePack snapshots and Nadegrid
   Screenshot Capture ZIP archives with their lineup images.
 - Keeps multiple imports, lets the user switch between them, rename them, and
   delete them.
 - Groups grenade starts and landings on map radars.
-- Filters by grenade type, side, usage count, radar level, Core and insta status, thrower,
+- Filters by grenade type, side, usage count, radar level, insta status, thrower,
   thrower team, player, tournament, demo name, and coordinates.
 - Shows usage snapshots, trajectories, lineup metadata, similar grenades, spawn points, and
   recently viewed grenades when the source data supports them.
-- Marks selected lineups as Core and exports the current Core collection.
 - Copies grenade and spawn coordinates with animated success and error feedback.
 - Uses a responsive map workspace, persistent view settings, onboarding, and
   localized animated notifications.
@@ -364,7 +363,7 @@ directory under roaming application data, so the database is:
 
 SQLite may create `nadeviewer.sqlite-wal` and `nadeviewer.sqlite-shm` beside the
 database while the application is running. The database contains imports,
-lineups, Core flags, view history, onboarding state, and the minimum-usage
+lineups, legacy Core flags, view history, onboarding state, and the minimum-usage
 setting, usage events, player rosters, and tournament metadata. Deleting an
 import in the UI deletes that import's local data; it does not delete the source file.
 
@@ -394,44 +393,32 @@ copying or backing up the database; SQLite may also have adjacent `-wal` and
 1. Start Nade Viewer and open the import screen.
 2. Choose a `.json`, `.messagepack`, `.msgpack`, or `.mpk` file, enter its local
    path, or drag it onto the import area.
-3. Start the import. The application detects the format by the top-level
-   `canonical_grenades` or `grenades` key.
+3. Start the import. JSON and MessagePack files require a top-level
+   `canonical_grenades` key.
 4. Wait for reading, database preparation, and indexing to complete. The new
    import becomes active automatically.
 5. Browse maps, change filters, and inspect individual lineups. Use import
    history to switch, label, or remove snapshots.
-6. Optionally mark lineups as Core and use the export action to write
-   `core_nades.json`.
 
 Imports are snapshots: importing a file creates a new database import rather
 than merging it into the active one. Only one import can run at a time.
 
 ## Trajectories and large map results
 
-### Core trajectory import and export
+### Trajectory import
 
 Nade Viewer stores two different trajectory representations:
 
 - `trajectory` is the complete sequence of world-space trajectory points. It is
-  the source data that must be preserved for a lossless export.
+  retained alongside the preview in local storage.
 - `trajectory_preview` is a smaller, radar-space sequence used to draw the path
   efficiently on the map. It can be supplied by the source file or generated
   from `trajectory` when a matching radar config is available.
 
-Earlier Core snapshot imports kept only `trajectory_preview`. Exporting that
-import afterward could therefore omit the original complete `trajectory`.
-Current imports store both values independently in SQLite, and Core export
-writes both back to the canonical Core JSON. A Core file containing a complete
-trajectory can now go through import, export, and re-import without losing its
-world-space points.
+Both values are stored independently in SQLite. Nade Viewer does not
+reconstruct a complete world-space trajectory from preview points.
 
-For compatibility, older Core files that contain only `trajectory_preview`
-still import and export correctly. Nade Viewer does not attempt to reconstruct a
-complete world-space trajectory from preview points because that conversion
-would be lossy and potentially incorrect.
-
-See [Core Nades formats](docs/data-formats.md#core-nades-formats) for the exact
-decoded fields.
+See [Data formats](docs/data-formats.md) for the exact decoded fields.
 
 ### Map rendering
 
@@ -480,13 +467,14 @@ coordinate projection, and level handling. Asset discovery extracts a
 
 ### Unsupported library format
 
-The root object has neither `canonical_grenades` nor `grenades`. Check the
-envelope and required fields against [Data formats](docs/data-formats.md).
+JSON and MessagePack files require `canonical_grenades`; files with a root
+`grenades` key or `core_nades: true` are unsupported. Check the envelope and
+required fields against [Data formats](docs/data-formats.md).
 
 ### A serde error names a missing field or invalid type
 
 Decoded field types are strict. In particular, `map` is required for canonical
-records, while Core Nades records require `map`, `side`, and `grenade_type`.
+records.
 Numeric fields must be decoded as numbers, not numeric strings.
 
 ### A map is listed but has no radar or markers
@@ -521,8 +509,6 @@ Install or repair the Microsoft Edge WebView2 Runtime, then rerun
 - Values are structurally type-checked but domain values such as map names,
   sides, grenade types, timestamps, coordinate ranges, and positive counts are
   not comprehensively validated during import.
-- Core Nades has two accepted envelopes, with different available trajectory
-  data; see [Data formats](docs/data-formats.md#core-nades-formats).
 - Radar coordinates and trajectory previews depend on a matching bundled radar
   config.
 

@@ -1,6 +1,5 @@
 import { invoke, convertFileSrc } from '@tauri-apps/api/core';
 import type {
-  CoreNadesExportReport,
   GrenadeDetail,
   GrenadePreview,
   ImportPlayerOption,
@@ -166,14 +165,6 @@ export function recordGrenadeView(id: number) {
 
 export function getRecentlyViewedGrenades(limit = 10) {
   return invoke<ViewedGrenade[]>('get_recently_viewed_grenades', { limit });
-}
-
-export function setGrenadeCore(id: number, isCore: boolean) {
-  return invoke<boolean>('set_grenade_core', { id, isCore });
-}
-
-export function exportCoreNades() {
-  return invoke<CoreNadesExportReport | null>('export_core_nades');
 }
 
 export function getSimilarGrenades(id: number, limit = 12) {

@@ -4,7 +4,6 @@ import { useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowLeft,
   BarChart3,
-  BadgeCheck,
   CalendarDays,
   Check,
   Clipboard,
@@ -27,7 +26,6 @@ import {
   getSimilarGrenades,
   getSpawnPoints,
   recordGrenadeView,
-  setGrenadeCore,
   assetUrl,
 } from '../lib/tauri';
 import { formatClock, formatNumber, grenadeLabel } from '../lib/format';
@@ -345,33 +343,6 @@ export default function GrenadePage() {
     });
   };
 
-  const handleCoreToggle = async (id: number, isCore: boolean) => {
-    try {
-      await setGrenadeCore(id, isCore);
-      setSimilar((list) =>
-        list.map((item) =>
-          item.id === id ? { ...item, is_core: isCore } : item,
-        ),
-      );
-      setGrenade((current) =>
-        current && current.id === id
-          ? { ...current, is_core: isCore }
-          : current,
-      );
-      showToast(
-        isCore
-          ? tr('Added to Core', 'Добавлено в избранное')
-          : tr('Removed from Core', 'Удалено из избранного'),
-        { tone: 'success' },
-      );
-    } catch (error) {
-      console.error(error);
-      showToast(tr('Could not update Core', 'Не удалось обновить избранное'), {
-        tone: 'error',
-      });
-    }
-  };
-
   if (!grenade) {
     if (loadError)
       return (
@@ -451,17 +422,6 @@ export default function GrenadePage() {
             </span>
           ) : null}
           {isInsta ? <span className="insta-badge">{INSTA_LABEL}</span> : null}
-          <button
-            className={`core-action detail-core ${grenade.is_core ? 'active' : ''}`}
-            data-tour="grenade-core-toggle"
-            onClick={() => handleCoreToggle(grenade.id, !grenade.is_core)}
-            aria-pressed={grenade.is_core}
-          >
-            <BadgeCheck size={14} />
-            {grenade.is_core
-              ? tr('In Core', 'В избранном')
-              : tr('Add to Core', 'Добавить в избранное')}
-          </button>
         </div>
 
         <div
@@ -783,7 +743,6 @@ export default function GrenadePage() {
             compact
             showCopy
             spawnPoints={spawnPoints}
-            onCoreToggle={handleCoreToggle}
             emptyLabel={tr('No similar grenades.', 'Похожих гранат нет.')}
           />
         </div>

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { BadgeCheck, Check, Clipboard } from 'lucide-react';
+import { Check, Clipboard } from 'lucide-react';
 import { formatClock, grenadeLabel } from '../lib/format';
 import { buildSpawnMapPoints, INSTA_LABEL, isInstaGrenade } from '../lib/insta';
 import type { GrenadePreview, SpawnPoint } from '../types/domain';
@@ -14,7 +14,6 @@ type Props = {
   compact?: boolean;
   showCopy?: boolean;
   spawnPoints?: SpawnPoint[];
-  onCoreToggle?: (id: number, isCore: boolean) => void;
   emptyLabel?: string;
   loading?: boolean;
 };
@@ -24,7 +23,6 @@ export default function GrenadeList({
   compact,
   showCopy,
   spawnPoints = [],
-  onCoreToggle,
   emptyLabel,
   loading = false,
 }: Props) {
@@ -74,7 +72,6 @@ export default function GrenadeList({
               <i />
               <i />
             </span>
-            <span className="nade-skeleton-action" />
           </div>
         ))}
       </div>
@@ -101,7 +98,7 @@ export default function GrenadeList({
         return (
           <div
             key={g.id}
-            className={`nade-row type-${String(g.grenade_type).toLowerCase()} ${g.is_core ? 'core' : ''} ${isInsta ? 'insta' : ''}`}
+            className={`nade-row type-${String(g.grenade_type).toLowerCase()} ${isInsta ? 'insta' : ''}`}
             onClick={(event) => {
               if ((event.target as HTMLElement).closest('button')) return;
               navigate(`/grenade/${g.id}`);
@@ -168,39 +165,8 @@ export default function GrenadeList({
                 {isInsta ? (
                   <span className="insta-badge">{INSTA_LABEL}</span>
                 ) : null}
-                {g.is_core ? (
-                  <span className="core-badge">{tr('Core', 'Избранное')}</span>
-                ) : null}
               </span>
             </button>
-            <div className="nade-action-stack">
-              <button
-                type="button"
-                className={`core-action ${g.is_core ? 'active' : ''}`}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onCoreToggle?.(g.id, !g.is_core);
-                }}
-                aria-label={
-                  g.is_core
-                    ? tr('Remove from Core', 'Удалить из избранного')
-                    : tr('Add to Core', 'Добавить в избранное')
-                }
-                aria-pressed={g.is_core}
-                data-tip={
-                  g.is_core
-                    ? tr('In Core', 'В избранном')
-                    : tr('Add to Core', 'Добавить в избранное')
-                }
-              >
-                <BadgeCheck size={14} />
-                <span>
-                  {g.is_core
-                    ? tr('In Core', 'В избранном')
-                    : tr('Add to Core', 'Добавить в избранное')}
-                </span>
-              </button>
-            </div>
             <span
               className="nade-stats"
               aria-label={tr('Grenade statistics', 'Статистика гранаты')}

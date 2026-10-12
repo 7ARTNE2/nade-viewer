@@ -31,7 +31,6 @@ export const defaultMapFilters = (): MapFilters => ({
   thrower_steamid64: [],
   tournament: [],
   min_usage: 0,
-  is_core: false,
   is_insta: false,
 });
 
@@ -47,7 +46,6 @@ export function filtersMatchDefault(filters: MapFilters) {
     !filters.thrower_steamid64?.length &&
     !filters.tournament?.length &&
     (filters.min_usage ?? 0) === defaults.min_usage &&
-    Boolean(filters.is_core) === Boolean(defaults.is_core) &&
     Boolean(filters.is_insta) === Boolean(defaults.is_insta)
   );
 }
@@ -86,7 +84,11 @@ export function readStoredMapViewState(key: string): StoredMapViewState | null {
     return {
       filters: {
         ...defaultMapFilters(),
-        ...(parsed.filters ?? {}),
+        ...Object.fromEntries(
+          Object.entries(parsed.filters ?? {}).filter(([key]) =>
+            Object.prototype.hasOwnProperty.call(defaultMapFilters(), key),
+          ),
+        ),
         movement:
           parsed.filters?.movement === 'moving' ||
           parsed.filters?.movement === 'stationary'

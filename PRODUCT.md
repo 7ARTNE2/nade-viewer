@@ -13,15 +13,13 @@ use in desktop windows.
 ## Users
 
 - Counter-Strike 2 players preparing and practicing grenade lineups.
-- Coaches and analysts researching imported lineup data and curating Core
-  collections for teams.
+- Coaches and analysts researching imported lineup data for teams.
 
 ## Product Purpose
 
 Nade Viewer imports local grenade lineup JSON and MessagePack snapshots into a
 local SQLite database. Users browse maps, filter and inspect lineups, study trajectories,
-copy coordinates, and maintain a curated Core collection without sending data
-to a server.
+and copy coordinates without sending data to a server.
 
 ## Positioning
 
@@ -31,10 +29,10 @@ and deeper analyst workflows across imported library snapshots.
 
 ## Operating Context
 
-Users work from local grenade_index and Core Nades JSON or MessagePack files,
+Users work from local grenade_index JSON or MessagePack files,
 often while preparing for a match, reviewing demos, or building team playbooks. Primary
 flows are import a library, choose a map, narrow lineups, inspect a grenade,
-and copy a console-ready coordinate command or mark it as Core.
+and copy a console-ready coordinate command.
 
 ## Capabilities and Constraints
 

@@ -27,7 +27,7 @@ const IMPORT_STAGE_LABELS: Record<string, readonly [string, string]> = {
 /**
  * Localized labels for the exact English status messages the backend emits.
  * Preferred over the stage label because a single stage can carry several
- * messages (for example "Indexing Core Nades" vs "Indexing grenades").
+ * messages (for example reading a library or indexing grenades).
  */
 const IMPORT_STATUS_MESSAGES: Record<string, readonly [string, string]> = {
   Ready: ['Ready', 'Готово'],
@@ -88,16 +88,7 @@ const IMPORT_STATUS_MESSAGES: Record<string, readonly [string, string]> = {
     'Screenshot archive import complete',
     'Импорт архива скриншотов завершён',
   ],
-  'Indexing Core Nades': ['Indexing Core Nades', 'Индексация Core Nades'],
   'Indexing grenades': ['Indexing grenades', 'Индексация гранат'],
-  'Preparing Core Nades snapshot': [
-    'Preparing Core Nades snapshot',
-    'Подготовка снимка Core Nades',
-  ],
-  'Core Nades snapshot imported': [
-    'Core Nades snapshot imported',
-    'Снимок Core Nades импортирован',
-  ],
   'Preparing local database': [
     'Preparing local database',
     'Подготовка локальной базы данных',
@@ -134,17 +125,9 @@ const IMPORT_ERROR_LABELS: Record<string, readonly [string, string]> = {
     'The top-level JSON or MessagePack value must be an object',
     'Верхний уровень JSON или MessagePack должен быть объектом',
   ],
-  ambiguous_format: [
-    'The file mixes two import formats',
-    'В файле смешаны два формата импорта',
-  ],
   unsupported_format: [
-    'Expected grenade_index, Core Nades JSON/MessagePack, or a Nadegrid screenshot ZIP',
-    'Ожидается grenade_index, JSON/MessagePack Core Nades или ZIP-архив скриншотов Nadegrid',
-  ],
-  missing_version: [
-    'Core Nades JSON or MessagePack requires version 1',
-    'Для Core Nades JSON или MessagePack требуется версия 1',
+    'Expected grenade_index JSON/MessagePack or a Nadegrid screenshot ZIP',
+    'Ожидается grenade_index в JSON/MessagePack или ZIP-архив скриншотов Nadegrid',
   ],
   invalid_version: [
     'The top-level version must be an integer',
@@ -157,10 +140,6 @@ const IMPORT_ERROR_LABELS: Record<string, readonly [string, string]> = {
   invalid_canonical_format: [
     'Invalid grenade_index structure',
     'Некорректная структура grenade_index',
-  ],
-  invalid_core_format: [
-    'Invalid Core Nades structure',
-    'Некорректная структура Core Nades',
   ],
   library_manifest_unavailable: [
     'The online library manifest is unavailable',

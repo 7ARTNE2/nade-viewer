@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowLeft,
-  BadgeCheck,
   ChevronLeft,
   ChevronRight,
   ChevronDown,
@@ -38,7 +37,6 @@ import {
   getSpawnPoints,
   getThrowClusterGrenades,
   getThrowOverview,
-  setGrenadeCore,
   updateSiteSettings,
 } from '../lib/tauri';
 import { formatNumber, grenadeLabel } from '../lib/format';
@@ -603,7 +601,6 @@ export default function MapPage({
     Boolean(filters.thrower_team?.length),
     Boolean(filters.thrower_steamid64?.length),
     Boolean(filters.tournament?.length),
-    filters.is_core,
     filters.is_insta,
     (filters.movement ?? 'all') !== 'all',
     (filters.jump ?? 'all') !== 'all',
@@ -801,55 +798,6 @@ export default function MapPage({
     mapTrajectoriesRequestRef.current += 1;
   };
 
-  const handleCoreToggle = async (id: number, isCore: boolean) => {
-    const requestId = overviewRequestRef.current + 1;
-    overviewRequestRef.current = requestId;
-    const previousGrenades = grenades;
-    const previousMapGrenades = mapGrenades;
-    setGrenades((list) =>
-      filters.is_core && !isCore
-        ? list.filter((grenade) => grenade.id !== id)
-        : list.map((grenade) =>
-            grenade.id === id ? { ...grenade, is_core: isCore } : grenade,
-          ),
-    );
-    setMapGrenades((list) =>
-      filters.is_core && !isCore
-        ? list.filter((grenade) => grenade.id !== id)
-        : list.map((grenade) =>
-            grenade.id === id ? { ...grenade, is_core: isCore } : grenade,
-          ),
-    );
-
-    try {
-      await setGrenadeCore(id, isCore);
-      const overviewLoader =
-        grenadeMode === 'throw' ? getThrowOverview : getMapOverview;
-      const nextOverview = await overviewLoader(decodedMap, {
-        ...filters,
-        radar_level: radarMode,
-      });
-      if (overviewRequestRef.current === requestId) {
-        setOverview(nextOverview);
-      }
-      showToast(
-        isCore
-          ? tr('Added to Core', 'Добавлено в избранное')
-          : tr('Removed from Core', 'Удалено из избранного'),
-        { tone: 'success' },
-      );
-    } catch (error) {
-      console.error(error);
-      if (overviewRequestRef.current === requestId) {
-        setGrenades(previousGrenades);
-        setMapGrenades(previousMapGrenades);
-      }
-      showToast(tr('Could not update Core', 'Не удалось обновить избранное'), {
-        tone: 'error',
-      });
-    }
-  };
-
   const retryClusterLoad = (cluster: LandingCluster) => {
     setGrenadeError(null);
     Promise.all([
@@ -991,24 +939,6 @@ export default function MapPage({
             >
               <Shapes size={15} />
               {tr('Icons', 'Значки')}
-            </button>
-            <button
-              aria-pressed={filters.is_core}
-              className={`toggle core-toolbar-toggle ${filters.is_core ? 'active' : ''}`}
-              onClick={() =>
-                setFilters((state) => ({ ...state, is_core: !state.is_core }))
-              }
-              data-tip={tr(
-                'Toggle core grenades',
-                'Переключить избранные гранаты',
-              )}
-              aria-label={tr(
-                'Toggle core grenades',
-                'Переключить избранные гранаты',
-              )}
-            >
-              <BadgeCheck size={15} />
-              {tr('Core', 'Избранные')}
             </button>
             <button
               aria-pressed={filters.is_insta}
@@ -1631,18 +1561,10 @@ export default function MapPage({
               showCopy
               loading={grenadeLoading}
               spawnPoints={visibleSpawns}
-              onCoreToggle={handleCoreToggle}
-              emptyLabel={
-                filters.is_core
-                  ? tr(
-                      'No Core Nades in this cluster.',
-                      'В этом кластере нет избранных гранат.',
-                    )
-                  : tr(
-                      'Choose a cluster on the map or from the list to inspect its lineups.',
-                      'Выберите кластер на карте или в списке, чтобы изучить его раскидки.',
-                    )
-              }
+              emptyLabel={tr(
+                'Choose a cluster on the map or from the list to inspect its lineups.',
+                'Выберите кластер на карте или в списке, чтобы изучить его раскидки.',
+              )}
             />
           )}
           {selectedCluster && selectedCluster.count > grenadePageSize ? (

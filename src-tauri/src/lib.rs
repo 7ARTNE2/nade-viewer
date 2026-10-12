@@ -33,7 +33,7 @@ const IMPORT_STATUS_EVENT: &str = "import-status";
 const DEFAULT_LIBRARY_MANIFEST_URL: &str =
     "https://github.com/7ARTNE2/nade-viewer/releases/download/library/library-manifest.json";
 const LARGE_IO_BUFFER_SIZE: usize = 1024 * 1024;
-const GRENADE_PREVIEW_COLUMNS: &str = "g.id, g.map, g.side, g.grenade_type, g.is_core,
+const GRENADE_PREVIEW_COLUMNS: &str = "g.id, g.map, g.side, g.grenade_type,
     g.throw_keys, g.coordinates, g.thrower, g.thrower_steamid64, g.thrower_team, g.airtime, g.usage_count, g.round_time_seconds,
     g.start_map_x, g.start_map_y, g.explode_map_x, g.explode_map_y, g.explode_pos_z,
     g.trajectory_preview_json";
@@ -172,7 +172,6 @@ struct LibraryUpdate {
 struct ImportEnvelopeShape {
     version: Option<Value>,
     updated_at: Option<String>,
-    exported_at: Option<String>,
     core_nades: Option<bool>,
     #[serde(default, deserialize_with = "deserialize_present")]
     canonical_grenades: bool,
@@ -220,12 +219,6 @@ enum JsonImportReport {
         map_count: u64,
         source_path: String,
     },
-    CoreNades {
-        import_id: i64,
-        grenade_count: u64,
-        map_count: u64,
-        source_path: String,
-    },
     ScreenshotArchive {
         import_id: i64,
         grenade_count: u64,
@@ -247,15 +240,6 @@ impl From<ImportReport> for JsonImportReport {
 }
 
 impl JsonImportReport {
-    fn core_nades(report: ImportReport) -> Self {
-        Self::CoreNades {
-            import_id: report.import_id,
-            grenade_count: report.grenade_count,
-            map_count: report.map_count,
-            source_path: report.source_path,
-        }
-    }
-
     fn screenshot_archive(report: ImportReport, screenshot_count: u64) -> Self {
         Self::ScreenshotArchive {
             import_id: report.import_id,
@@ -291,7 +275,6 @@ struct MapFilters {
     tournament: Option<Vec<String>>,
     min_usage: Option<i64>,
     radar_level: Option<String>,
-    is_core: Option<bool>,
     is_insta: Option<bool>,
     movement: Option<MovementFilter>,
     jump: Option<JumpFilter>,
@@ -323,23 +306,6 @@ struct OnboardingState {
     completed: bool,
 }
 
-/// Buffered Core Nades payload used by tests; production streams `StreamedCore`.
-#[cfg(test)]
-#[derive(Serialize, Deserialize)]
-struct CoreNadesFile {
-    version: i64,
-    exported_at: String,
-    grenades: Vec<CoreNadeRecord>,
-    #[serde(default, deserialize_with = "deserialize_players")]
-    players: Vec<RawPlayer>,
-}
-
-#[cfg(test)]
-enum TypedImportFile {
-    GrenadeIndex(ParserIndex),
-    CoreNades(CoreNadesFile),
-}
-
 #[derive(Deserialize)]
 struct ScreenshotArchiveFile {
     version: i64,
@@ -361,88 +327,6 @@ struct ScreenshotArchivePaths {
     wide_fov: i64,
 }
 
-#[derive(Clone, Serialize, Deserialize)]
-struct CoreNadeRecord {
-    source_index: Option<i64>,
-    map: String,
-    side: String,
-    grenade_type: String,
-    throw_keys: Option<String>,
-    coordinates: Option<String>,
-    thrower: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_optional_string")]
-    thrower_steamid64: Option<String>,
-    thrower_team: Option<String>,
-    airtime: Option<f64>,
-    usage_count: Option<i64>,
-    usage_throwers: Option<Vec<String>>,
-    demo_filename: Option<String>,
-    throw_tick: Option<i64>,
-    lineup_tick: Option<i64>,
-    tickrate: Option<f64>,
-    round_time_seconds: Option<f64>,
-    start_pos_x: Option<f64>,
-    start_pos_y: Option<f64>,
-    start_pos_z: Option<f64>,
-    explode_pos_x: Option<f64>,
-    explode_pos_y: Option<f64>,
-    explode_pos_z: Option<f64>,
-    start_map_x: Option<f64>,
-    start_map_y: Option<f64>,
-    explode_map_x: Option<f64>,
-    explode_map_y: Option<f64>,
-    trajectory: Option<Vec<Vec<f64>>>,
-    trajectory_preview: Option<Value>,
-    #[serde(default)]
-    usage_events: Vec<GrenadeUsageEvent>,
-}
-
-impl CoreNadeRecord {
-    /// Converts a Core Nades record into the canonical grenade shape used by the
-    /// shared writer. Core snapshots keep their own `tournament` unset.
-    fn into_raw(self) -> RawGrenade {
-        RawGrenade {
-            source_index: self.source_index,
-            map: self.map,
-            side: Some(self.side),
-            grenade_type: Some(self.grenade_type),
-            throw_keys: self.throw_keys,
-            usage_count: self.usage_count,
-            usage_throwers: self.usage_throwers,
-            coordinates: self.coordinates,
-            demo_filename: self.demo_filename,
-            throw_tick: self.throw_tick,
-            lineup_tick: self.lineup_tick,
-            tickrate: self.tickrate,
-            round_time_seconds: self.round_time_seconds,
-            start_pos_x: self.start_pos_x,
-            start_pos_y: self.start_pos_y,
-            start_pos_z: self.start_pos_z,
-            explode_pos_x: self.explode_pos_x,
-            explode_pos_y: self.explode_pos_y,
-            explode_pos_z: self.explode_pos_z,
-            start_map_x: self.start_map_x,
-            start_map_y: self.start_map_y,
-            explode_map_x: self.explode_map_x,
-            explode_map_y: self.explode_map_y,
-            trajectory: self.trajectory,
-            trajectory_preview: self.trajectory_preview,
-            thrower: self.thrower,
-            thrower_steamid64: self.thrower_steamid64,
-            thrower_team: self.thrower_team,
-            airtime: self.airtime,
-            tournament: None,
-            usage_events: self.usage_events,
-        }
-    }
-}
-
-#[derive(Serialize)]
-struct CoreNadesExportReport {
-    path: String,
-    grenade_count: i64,
-}
-
 #[derive(Clone, Serialize)]
 struct MapSummary {
     name: String,
@@ -460,7 +344,6 @@ struct MapSummary {
 struct ParserIndex {
     version: Option<i64>,
     updated_at: Option<String>,
-    core_nades: Option<bool>,
     canonical_grenades: Vec<RawGrenade>,
     #[serde(
         default,
@@ -701,7 +584,6 @@ struct GrenadePreview {
     map: String,
     side: String,
     grenade_type: String,
-    is_core: bool,
     throw_keys: Option<String>,
     coordinates: Option<String>,
     thrower: Option<String>,
@@ -878,8 +760,6 @@ pub fn run() {
             get_grenade,
             record_grenade_view,
             get_recently_viewed_grenades,
-            set_grenade_core,
-            export_core_nades,
             get_similar_grenades,
             get_spawn_points,
             get_site_settings,
@@ -1491,7 +1371,7 @@ fn try_begin_import(status: &Mutex<ImportStatus>) -> AppResult<ImportStatus> {
 }
 
 #[cfg(test)]
-fn parse_import(reader: impl Read) -> AppResult<TypedImportFile> {
+fn parse_import(reader: impl Read) -> AppResult<ParserIndex> {
     let value: Value = serde_json::from_reader(reader).map_err(|error| AppError::Import {
         code: "invalid_json",
         message: format!("Invalid JSON: {error}"),
@@ -1500,7 +1380,7 @@ fn parse_import(reader: impl Read) -> AppResult<TypedImportFile> {
 }
 
 #[cfg(test)]
-fn parse_import_bytes(bytes: &[u8], messagepack: bool) -> AppResult<TypedImportFile> {
+fn parse_import_bytes(bytes: &[u8], messagepack: bool) -> AppResult<ParserIndex> {
     if !messagepack {
         return parse_import(bytes);
     }
@@ -1930,6 +1810,14 @@ fn import_online_library_blocking(
                 remaining_fields = root_len - field_index - 1;
                 break;
             }
+            "grenades" => return Err(unsupported_import_format()),
+            "core_nades" => {
+                let value: Option<bool> = rmp_serde::from_read(&mut reader)
+                    .map_err(|error| online_messagepack_error(state, error))?;
+                if value.unwrap_or(false) {
+                    return Err(unsupported_import_format());
+                }
+            }
             _ => {
                 let _: IgnoredAny = rmp_serde::from_read(&mut reader)
                     .map_err(|error| online_messagepack_error(state, error))?;
@@ -1992,7 +1880,6 @@ fn import_online_library_blocking(
             idx as i64,
             &grenade,
             CanonicalGrenadeWrite {
-                mode: CanonicalWriteMode::Canonical,
                 fallback_map_coordinates: None,
             },
         )?;
@@ -2017,6 +1904,17 @@ fn import_online_library_blocking(
                 code: "invalid_messagepack",
                 message: format!("Online MessagePack contains duplicate {key} fields"),
             });
+        }
+        if key == "grenades" {
+            return Err(unsupported_import_format());
+        }
+        if key == "core_nades" {
+            let value: Option<bool> = rmp_serde::from_read(&mut reader)
+                .map_err(|error| online_messagepack_error(state, error))?;
+            if value.unwrap_or(false) {
+                return Err(unsupported_import_format());
+            }
+            continue;
         }
         let _: IgnoredAny = rmp_serde::from_read(&mut reader)
             .map_err(|error| online_messagepack_error(state, error))?;
@@ -2082,28 +1980,10 @@ fn import_typed_path_blocking(state: &AppState, path: &str) -> AppResult<JsonImp
 }
 
 fn validate_import_shape(shape: &ImportEnvelopeShape) -> AppResult<()> {
-    if shape.canonical_grenades && shape.grenades {
-        return Err(AppError::Import {
-            code: "ambiguous_format",
-            message: "Import cannot contain both canonical_grenades and grenades at the top level"
-                .to_string(),
-        });
+    if !shape.canonical_grenades || shape.grenades || shape.core_nades.unwrap_or(false) {
+        return Err(unsupported_import_format());
     }
-    if !shape.canonical_grenades && !shape.grenades {
-        return Err(AppError::Import {
-            code: "unsupported_format",
-            message: "Unsupported import format: expected canonical_grenades or grenades at the top level"
-                .to_string(),
-        });
-    }
-    let version = shape.version.as_ref().filter(|value| !value.is_null());
-    if shape.grenades && version.is_none() {
-        return Err(AppError::Import {
-            code: "missing_version",
-            message: "Core Nades import requires top-level version 1".to_string(),
-        });
-    }
-    if let Some(version) = version {
+    if let Some(version) = shape.version.as_ref().filter(|value| !value.is_null()) {
         let Some(version) = version.as_i64() else {
             return Err(AppError::Import {
                 code: "invalid_version",
@@ -2119,13 +1999,15 @@ fn validate_import_shape(shape: &ImportEnvelopeShape) -> AppResult<()> {
             });
         }
     }
-    if shape.grenades && shape.exported_at.is_none() {
-        return Err(AppError::Import {
-            code: "invalid_core_format",
-            message: "Invalid Core Nades import: missing field `exported_at`".to_string(),
-        });
-    }
     Ok(())
+}
+
+fn unsupported_import_format() -> AppError {
+    AppError::Import {
+        code: "unsupported_format",
+        message: "Unsupported import format: expected a grenade_index with canonical_grenades"
+            .to_string(),
+    }
 }
 
 /// Reads only the envelope metadata of an import file, skipping the (potentially
@@ -2168,42 +2050,15 @@ fn import_stream_blocking(
     // cancel request that arrived during that pass before streaming begins.
     manual_import_cancelled(state)?;
 
-    if shape.canonical_grenades {
-        let payload = StreamedCanonical {
-            path: source_path,
-            messagepack,
-            envelope: ImportEnvelope {
-                format: if shape.core_nades.unwrap_or(false) {
-                    ImportFormat::CoreNades
-                } else {
-                    ImportFormat::GrenadeIndex
-                },
-                core_snapshot: false,
-                version: shape.version.as_ref().and_then(Value::as_i64),
-                updated_at: shape.updated_at.clone(),
-            },
-        };
-        import_index_blocking(state, path, payload, library_version).map(JsonImportReport::from)
-    } else {
-        let payload = StreamedCore {
-            path: source_path,
-            messagepack,
-            envelope: ImportEnvelope {
-                format: ImportFormat::CoreNades,
-                core_snapshot: true,
-                version: Some(
-                    shape
-                        .version
-                        .as_ref()
-                        .and_then(Value::as_i64)
-                        .unwrap_or(SUPPORTED_IMPORT_VERSION),
-                ),
-                updated_at: Some(shape.exported_at.clone().unwrap_or_default()),
-            },
-        };
-        import_core_nades_snapshot_blocking(state, path, payload, library_version)
-            .map(JsonImportReport::core_nades)
-    }
+    let payload = StreamedCanonical {
+        path: source_path,
+        messagepack,
+        envelope: ImportEnvelope {
+            version: shape.version.as_ref().and_then(Value::as_i64),
+            updated_at: shape.updated_at.clone(),
+        },
+    };
+    import_index_blocking(state, path, payload, library_version).map(JsonImportReport::from)
 }
 
 /// A canonical `grenade_index` payload streamed from disk.
@@ -2228,85 +2083,24 @@ impl ImportPayload for StreamedCanonical {
     }
 }
 
-/// A Core Nades snapshot payload streamed from disk.
-struct StreamedCore {
-    path: PathBuf,
-    messagepack: bool,
-    envelope: ImportEnvelope,
-}
-
-impl ImportPayload for StreamedCore {
-    fn envelope(&self) -> ImportEnvelope {
-        self.envelope.clone()
-    }
-
-    fn stream(self, writer: &mut ImportWriter<'_, '_>) -> AppResult<()> {
-        stream_import_envelope(&self.path, self.messagepack, "invalid_core_format", writer)
-    }
-}
-
 #[cfg(test)]
-fn parse_import_value(value: Value) -> AppResult<TypedImportFile> {
-    let object = value.as_object().ok_or_else(|| AppError::Import {
-        code: "invalid_top_level",
-        message: "The top-level import value must be an object".to_string(),
-    })?;
-    let has_canonical = object.contains_key("canonical_grenades");
-    let has_core = object.contains_key("grenades");
-    if has_canonical && has_core {
+fn parse_import_value(value: Value) -> AppResult<ParserIndex> {
+    if !value.is_object() {
         return Err(AppError::Import {
-            code: "ambiguous_format",
-            message: "Import cannot contain both canonical_grenades and grenades at the top level"
-                .to_string(),
+            code: "invalid_top_level",
+            message: "The top-level import value must be an object".to_string(),
         });
     }
-    if !has_canonical && !has_core {
-        return Err(AppError::Import {
-            code: "unsupported_format",
-            message: "Unsupported import format: expected canonical_grenades or grenades at the top level"
-                .to_string(),
-        });
-    }
-
-    let version = object.get("version").filter(|value| !value.is_null());
-    if has_core && version.is_none() {
-        return Err(AppError::Import {
-            code: "missing_version",
-            message: "Core Nades import requires top-level version 1".to_string(),
-        });
-    }
-    if let Some(version) = version {
-        let Some(version) = version.as_i64() else {
-            return Err(AppError::Import {
-                code: "invalid_version",
-                message: "Top-level version must be an integer".to_string(),
-            });
-        };
-        if version != SUPPORTED_IMPORT_VERSION {
-            return Err(AppError::Import {
-                code: "unsupported_version",
-                message: format!(
-                    "Unsupported import version {version}; supported version is {SUPPORTED_IMPORT_VERSION}"
-                ),
-            });
-        }
-    }
-
-    if has_canonical {
-        serde_json::from_value::<ParserIndex>(value)
-            .map(TypedImportFile::GrenadeIndex)
-            .map_err(|error| AppError::Import {
-                code: "invalid_canonical_format",
-                message: format!("Invalid grenade_index import: {error}"),
-            })
-    } else {
-        serde_json::from_value::<CoreNadesFile>(value)
-            .map(TypedImportFile::CoreNades)
-            .map_err(|error| AppError::Import {
-                code: "invalid_core_format",
-                message: format!("Invalid Core Nades import: {error}"),
-            })
-    }
+    let shape: ImportEnvelopeShape =
+        serde_json::from_value(value.clone()).map_err(|error| AppError::Import {
+            code: "invalid_canonical_format",
+            message: format!("Invalid grenade_index import: {error}"),
+        })?;
+    validate_import_shape(&shape)?;
+    serde_json::from_value::<ParserIndex>(value).map_err(|error| AppError::Import {
+        code: "invalid_canonical_format",
+        message: format!("Invalid grenade_index import: {error}"),
+    })
 }
 
 fn is_messagepack_path(path: &Path) -> bool {
@@ -3053,9 +2847,6 @@ fn filter_sql(
             }
         }
     }
-    if filters.is_core.unwrap_or(false) {
-        parts.push(format!("{alias}.is_core = 1"));
-    }
     if filters.is_insta.unwrap_or(false) {
         parts.push(format!(
             "EXISTS (SELECT 1 FROM spawn_points sp WHERE sp.map={alias}.map AND sp.map_x IS NOT NULL AND sp.map_y IS NOT NULL AND ABS(sp.map_x - {alias}.start_map_x) <= 0.05 AND ABS(sp.map_y - {alias}.start_map_y) <= 0.05)"
@@ -3155,7 +2946,6 @@ fn grenade_preview_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Grenade
         map: row.get("map")?,
         side: row.get("side")?,
         grenade_type: row.get("grenade_type")?,
-        is_core: row.get::<_, i64>("is_core")? == 1,
         throw_keys: row.get("throw_keys")?,
         coordinates: row.get("coordinates")?,
         thrower: row.get("thrower")?,
@@ -3174,6 +2964,7 @@ fn grenade_preview_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Grenade
     })
 }
 
+#[cfg(test)]
 fn raw_grenade_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<RawGrenade> {
     let usage_throwers_json: Option<String> = row.get("usage_throwers_json")?;
     let trajectory_json: Option<String> = row.get("trajectory_json")?;
@@ -3454,12 +3245,6 @@ fn select_import_file() -> Option<String> {
 }
 
 #[derive(Clone, Copy)]
-enum CanonicalWriteMode {
-    Canonical,
-    Core,
-}
-
-#[derive(Clone, Copy)]
 struct MapCoordinates {
     start_x: Option<f64>,
     start_y: Option<f64>,
@@ -3469,7 +3254,6 @@ struct MapCoordinates {
 
 #[derive(Clone, Copy)]
 struct CanonicalGrenadeWrite {
-    mode: CanonicalWriteMode,
     fallback_map_coordinates: Option<MapCoordinates>,
 }
 
@@ -3512,10 +3296,7 @@ fn insert_canonical_grenade(
         grenade.map,
         grenade.side.as_deref().unwrap_or("Any"),
         grenade.grenade_type.as_deref().unwrap_or("smoke"),
-        match write.mode {
-            CanonicalWriteMode::Canonical => 0,
-            CanonicalWriteMode::Core => 1,
-        },
+        0,
         grenade.throw_keys.as_deref(),
         grenade.coordinates.as_deref(),
         grenade.thrower.as_deref(),
@@ -3598,7 +3379,6 @@ fn import_workspace_rows_blocking(
                 ordinal as i64,
                 &grenade,
                 CanonicalGrenadeWrite {
-                    mode: CanonicalWriteMode::Canonical,
                     fallback_map_coordinates: None,
                 },
             )
@@ -3833,7 +3613,6 @@ fn import_screenshot_archive_blocking(
     let index = ParserIndex {
         version: Some(manifest.version),
         updated_at: Some(manifest.exported_at.clone()),
-        core_nades: Some(false),
         canonical_grenades: manifest
             .grenades
             .iter()
@@ -3996,35 +3775,9 @@ const GRENADE_INSERT_SQL: &str = "INSERT INTO grenades(
         ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31
     )";
 
-/// The two canonical import flavours written into the `grenades` table.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum ImportFormat {
-    GrenadeIndex,
-    CoreNades,
-}
-
-impl ImportFormat {
-    fn kind(self) -> &'static str {
-        match self {
-            Self::GrenadeIndex => "grenade_index",
-            Self::CoreNades => "core_nades",
-        }
-    }
-
-    fn write_mode(self) -> CanonicalWriteMode {
-        match self {
-            Self::GrenadeIndex => CanonicalWriteMode::Canonical,
-            Self::CoreNades => CanonicalWriteMode::Core,
-        }
-    }
-}
-
 /// Envelope metadata required to register an import row.
 #[derive(Clone)]
 struct ImportEnvelope {
-    format: ImportFormat,
-    /// Core snapshots keep their recorded source index and map fallback.
-    core_snapshot: bool,
     version: Option<i64>,
     updated_at: Option<String>,
 }
@@ -4044,8 +3797,6 @@ struct ImportWriter<'a, 'b> {
     tx: &'a Transaction<'b>,
     statement: rusqlite::Statement<'a>,
     import_id: i64,
-    format: ImportFormat,
-    core_snapshot: bool,
     ordinal: u64,
     total: Option<u64>,
     deferred_indexes: bool,
@@ -4056,19 +3807,12 @@ struct ImportWriter<'a, 'b> {
 }
 
 impl<'a, 'b> ImportWriter<'a, 'b> {
-    fn new(
-        state: &'a AppState,
-        tx: &'a Transaction<'b>,
-        import_id: i64,
-        envelope: &ImportEnvelope,
-    ) -> AppResult<Self> {
+    fn new(state: &'a AppState, tx: &'a Transaction<'b>, import_id: i64) -> AppResult<Self> {
         Ok(Self {
             state,
             tx,
             statement: tx.prepare(GRENADE_INSERT_SQL)?,
             import_id,
-            format: envelope.format,
-            core_snapshot: envelope.core_snapshot,
             ordinal: 0,
             total: None,
             deferred_indexes: false,
@@ -4103,27 +3847,15 @@ impl<'a, 'b> ImportWriter<'a, 'b> {
     fn push_grenade(&mut self, grenade: RawGrenade) -> AppResult<()> {
         manual_import_cancelled(self.state)?;
         self.maybe_defer_indexes()?;
-        let source_index = if self.core_snapshot {
-            grenade.source_index.unwrap_or(self.ordinal as i64)
-        } else {
-            self.ordinal as i64
-        };
-        let fallback = self.core_snapshot.then_some(MapCoordinates {
-            start_x: grenade.start_map_x,
-            start_y: grenade.start_map_y,
-            explode_x: grenade.explode_map_x,
-            explode_y: grenade.explode_map_y,
-        });
         insert_canonical_grenade(
             self.tx,
             &mut self.statement,
             self.state,
             self.import_id,
-            source_index,
+            self.ordinal as i64,
             &grenade,
             CanonicalGrenadeWrite {
-                mode: self.format.write_mode(),
-                fallback_map_coordinates: fallback,
+                fallback_map_coordinates: None,
             },
         )?;
         collect_grenade_metadata(&grenade, &mut self.metadata);
@@ -4135,11 +3867,7 @@ impl<'a, 'b> ImportWriter<'a, 'b> {
                 "importing",
                 self.ordinal,
                 self.total.unwrap_or(0),
-                if self.core_snapshot {
-                    "Indexing Core Nades"
-                } else {
-                    "Indexing grenades"
-                },
+                "Indexing grenades",
             );
         }
         Ok(())
@@ -4171,17 +3899,7 @@ fn run_import<P: ImportPayload>(
     // A cancel request can arrive while the envelope is still being inspected.
     manual_import_cancelled(state)?;
     let envelope = payload.envelope();
-    let core_snapshot = envelope.core_snapshot;
-    let (preparing_message, done_message) = if core_snapshot {
-        (
-            "Preparing Core Nades snapshot",
-            "Core Nades snapshot imported",
-        )
-    } else {
-        ("Preparing local database", "Import complete")
-    };
-    set_status(state, "preparing", 0, 0, preparing_message);
-
+    set_status(state, "preparing", 0, 0, "Preparing local database");
     let mut conn = open_conn(state)?;
     init_schema(&conn)?;
     let tx = conn.transaction()?;
@@ -4192,7 +3910,7 @@ fn run_import<P: ImportPayload>(
          VALUES (?1, ?2, ?3, ?4, ?5, 0, 0)",
         params![
             source_path,
-            envelope.format.kind(),
+            "grenade_index",
             imported_at,
             envelope.version,
             envelope.updated_at
@@ -4200,7 +3918,7 @@ fn run_import<P: ImportPayload>(
     )?;
     let import_id = tx.last_insert_rowid();
 
-    let mut writer = ImportWriter::new(state, &tx, import_id, &envelope)?;
+    let mut writer = ImportWriter::new(state, &tx, import_id)?;
     payload.stream(&mut writer)?;
     let grenade_count = writer.ordinal;
     let deferred_indexes = writer.deferred_indexes;
@@ -4248,7 +3966,13 @@ fn run_import<P: ImportPayload>(
         restore_import_indexes(&tx)?;
     }
     tx.commit()?;
-    set_status(state, "done", grenade_count, grenade_count, done_message);
+    set_status(
+        state,
+        "done",
+        grenade_count,
+        grenade_count,
+        "Import complete",
+    );
     Ok(ImportReport {
         import_id,
         grenade_count,
@@ -4345,14 +4069,17 @@ impl<'de, 'w, 'a, 'b> Visitor<'de> for EnvelopeVisitor<'w, 'a, 'b> {
                 "canonical_grenades" => {
                     map.next_value_seed(GrenadeArraySeed {
                         writer: &mut *self.writer,
-                        format: ImportFormat::GrenadeIndex,
                     })?;
                 }
                 "grenades" => {
-                    map.next_value_seed(GrenadeArraySeed {
-                        writer: &mut *self.writer,
-                        format: ImportFormat::CoreNades,
-                    })?;
+                    self.writer.record_error(unsupported_import_format());
+                    return Err(serde::de::Error::custom("unsupported import format"));
+                }
+                "core_nades" => {
+                    if map.next_value::<Option<bool>>()?.unwrap_or(false) {
+                        self.writer.record_error(unsupported_import_format());
+                        return Err(serde::de::Error::custom("unsupported import format"));
+                    }
                 }
                 "players" => {
                     let value = map.next_value::<Value>()?;
@@ -4380,7 +4107,6 @@ impl<'de, 'w, 'a, 'b> Visitor<'de> for EnvelopeVisitor<'w, 'a, 'b> {
 
 struct GrenadeArraySeed<'w, 'a, 'b> {
     writer: &'w mut ImportWriter<'a, 'b>,
-    format: ImportFormat,
 }
 
 impl<'de, 'w, 'a, 'b> DeserializeSeed<'de> for GrenadeArraySeed<'w, 'a, 'b> {
@@ -4392,14 +4118,12 @@ impl<'de, 'w, 'a, 'b> DeserializeSeed<'de> for GrenadeArraySeed<'w, 'a, 'b> {
     {
         deserializer.deserialize_seq(GrenadeArrayVisitor {
             writer: self.writer,
-            format: self.format,
         })
     }
 }
 
 struct GrenadeArrayVisitor<'w, 'a, 'b> {
     writer: &'w mut ImportWriter<'a, 'b>,
-    format: ImportFormat,
 }
 
 impl<'de, 'w, 'a, 'b> Visitor<'de> for GrenadeArrayVisitor<'w, 'a, 'b> {
@@ -4418,22 +4142,10 @@ impl<'de, 'w, 'a, 'b> Visitor<'de> for GrenadeArrayVisitor<'w, 'a, 'b> {
             self.writer.record_error(error);
             return Err(serde::de::Error::custom("import aborted"));
         }
-        match self.format {
-            ImportFormat::GrenadeIndex => {
-                while let Some(grenade) = seq.next_element::<RawGrenade>()? {
-                    if let Err(error) = self.writer.push_grenade(grenade) {
-                        self.writer.record_error(error);
-                        return Err(serde::de::Error::custom("import aborted"));
-                    }
-                }
-            }
-            ImportFormat::CoreNades => {
-                while let Some(record) = seq.next_element::<CoreNadeRecord>()? {
-                    if let Err(error) = self.writer.push_grenade(record.into_raw()) {
-                        self.writer.record_error(error);
-                        return Err(serde::de::Error::custom("import aborted"));
-                    }
-                }
+        while let Some(grenade) = seq.next_element::<RawGrenade>()? {
+            if let Err(error) = self.writer.push_grenade(grenade) {
+                self.writer.record_error(error);
+                return Err(serde::de::Error::custom("import aborted"));
             }
         }
         Ok(())
@@ -5369,82 +5081,9 @@ fn get_recently_viewed_grenades(
     Ok(rows.collect::<Result<Vec<_>, _>>()?)
 }
 
-#[tauri::command]
-fn set_grenade_core(id: i64, is_core: bool, state: tauri::State<'_, AppState>) -> AppResult<bool> {
-    let conn = open_conn(&state)?;
-    active_grenade_import_id(&conn, id)?;
-    let changed = conn.execute(
-        "UPDATE grenades SET is_core=?1
-         WHERE id=?2 AND import_id=(
-             SELECT CAST(value AS INTEGER) FROM app_meta WHERE key='active_import_id'
-         )",
-        params![if is_core { 1 } else { 0 }, id],
-    )?;
-    if changed == 0 {
-        return Err(AppError::Message("Grenade not found".to_string()));
-    }
-    Ok(is_core)
-}
-
-#[tauri::command]
-fn export_core_nades(
-    state: tauri::State<'_, AppState>,
-) -> AppResult<Option<CoreNadesExportReport>> {
-    let conn = open_conn(&state)?;
-    let import_id = active_import_id(&conn)?
-        .ok_or_else(|| AppError::Message("No active import".to_string()))?;
-    let Some(path) = rfd::FileDialog::new()
-        .add_filter("Core Nades", &["json"])
-        .set_file_name("core_nades.json")
-        .save_file()
-    else {
-        return Ok(None);
-    };
-
-    let mut stmt = conn.prepare(
-        "SELECT g.id AS grenade_id, g.source_index, g.map, g.side, g.grenade_type, g.throw_keys, g.coordinates,
-            g.thrower, g.thrower_steamid64, g.thrower_team, g.airtime, g.usage_count, g.usage_throwers_json, g.demo_filename, g.throw_tick,
-            g.lineup_tick, g.tickrate, g.round_time_seconds, g.start_pos_x, g.start_pos_y, g.start_pos_z,
-            g.explode_pos_x, g.explode_pos_y, g.explode_pos_z,
-            g.start_map_x, g.start_map_y, g.explode_map_x, g.explode_map_y,
-            g.trajectory_json, g.trajectory_preview_json
-         FROM grenades g
-         WHERE g.import_id=?1 AND g.is_core=1
-         ORDER BY g.map ASC, g.grenade_type ASC, g.usage_count DESC, g.id ASC",
-    )?;
-    let mut rows = stmt.query(params![import_id])?;
-    let mut canonical_grenades = Vec::new();
-    while let Some(row) = rows.next()? {
-        let grenade_id: i64 = row.get("grenade_id")?;
-        let mut grenade = raw_grenade_from_row(row)?;
-        grenade.usage_events = load_usage_events(&conn, grenade_id)?;
-        canonical_grenades.push(grenade);
-    }
-    let file = ParserIndex {
-        version: Some(1),
-        updated_at: Some(Utc::now().to_rfc3339()),
-        core_nades: Some(true),
-        canonical_grenades,
-        players: Vec::new(),
-        processed_demos: None,
-    };
-    let text = serde_json::to_string_pretty(&file)?;
-    fs::write(&path, text)?;
-    Ok(Some(CoreNadesExportReport {
-        path: resource_string(&path),
-        grenade_count: file.canonical_grenades.len() as i64,
-    }))
-}
-
 impl ImportPayload for ParserIndex {
     fn envelope(&self) -> ImportEnvelope {
         ImportEnvelope {
-            format: if self.core_nades.unwrap_or(false) {
-                ImportFormat::CoreNades
-            } else {
-                ImportFormat::GrenadeIndex
-            },
-            core_snapshot: false,
             version: self.version,
             updated_at: self.updated_at.clone(),
         }
@@ -5463,39 +5102,6 @@ impl ImportPayload for ParserIndex {
         }
         Ok(())
     }
-}
-
-#[cfg(test)]
-impl ImportPayload for CoreNadesFile {
-    fn envelope(&self) -> ImportEnvelope {
-        ImportEnvelope {
-            format: ImportFormat::CoreNades,
-            core_snapshot: true,
-            version: Some(self.version),
-            updated_at: Some(self.exported_at.clone()),
-        }
-    }
-
-    fn stream(self, writer: &mut ImportWriter<'_, '_>) -> AppResult<()> {
-        writer.begin_grenades(Some(self.grenades.len() as u64))?;
-        for player in &self.players {
-            writer.push_player(player.clone())?;
-        }
-        for record in self.grenades {
-            writer.push_grenade(record.into_raw())?;
-        }
-        Ok(())
-    }
-}
-
-fn import_core_nades_snapshot_blocking<P: ImportPayload>(
-    state: &AppState,
-    path: &str,
-    payload: P,
-    library_version: Option<&str>,
-) -> AppResult<ImportReport> {
-    // Core Nades snapshots share the canonical writer; only the payload differs.
-    run_import(state, path, payload, library_version)
 }
 
 #[tauri::command]
@@ -5808,64 +5414,21 @@ mod tests {
         )
     }
 
-    fn round_trip_core_trajectory(json: &str) -> RawGrenade {
-        let TypedImportFile::CoreNades(file) = parse_import(json.as_bytes()).unwrap() else {
-            panic!("expected Core Nades snapshot");
-        };
-        let grenade = &file.grenades[0];
-        let (trajectory_preview_json, trajectory_json) = trajectory_storage_json(
-            grenade.trajectory.as_ref(),
-            grenade.trajectory_preview.as_ref(),
-            None,
-        )
-        .unwrap();
-
-        let conn = Connection::open_in_memory().unwrap();
-        init_schema(&conn).unwrap();
-        insert_import(&conn, 1);
-        conn.execute(
-            "INSERT INTO grenades(
-                import_id, source_index, map, side, grenade_type, is_core,
-                 throw_keys, trajectory_preview_json, trajectory_json
-             ) VALUES (1, 0, ?1, ?2, ?3, 1, ?4, ?5, ?6)",
-            params![
-                grenade.map,
-                grenade.side,
-                grenade.grenade_type,
-                grenade.throw_keys,
-                trajectory_preview_json,
-                trajectory_json
-            ],
-        )
-        .unwrap();
-        let exported = conn
+    fn imported_trajectory(json: &str) -> RawGrenade {
+        let file = parse_import(json.as_bytes()).unwrap();
+        let (state, root) = temporary_test_state("trajectory-import");
+        let report = import_index_blocking(&state, "trajectory.json", file, None).unwrap();
+        let conn = open_conn(&state).unwrap();
+        let grenade = conn
             .query_row(
-             "SELECT source_index, map, side, grenade_type, throw_keys, coordinates,
-                    thrower, thrower_steamid64, thrower_team, airtime, usage_count, usage_throwers_json, demo_filename, throw_tick,
-                    lineup_tick, tickrate, round_time_seconds, start_pos_x, start_pos_y, start_pos_z,
-                    explode_pos_x, explode_pos_y, explode_pos_z,
-                    start_map_x, start_map_y, explode_map_x, explode_map_y,
-                    trajectory_json, trajectory_preview_json
-                  FROM grenades g WHERE g.import_id=1",
-                [],
+                "SELECT * FROM grenades WHERE import_id=?1",
+                params![report.import_id],
                 raw_grenade_from_row,
             )
             .unwrap();
-        let exported_json = serde_json::to_vec(&ParserIndex {
-            version: Some(1),
-            updated_at: Some("now".to_string()),
-            core_nades: Some(true),
-            canonical_grenades: vec![exported],
-            players: Vec::new(),
-            processed_demos: None,
-        })
-        .unwrap();
-        let TypedImportFile::GrenadeIndex(reimported) =
-            parse_import(exported_json.as_slice()).unwrap()
-        else {
-            panic!("expected canonical Core export");
-        };
-        reimported.canonical_grenades.into_iter().next().unwrap()
+        drop(conn);
+        fs::remove_dir_all(root).unwrap();
+        grenade
     }
 
     #[test]
@@ -5927,15 +5490,11 @@ mod tests {
     }
 
     #[test]
-    fn deserializes_both_supported_import_formats() {
+    fn deserializes_canonical_index_and_screenshot_archive() {
         let index =
             parse_import(r#"{"version":1,"updated_at":"now","canonical_grenades":[]}"#.as_bytes())
                 .unwrap();
-        assert!(matches!(index, TypedImportFile::GrenadeIndex(_)));
-
-        let core =
-            parse_import(r#"{"version":1,"exported_at":"now","grenades":[]}"#.as_bytes()).unwrap();
-        assert!(matches!(core, TypedImportFile::CoreNades(_)));
+        assert!(index.canonical_grenades.is_empty());
 
         let archive: ScreenshotArchiveFile = serde_json::from_str(
             r#"{
@@ -5960,9 +5519,9 @@ mod tests {
     }
 
     #[test]
-    fn canonical_and_core_imports_execute_with_nadegrid_fields() {
+    fn canonical_import_executes_with_nadegrid_fields() {
         let (state, root) = temporary_test_state("format-import");
-        let TypedImportFile::GrenadeIndex(index) = parse_import(
+        let index = parse_import(
             br#"{
                 "version": 1,
                 "canonical_grenades": [{
@@ -5994,38 +5553,9 @@ mod tests {
             }"#
             .as_slice(),
         )
-        .unwrap() else {
-            panic!("expected canonical import");
-        };
+        .unwrap();
         let canonical_report =
             import_index_blocking(&state, "canonical.json", index, None).unwrap();
-
-        let TypedImportFile::CoreNades(core) = parse_import(
-            br#"{
-                "version": 1,
-                "exported_at": "now",
-                "grenades": [{
-                    "map": "de_test",
-                    "side": "CT",
-                    "grenade_type": "flash",
-                    "throw_keys": "M2",
-                    "tickrate": 128.5,
-                    "usage_events": [{
-                        "demo_filename": "Cup_match_2024-01-03.dem",
-                        "throw_tick": 200,
-                        "thrower": "Bob",
-                        "thrower_steamid64": "76561198000000002",
-                        "thrower_team": "Beta"
-                    }]
-                }]
-            }"#
-            .as_slice(),
-        )
-        .unwrap() else {
-            panic!("expected Core Nades import");
-        };
-        let core_report =
-            import_core_nades_snapshot_blocking(&state, "core.json", core, None).unwrap();
 
         let conn = open_conn(&state).unwrap();
         let canonical: (String, Option<String>, Option<i64>) = conn
@@ -6043,17 +5573,9 @@ mod tests {
                 Some(64)
             )
         );
-        let core: (String, Option<i64>) = conn
-            .query_row(
-                "SELECT throw_keys, tickrate FROM grenades WHERE import_id=?1",
-                params![core_report.import_id],
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            )
-            .unwrap();
-        assert_eq!(core, ("M2".to_string(), Some(129)));
-        assert_eq!(count(&conn, "SELECT COUNT(*) FROM grenade_usage_events"), 2);
-        assert!(count(&conn, "SELECT COUNT(*) FROM import_players") >= 2);
-        assert_eq!(count(&conn, "SELECT COUNT(*) FROM demo_metadata"), 2);
+        assert_eq!(count(&conn, "SELECT COUNT(*) FROM grenade_usage_events"), 1);
+        assert!(count(&conn, "SELECT COUNT(*) FROM import_players") >= 1);
+        assert_eq!(count(&conn, "SELECT COUNT(*) FROM demo_metadata"), 1);
         assert_eq!(
             import_players_from_conn(
                 &conn,
@@ -6078,7 +5600,7 @@ mod tests {
                 .steamid64,
             "76561198000000001"
         );
-        assert!(count(&conn, "SELECT COUNT(*) FROM import_map_players") >= 2);
+        assert!(count(&conn, "SELECT COUNT(*) FROM import_map_players") >= 1);
         drop(conn);
         fs::remove_dir_all(root).unwrap();
     }
@@ -6158,9 +5680,7 @@ mod tests {
             }]
         });
         let bytes = rmp_serde::to_vec(&value).unwrap();
-        let TypedImportFile::GrenadeIndex(index) = parse_import_bytes(&bytes, true).unwrap() else {
-            panic!("expected canonical MessagePack import");
-        };
+        let index = parse_import_bytes(&bytes, true).unwrap();
         assert_eq!(
             index.canonical_grenades[0].throw_keys.as_deref(),
             Some("M1+JUMP")
@@ -6229,48 +5749,6 @@ mod tests {
         fs::remove_dir_all(root).unwrap();
     }
 
-    #[test]
-    fn streams_core_messagepack_import_with_envelope_fields_in_any_order() {
-        let (state, root) = temporary_test_state("stream-msgpack-field-order");
-        let mut messagepack = Vec::new();
-        rmp::encode::write_map_len(&mut messagepack, 3).unwrap();
-        rmp_serde::encode::write_named(&mut messagepack, &"grenades").unwrap();
-        rmp::encode::write_array_len(&mut messagepack, 1).unwrap();
-        rmp_serde::encode::write_named(
-            &mut messagepack,
-            &serde_json::json!({
-                "map": "de_test",
-                "side": "CT",
-                "grenade_type": "flash",
-                "throw_keys": "M2",
-                "source_index": 5
-            }),
-        )
-        .unwrap();
-        rmp_serde::encode::write_named(&mut messagepack, &"exported_at").unwrap();
-        rmp_serde::encode::write_named(&mut messagepack, &"2026-01-01T00:00:00Z").unwrap();
-        rmp_serde::encode::write_named(&mut messagepack, &"version").unwrap();
-        rmp::encode::write_sint(&mut messagepack, 1).unwrap();
-        let path = root.join("library.msgpack");
-        fs::write(&path, &messagepack).unwrap();
-
-        let report = import_typed_path_blocking(&state, path.to_str().unwrap()).unwrap();
-        let value = serde_json::to_value(&report).unwrap();
-        assert_eq!(value["kind"].as_str(), Some("core_nades"));
-        assert_eq!(value["grenade_count"].as_u64(), Some(1));
-
-        let conn = open_conn(&state).unwrap();
-        let (is_core, source_index): (i64, i64) = conn
-            .query_row("SELECT is_core, source_index FROM grenades", [], |row| {
-                Ok((row.get(0)?, row.get(1)?))
-            })
-            .unwrap();
-        assert_eq!(is_core, 1);
-        assert_eq!(source_index, 5);
-        drop(conn);
-        fs::remove_dir_all(root).unwrap();
-    }
-
     fn seed_previous_import(state: &AppState) {
         let conn = open_conn(state).unwrap();
         init_schema(&conn).unwrap();
@@ -6293,6 +5771,55 @@ mod tests {
         assert_eq!(count(&conn, "SELECT COUNT(*) FROM imports"), 1);
         assert_eq!(count(&conn, "SELECT COUNT(*) FROM grenades"), 1);
         assert_eq!(active_import_id(&conn).unwrap(), Some(7));
+    }
+
+    #[test]
+    fn rejects_core_json_and_messagepack_without_replacing_library() {
+        let (state, root) = temporary_test_state("unsupported-core-import");
+        seed_previous_import(&state);
+        let cases = [
+            serde_json::json!({
+                "version": 1,
+                "exported_at": "now",
+                "grenades": [{"map": "de_test", "side": "T", "grenade_type": "smoke"}]
+            }),
+            serde_json::json!({
+                "version": 1,
+                "core_nades": true,
+                "canonical_grenades": [{"map": "de_test"}]
+            }),
+            serde_json::json!({
+                "version": 1,
+                "canonical_grenades": [],
+                "grenades": []
+            }),
+        ];
+        for (index, value) in cases.iter().enumerate() {
+            for messagepack in [false, true] {
+                let path = root.join(format!(
+                    "unsupported-{index}.{}",
+                    if messagepack { "msgpack" } else { "json" }
+                ));
+                let bytes = if messagepack {
+                    rmp_serde::to_vec_named(value).unwrap()
+                } else {
+                    serde_json::to_vec(value).unwrap()
+                };
+                fs::write(&path, &bytes).unwrap();
+                let error = import_typed_path_blocking(&state, path.to_str().unwrap())
+                    .err()
+                    .expect("Core import must be rejected");
+                assert!(matches!(
+                    error,
+                    AppError::Import {
+                        code: "unsupported_format",
+                        ..
+                    }
+                ));
+                assert_previous_import_survived(&state);
+            }
+        }
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
@@ -6415,8 +5942,6 @@ mod tests {
     impl ImportPayload for CancellingPayload {
         fn envelope(&self) -> ImportEnvelope {
             ImportEnvelope {
-                format: ImportFormat::GrenadeIndex,
-                core_snapshot: false,
                 version: Some(SUPPORTED_IMPORT_VERSION),
                 updated_at: Some("2026-01-01T00:00:00Z".to_string()),
             }
@@ -6554,7 +6079,7 @@ mod tests {
 
     #[test]
     fn parses_players_from_nested_demo_and_steamid_shapes() {
-        let TypedImportFile::GrenadeIndex(index) = parse_import(
+        let index = parse_import(
             br#"{
                 "version": 1,
                 "canonical_grenades": [],
@@ -6566,9 +6091,7 @@ mod tests {
             }"#
             .as_slice(),
         )
-        .unwrap() else {
-            panic!("expected canonical import");
-        };
+        .unwrap();
         assert_eq!(index.players.len(), 1);
         assert_eq!(
             index.players[0].demo_filename.as_deref(),
@@ -7008,12 +6531,11 @@ mod tests {
     }
 
     #[test]
-    fn core_preview_only_trajectory_survives_canonical_round_trip() {
-        let grenade = round_trip_core_trajectory(
+    fn canonical_preview_only_trajectory_is_preserved() {
+        let grenade = imported_trajectory(
             r#"{
                 "version": 1,
-                "exported_at": "then",
-                "grenades": [{
+                "canonical_grenades": [{
                     "map": "Legacy",
                     "side": "T",
                     "grenade_type": "smoke",
@@ -7030,13 +6552,12 @@ mod tests {
     }
 
     #[test]
-    fn core_full_trajectory_survives_canonical_round_trip_and_generates_preview() {
+    fn canonical_full_trajectory_is_preserved_and_generates_preview() {
         let trajectory = vec![vec![1.0, 2.0, 3.0], vec![4.0, 5.0, 6.0]];
-        let grenade = round_trip_core_trajectory(
+        let grenade = imported_trajectory(
             r#"{
                 "version": 1,
-                "exported_at": "then",
-                "grenades": [{
+                "canonical_grenades": [{
                     "map": "Current",
                     "side": "CT",
                     "grenade_type": "flashbang",
@@ -7059,9 +6580,12 @@ mod tests {
             (r#"{"other":[]}"#, "unsupported_format"),
             (
                 r#"{"canonical_grenades":[],"grenades":[]}"#,
-                "ambiguous_format",
+                "unsupported_format",
             ),
-            (r#"{"grenades":[],"exported_at":"now"}"#, "missing_version"),
+            (
+                r#"{"grenades":[],"exported_at":"now"}"#,
+                "unsupported_format",
+            ),
             (
                 r#"{"version":"1","canonical_grenades":[]}"#,
                 "invalid_version",
@@ -7250,7 +6774,7 @@ mod tests {
         assert!(columns.contains("thrower_steamid64"));
         drop(conn);
 
-        let TypedImportFile::GrenadeIndex(index) = parse_import(
+        let index = parse_import(
             br#"{
                 "version": 1,
                 "canonical_grenades": [{
@@ -7261,9 +6785,7 @@ mod tests {
             }"#
             .as_slice(),
         )
-        .unwrap() else {
-            panic!("expected canonical import");
-        };
+        .unwrap();
         let report = import_index_blocking(&state, "new.json", index, None).unwrap();
         let conn = open_conn(&state).unwrap();
         let imported: (String, String) = conn

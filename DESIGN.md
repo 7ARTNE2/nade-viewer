@@ -82,7 +82,7 @@ colors that communicate grenade and operation state.
 ### Primary
 
 - **Tactical lime** (`#c8f43d`): primary actions, active navigation, focus,
-  Core state, and selected operational controls. Use sparingly.
+  and selected operational controls. Use sparingly.
 
 ### Secondary
 
@@ -166,7 +166,7 @@ focus, or active state. Pills are reserved for short type and state badges.
 ### Chips
 
 - **Style:** small rectangular type and semantic badges for grenade type,
-  side, Core, and instant-throw status.
+  side, and instant-throw status.
 - **State:** semantic grenade colors identify type; lime identifies active
   product state.
 

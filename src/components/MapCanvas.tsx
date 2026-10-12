@@ -119,10 +119,7 @@ const groupThrowPoints = (
   });
   return [...buckets.values()].map((group) => {
     const grenades = [...group.grenades].sort(
-      (a, b) =>
-        Number(b.is_core) - Number(a.is_core) ||
-        b.usage_count - a.usage_count ||
-        a.id - b.id,
+      (a, b) => b.usage_count - a.usage_count || a.id - b.id,
     );
     return {
       id: grenades.map((grenade) => grenade.id).join('-'),
@@ -700,10 +697,6 @@ export default function MapCanvas({
                 )}
               </span>
               <span>
-                <i className="legend-throw legend-core" />{' '}
-                {tr('Core lineup', 'Избранная раскидка')}
-              </span>
-              <span>
                 <i className="legend-throw legend-insta" />{' '}
                 {tr('Spawn match', 'Совпадение со спавном')}
               </span>
@@ -1032,7 +1025,7 @@ export default function MapCanvas({
                       data-map-control="1"
                     >
                       <button
-                        className={`throw-dot throw-stack-dot ${group.grenades.some((item) => item.is_core) ? 'core' : ''} ${matched ? 'spawn-match' : ''} ${group.grenades.some((item) => item.id === copiedGrenadeId) ? 'coordinates-copied' : ''}`}
+                        className={`throw-dot throw-stack-dot ${matched ? 'spawn-match' : ''} ${group.grenades.some((item) => item.id === copiedGrenadeId) ? 'coordinates-copied' : ''}`}
                         data-tour-action="throw-stack"
                         onClick={() =>
                           setActiveGroupId(
@@ -1066,7 +1059,7 @@ export default function MapCanvas({
                   ) : (
                     <button
                       key={group.id}
-                      className={`throw-dot ${grenade.is_core ? 'core' : ''} ${matched ? 'spawn-match' : ''} ${grenade.id === copiedGrenadeId ? 'coordinates-copied' : ''}`}
+                      className={`throw-dot ${matched ? 'spawn-match' : ''} ${grenade.id === copiedGrenadeId ? 'coordinates-copied' : ''}`}
                       style={style}
                       data-map-control="1"
                       data-tour-action="throw-single"
@@ -1124,7 +1117,7 @@ export default function MapCanvas({
             {activeGroup.grenades.map((grenade) => (
               <button
                 key={grenade.id}
-                className={`throw-strip-dot ${grenade.is_core ? 'core' : ''} ${grenadePointMode === 'throw' && isInstaGrenade(grenade, spawnMapPoints) ? 'spawn-match' : ''} ${grenade.id === copiedGrenadeId ? 'coordinates-copied' : ''}`}
+                className={`throw-strip-dot ${grenadePointMode === 'throw' && isInstaGrenade(grenade, spawnMapPoints) ? 'spawn-match' : ''} ${grenade.id === copiedGrenadeId ? 'coordinates-copied' : ''}`}
                 style={
                   {
                     '--dot': typeColor[grenade.grenade_type] ?? '#fff',
@@ -1177,9 +1170,6 @@ export default function MapCanvas({
               <span>{preview.grenade.side}</span>
               {isInstaGrenade(preview.grenade, spawnMapPoints) ? (
                 <em className="insta">{INSTA_LABEL}</em>
-              ) : null}
-              {preview.grenade.is_core ? (
-                <em>{tr('Core', 'Избранное')}</em>
               ) : null}
             </div>
             {previewKeys.length ? (

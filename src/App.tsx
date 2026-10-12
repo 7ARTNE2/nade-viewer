@@ -19,14 +19,12 @@ import {
   RotateCw,
   Trash2,
   GraduationCap,
-  Upload,
   Wrench,
   X,
 } from 'lucide-react';
 import { check, type Update } from '@tauri-apps/plugin-updater';
 import {
   deleteImport,
-  exportCoreNades,
   getActiveImport,
   getOnboardingState,
   listImports,
@@ -95,10 +93,6 @@ function Shell() {
   const [bootVisible, setBootVisible] = useState(true);
   const [bootError, setBootError] = useState<string | null>(null);
   const finishBoot = useCallback(() => setBootVisible(false), []);
-  const [coreTransferBusy, setCoreTransferBusy] = useState(false);
-  const [coreTransferStatus, setCoreTransferStatus] = useState<string | null>(
-    null,
-  );
   const [snapshotMenuOpen, setSnapshotMenuOpen] = useState(false);
   const [libraryActionsOpen, setLibraryActionsOpen] = useState(false);
   const [editingSnapshotId, setEditingSnapshotId] = useState<number | null>(
@@ -378,14 +372,13 @@ function Shell() {
   });
 
   useEffect(() => {
-    if (bootVisible || (!coreTransferStatus && !operationError)) return;
-    showToast(operationError ?? coreTransferStatus!, {
-      tone: operationError ? 'error' : 'success',
-      duration: operationError ? 3260 : 1960,
+    if (bootVisible || !operationError) return;
+    showToast(operationError, {
+      tone: 'error',
+      duration: 3260,
     });
-    setCoreTransferStatus(null);
     setOperationError(null);
-  }, [bootVisible, coreTransferStatus, operationError, showToast]);
+  }, [bootVisible, operationError, showToast]);
 
   const switchImport = async (id: number) => {
     const isMapWorkspace = location.pathname.startsWith('/map/');
@@ -456,30 +449,6 @@ function Shell() {
       );
     } finally {
       setDeleteSnapshotBusy(false);
-    }
-  };
-
-  const handleCoreExport = async () => {
-    setCoreTransferBusy(true);
-    setCoreTransferStatus(null);
-    try {
-      const report = await exportCoreNades();
-      if (report)
-        setCoreTransferStatus(
-          count(
-            report.grenade_count,
-            'grenade saved',
-            'grenades saved',
-            'граната сохранена',
-            'гранаты сохранены',
-            'гранат сохранено',
-          ),
-        );
-    } catch (error) {
-      console.error(error);
-      setOperationError(tr('Export failed', 'Ошибка экспорта'));
-    } finally {
-      setCoreTransferBusy(false);
     }
   };
 
@@ -775,27 +744,6 @@ function Shell() {
                   </button>
                   {libraryActionsOpen ? (
                     <div className="library-actions-popover">
-                      {activeImport ? (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setLibraryActionsOpen(false);
-                            void handleCoreExport();
-                          }}
-                          disabled={coreTransferBusy}
-                        >
-                          <Upload size={15} />
-                          {coreTransferBusy
-                            ? tr(
-                                'Exporting Core Nades',
-                                'Экспорт избранных гранат',
-                              )
-                            : tr(
-                                'Export Core Nades',
-                                'Экспорт избранных гранат',
-                              )}
-                        </button>
-                      ) : null}
                       <button
                         type="button"
                         onClick={() => {

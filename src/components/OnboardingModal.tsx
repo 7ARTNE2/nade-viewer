@@ -154,7 +154,7 @@ const steps: TourStep[] = [
     section: 'Library',
     sectionRu: 'Библиотека',
     title: 'Import a lineup library',
-    copy: 'Load grenade_index.json, Core Nades JSON / MessagePack, or a Nadegrid Screenshot ZIP. Drag & drop works too. Everything stays local in SQLite.',
+    copy: 'Load grenade_index in JSON / MessagePack, or a Nadegrid Screenshot ZIP. Drag & drop works too. Everything stays local in SQLite.',
   },
   {
     selector: '[data-tour="recent-history"]',
@@ -187,7 +187,7 @@ const steps: TourStep[] = [
     section: 'Workspace',
     sectionRu: 'Рабочее место',
     title: 'Control the radar view',
-    copy: 'Focus hides the inspector, Icons toggles marker style, Core / Insta filter throws, Spawns shows spawn points, Throw groups by throw position. Nuke and Vertigo also offer Main / Lower radar.',
+    copy: 'Focus hides the inspector, Icons toggles marker style, Insta filters throws, Spawns shows spawn points, Throw groups by throw position. Nuke and Vertigo also offer Main / Lower radar.',
   },
   {
     selector: '[data-tour="map-filters"]',
@@ -254,14 +254,6 @@ const steps: TourStep[] = [
     copy: 'Single lineup points on the radar also support right-click to copy setpos / setang. Left-click one to open its full details; the tutorial will continue there.',
   },
   {
-    selector: '[data-tour="grenade-core-toggle"]',
-    icon: BadgeCheck,
-    section: 'Lineup details',
-    sectionRu: 'Детали раскидки',
-    title: 'Save a useful lineup',
-    copy: 'Add this lineup to Core so it stays easy to find in your library.',
-  },
-  {
     selector: '[data-tour="grenade-overview"]',
     icon: ScanLine,
     section: 'Lineup details',
@@ -323,7 +315,7 @@ const steps: TourStep[] = [
     section: 'Lineup details',
     sectionRu: 'Детали раскидки',
     title: 'Compare similar lineups',
-    copy: 'Browse nearby or related grenades here. Open one for its details, copy its command, or save it to Core.',
+    copy: 'Browse nearby or related grenades here. Open one for its details or copy its command.',
   },
   {
     selector: '[data-tour="map-legend"]',
@@ -331,7 +323,7 @@ const steps: TourStep[] = [
     section: 'Radar',
     sectionRu: 'Радар',
     title: 'Decode every mark',
-    copy: 'The legend explains T / CT / Mix cluster colors, grenade types, trajectory lines, stacked points (numbers), Core gold rings, Insta spawn matches, and pulsing spawns. Click a spawn to copy it.',
+    copy: 'The legend explains T / CT / Mix cluster colors, grenade types, trajectory lines, stacked points (numbers), Insta spawn matches, and pulsing spawns. Click a spawn to copy it.',
   },
   {
     selector: '[data-tour="cluster-list"]',
@@ -347,7 +339,7 @@ const steps: TourStep[] = [
     section: 'Radar',
     sectionRu: 'Радар',
     title: 'Turn a find into a setup',
-    copy: 'Click any row to open the full detail, Copy the console command, or toggle Core. Insta badges mark spawn-aligned throws; throw-key icons and usage / airtime / round are shown inline.',
+    copy: 'Click any row to open the full detail or copy the console command. Insta badges mark spawn-aligned throws; throw-key icons and usage / airtime / round are shown inline.',
   },
   {
     selector: '[data-tour="library-switcher"]',
@@ -362,8 +354,8 @@ const steps: TourStep[] = [
     icon: BadgeCheck,
     section: 'System',
     sectionRu: 'Система',
-    title: 'Export Core & keep it fresh',
-    copy: 'Open the … menu to export Core Nades to core_nades.json, check the online library manifest, download a compressed update, or delete the active library. Updates only replace data on success.',
+    title: 'Keep your library up to date',
+    copy: 'Open the … menu to check the online library manifest, download a compressed update, or delete the active library. Updates only replace data on success.',
   },
   {
     selector: '[data-tour="topbar-tools"]',
@@ -397,7 +389,6 @@ const russianTitles = [
   'Скопируйте координаты раскидки',
   'Скопируйте команду спавна',
   'Откройте раскидку',
-  'Сохраните раскидку в Core',
   'Изучите страницу раскидки',
   'Проверьте клавиши броска',
   'Скопируйте команду раскидки',
@@ -410,17 +401,17 @@ const russianTitles = [
   'Начните с кластера',
   'Превратите находку в готовый сетап',
   'Управляйте снимками библиотеки',
-  'Экспортируйте Core и обновляйте библиотеку',
+  'Обновляйте библиотеку',
   'Откройте инструменты',
   'Переключите язык интерфейса',
 ];
 
 const russianCopies = [
-  'Загрузите grenade_index.json, Core Nades в JSON / MessagePack или ZIP скриншотов Nadegrid. Можно перетаскиванием — всё остаётся локально в SQLite.',
+  'Загрузите grenade_index в JSON / MessagePack или ZIP скриншотов Nadegrid. Можно перетаскиванием — всё остаётся локально в SQLite.',
   'Ищите карты по названию, смотрите счётчики раскидок на тайлах и открывайте 10 последних просмотренных гранат слева. История сохраняется после перезапуска.',
   'Выберите тайл карты, чтобы перейти в тактическое рабочее пространство. На тайле видно, сколько раскидок приходится на карту.',
   'Откройте селектор карты в шапке, чтобы прыгать между доступными картами. Фильтры и настройки вида запоминаются для каждой карты отдельно.',
-  '«Фокус» скрывает инспектор, «Значки» меняет вид маркеров, «Избранные» и «Инста» фильтруют раскидки, «Спавны» показывает точки появления, «Бросок» группирует по позиции броска. На Nuke и Vertigo есть переключение Основной / Нижний.',
+  '«Фокус» скрывает инспектор, «Значки» меняет вид маркеров, «Инста» фильтрует раскидки, «Спавны» показывает точки появления, «Бросок» группирует по позиции броска. На Nuke и Vertigo есть переключение Основной / Нижний.',
   'Совмещайте тип гранаты, сторону и поиск с цепочкой Турнир → Команда → Игрок. Отмечайте несколько значений галочками; выбор применяется сразу. Команды и игроки сохраняются, пока доступны в выбранных турнирах и командах. «Сбросить» очищает фильтры и выбранный кластер.',
   'Ползунком «Правила видимости» задайте минимальный порог использований. Повышайте, чтобы скрыть разовые броски и оставить только проверенные; понижайте — чтобы изучить всю библиотеку. Хранится локально для каждой карты.',
   'Колесом — масштаб, перетаскиванием — перемещение при приближении, +/- и 0 — зум и сброс, стрелками — сдвиг. Нажмите кластер, чтобы сфокусироваться на нём; точку раскидки — чтобы открыть её или выбрать из стопки; спавн — чтобы скопировать команду. ПКМ по точке раскидки копирует setpos / setang.',
@@ -429,7 +420,6 @@ const russianCopies = [
   'Нажмите ПКМ по одиночной точке на радаре или по точке в раскрытой стопке, чтобы скопировать setpos / setang.',
   'Нажмите на пульсирующий спавн, чтобы скопировать команду setpos / setang.',
   'Одиночную точку на радаре тоже можно нажать правой кнопкой, чтобы скопировать setpos / setang. Нажмите левой кнопкой, чтобы открыть детали и продолжить обучение.',
-  'Добавьте эту раскидку в Core, чтобы быстро находить её в библиотеке.',
   'На радаре видны точка броска и траектория. В шапке указаны тип гранаты, сторона, игрок и команда. Здесь показаны время полёта, момент раунда, число использований и тикрейт.',
   'Клавиши подсказывают, что нажимать для броска, чтобы повторить раскидку в игре.',
   'Скопируйте команду setpos / setang в блоке координат.',
@@ -437,12 +427,12 @@ const russianCopies = [
   'Здесь указан файл демо и тик броска — по ним можно найти точный момент записи раскидки.',
   'График показывает историю бросков. Здесь же указаны игрок и команда, которые чаще всего использовали раскидку, а также последнее демо и тик.',
   'Здесь перечислены игроки, использовавшие раскидку. Нажмите на имя, чтобы найти их броски на карте.',
-  'Ниже показаны похожие гранаты. Можно открыть детали, скопировать команду или добавить раскидку в Core.',
-  'Легенда объясняет цвета кластеров T / CT / Mix, типы гранат, линии траекторий, стопки (цифры), золотые кольца Core, метки Insta и пульсирующие спавны. Нажмите на спавн, чтобы скопировать.',
+  'Ниже показаны похожие гранаты. Можно открыть детали или скопировать команду.',
+  'Легенда объясняет цвета кластеров T / CT / Mix, типы гранат, линии траекторий, стопки (цифры), метки Insta и пульсирующие спавны. Нажмите на спавн, чтобы скопировать.',
   'Близкие точки приземления или броска объединены в группы. Выберите кластер здесь или прямо на радаре — камера подлетит к нему и загрузит до 30 раскидок на страницу.',
-  'Нажмите строку, чтобы открыть детали, «Копировать» — для команды консоли, или переключите Core. Метка Insta подсвечивает совпадение со спавном; иконки клавиш броска и метрики usage / airtime / round — прямо в строке.',
+  'Нажмите строку, чтобы открыть детали, или «Копировать» — для команды консоли. Метка Insta подсвечивает совпадение со спавном; иконки клавиш броска и метрики usage / airtime / round — прямо в строке.',
   'Переключайте активный снимок в шапке, переименовывайте на месте и видите счётчики гранат. Каждый импорт изолирован — переключение не смешивает данные.',
-  'Откройте меню «…», чтобы экспортировать Core в core_nades.json, проверить онлайн-библиотеку по манифесту, скачать сжатое обновление или удалить активную библиотеку. Данные заменяются только при успешном импорте.',
+  'Откройте меню «…», чтобы проверить онлайн-библиотеку по манифесту, скачать сжатое обновление или удалить активную библиотеку. Данные заменяются только при успешном импорте.',
   'Откройте «Инструменты» для локальных плагинов, например парсера демо.',
   'Переключайте EN / RU вверху. Верстка учитывает длину русского, а состояние вида для каждой карты сохраняется локально.',
 ];
@@ -510,7 +500,7 @@ export default function OnboardingModal({
     return steps[0];
   }, [importState, locale, started, step, tr]);
   const StepIcon = target?.icon;
-  const screenshotStep = 17;
+  const screenshotStep = 16;
   const visibleSteps = steps
     .map((tourStep, index) => ({ tourStep, index }))
     .filter(({ index }) => index !== screenshotStep || screenshotsAvailable);
@@ -559,7 +549,7 @@ export default function OnboardingModal({
   }, [step]);
 
   useEffect(() => {
-    if (!started || step < 22 || !pathname.startsWith('/grenade/')) return;
+    if (!started || step < 21 || !pathname.startsWith('/grenade/')) return;
     if (radarPathRef.current) navigate(radarPathRef.current);
     else
       document
@@ -650,8 +640,7 @@ export default function OnboardingModal({
   useEffect(() => {
     if (!started || !pathname.startsWith('/grenade/')) return;
     const detailActions: Record<number, string> = {
-      13: 'grenade-core-toggle',
-      16: 'grenade-copy-coordinates',
+      15: 'grenade-copy-coordinates',
     };
     const action = detailActions[step];
     if (!action) return;
@@ -671,7 +660,7 @@ export default function OnboardingModal({
       !started ||
       !pathname.startsWith('/grenade/') ||
       step < 13 ||
-      step > 21 ||
+      step > 20 ||
       !target
     )
       return;
@@ -803,19 +792,14 @@ export default function OnboardingModal({
       }
     };
     const directTargetFor = (element: Element | null) =>
-      (step >= 8 && step <= 12) || step === 13 || step === 16 || step >= 25
+      (step >= 8 && step <= 12) || step === 15 || step >= 24
         ? target.selector === '[data-tour="language-switch"]'
           ? element
           : (element?.querySelector('button') ?? element)
         : null;
     highlightDirectTarget(directTargetFor(observedElement));
     const applyHighlight = (nextRect: DOMRect | null) => {
-      if (
-        (step >= 8 && step <= 12) ||
-        step === 13 ||
-        step === 16 ||
-        step >= 25
-      ) {
+      if ((step >= 8 && step <= 12) || step === 15 || step >= 24) {
         setHighlightRect(null);
         return;
       }
@@ -856,13 +840,13 @@ export default function OnboardingModal({
             )
           : null);
       const openLegend =
-        step === 22 && element?.getAttribute('aria-expanded') === 'true'
+        step === 21 && element?.getAttribute('aria-expanded') === 'true'
           ? document.querySelector('.map-legend.is-visible')
           : null;
       const openLibraryMenu =
-        step === 25
+        step === 24
           ? document.querySelector('.snapshot-menu')
-          : step === 26
+          : step === 25
             ? document.querySelector('.library-actions-popover')
             : null;
       const openThrowStack =
@@ -887,7 +871,7 @@ export default function OnboardingModal({
       const directTarget = directTargetFor(element);
       const directRect = directTarget?.getBoundingClientRect();
       const visibleRect =
-        (step >= 8 && step <= 12) || step === 13 || step === 16 || step >= 25
+        (step >= 8 && step <= 12) || step === 15 || step >= 24
           ? directRect
           : nextRect;
       const isVisible = Boolean(
@@ -949,7 +933,7 @@ export default function OnboardingModal({
         Boolean(rect && rect.width && rect.height),
       );
       const inspectorRect =
-        step >= 13 && step <= 21 && pathname.startsWith('/grenade/')
+        step >= 13 && step <= 20 && pathname.startsWith('/grenade/')
           ? document.querySelector('.detail-inspector')?.getBoundingClientRect()
           : null;
       const leftOfInspector =
