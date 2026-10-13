@@ -168,6 +168,7 @@ export default function MapPage({
   );
   const playerOptionsAvailable = loadedPlayerScope === playerScopeKey;
   const [mapSelectorOpen, setMapSelectorOpen] = useState(false);
+  const [favoriteCollectionOpen, setFavoriteCollectionOpen] = useState(false);
   const [spawns, setSpawns] = useState<SpawnPoint[]>([]);
   const [selectedCluster, setSelectedCluster] = useState<LandingCluster | null>(
     null,
@@ -216,6 +217,7 @@ export default function MapPage({
   const previousImportIdRef = useRef(activeImportId);
   const skipNextStatePersistenceRef = useRef(false);
   const mapSelectorRef = useRef<HTMLDivElement>(null);
+  const favoriteCollectionRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     getSiteSettings()
@@ -253,6 +255,23 @@ export default function MapPage({
       document.removeEventListener('keydown', closeOnEscape);
     };
   }, [mapSelectorOpen]);
+
+  useEffect(() => {
+    if (!favoriteCollectionOpen) return;
+    const closeOnOutsidePress = (event: PointerEvent) => {
+      if (!favoriteCollectionRef.current?.contains(event.target as Node))
+        setFavoriteCollectionOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setFavoriteCollectionOpen(false);
+    };
+    document.addEventListener('pointerdown', closeOnOutsidePress);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutsidePress);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [favoriteCollectionOpen]);
 
   useEffect(() => {
     let cancelled = false;
@@ -979,6 +998,122 @@ export default function MapPage({
             </div>
           </div>
           <div className="toolbar-spacer" />
+          <div className="map-favorites-controls">
+            <div className="map-favorites-toggle-frame">
+              <button
+                type="button"
+                className={`toggle map-favorites-toggle ${filters.favorites_only ? 'active' : ''}`}
+                aria-pressed={Boolean(filters.favorites_only)}
+                aria-label={tr('Favorites', 'Избранное')}
+                data-tip={tr('Favorites', 'Избранное')}
+                onClick={() => {
+                  setFavoriteCollectionOpen(false);
+                  setFilters((current) => ({
+                    ...current,
+                    favorites_only: !current.favorites_only,
+                    favorite_collection_id: undefined,
+                  }));
+                }}
+              >
+                <Star
+                  size={15}
+                  fill={filters.favorites_only ? 'currentColor' : 'none'}
+                />
+                <span>{tr('Favorites', 'Избранное')}</span>
+              </button>
+            </div>
+            {filters.favorites_only && (
+              <div
+                className="map-favorites-collection"
+                ref={favoriteCollectionRef}
+              >
+                <button
+                  type="button"
+                  className="map-favorites-collection-trigger"
+                  aria-label={tr('Collection', 'Подборка')}
+                  aria-expanded={favoriteCollectionOpen}
+                  aria-haspopup="true"
+                  onClick={() => setFavoriteCollectionOpen((open) => !open)}
+                >
+                  <span>
+                    {favoritesState.collections.find(
+                      (collection) =>
+                        collection.id === filters.favorite_collection_id,
+                    )?.name ?? tr('All favorites', 'Все избранные')}
+                  </span>
+                  <ChevronDown size={14} aria-hidden="true" />
+                </button>
+                {favoriteCollectionOpen && (
+                  <div className="map-favorites-collection-menu">
+                    <button
+                      type="button"
+                      className={
+                        filters.favorite_collection_id === undefined
+                          ? 'active'
+                          : ''
+                      }
+                      aria-current={
+                        filters.favorite_collection_id === undefined
+                          ? 'true'
+                          : undefined
+                      }
+                      onClick={() => {
+                        setFilters((current) => ({
+                          ...current,
+                          favorite_collection_id: undefined,
+                        }));
+                        setFavoriteCollectionOpen(false);
+                      }}
+                    >
+                      {tr('All favorites', 'Все избранные')}
+                    </button>
+                    {favoritesState.collections.map((collection) => (
+                      <button
+                        key={collection.id}
+                        type="button"
+                        className={
+                          filters.favorite_collection_id === collection.id
+                            ? 'active'
+                            : ''
+                        }
+                        aria-current={
+                          filters.favorite_collection_id === collection.id
+                            ? 'true'
+                            : undefined
+                        }
+                        onClick={() => {
+                          setFilters((current) => ({
+                            ...current,
+                            favorite_collection_id: collection.id,
+                          }));
+                          setFavoriteCollectionOpen(false);
+                        }}
+                      >
+                        {collection.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+            {favoritesError && (
+              <button
+                className="icon-btn map-favorites-retry"
+                type="button"
+                aria-label={tr(
+                  'Retry favorites',
+                  'Повторить загрузку избранного',
+                )}
+                data-tip={tr(
+                  'Retry favorites',
+                  'Повторить загрузку избранного',
+                )}
+                onClick={() => void refreshFavorites()}
+              >
+                <RotateCcw size={14} />
+              </button>
+            )}
+          </div>
           <div className="map-toolbar-actions" data-tour="map-toolbar-actions">
             <button
               className="toggle inspector-toggle"
@@ -1144,56 +1279,6 @@ export default function MapPage({
           className="panel-section compact-filter inspector-filter"
           data-tour="map-filters"
         >
-          <div className="favorites-map-filter">
-            <button
-              type="button"
-              className={`toggle ${filters.favorites_only ? 'active' : ''}`}
-              aria-pressed={Boolean(filters.favorites_only)}
-              onClick={() =>
-                setFilters((current) => ({
-                  ...current,
-                  favorites_only: !current.favorites_only,
-                  favorite_collection_id: undefined,
-                }))
-              }
-            >
-              <Star size={15} />
-              {tr('Favorites only', 'Только избранные')}
-            </button>
-            {filters.favorites_only && (
-              <label className="favorites-field">
-                <span>{tr('Collection', 'Подборка')}</span>
-                <select
-                  value={filters.favorite_collection_id ?? ''}
-                  onChange={(event) =>
-                    setFilters((current) => ({
-                      ...current,
-                      favorite_collection_id: event.target.value
-                        ? Number(event.target.value)
-                        : undefined,
-                    }))
-                  }
-                >
-                  <option value="">
-                    {tr('All favorites', 'Все избранные')}
-                  </option>
-                  {favoritesState.collections.map((collection) => (
-                    <option key={collection.id} value={collection.id}>
-                      {collection.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
-            {favoritesError && (
-              <button
-                className="micro-btn"
-                onClick={() => void refreshFavorites()}
-              >
-                {tr('Retry favorites', 'Повторить загрузку избранного')}
-              </button>
-            )}
-          </div>
           <div className="section-title">
             <span>
               <Filter size={15} />
