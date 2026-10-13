@@ -8,6 +8,7 @@ import { ToastProvider } from './components/Toast';
 import './cursors.css';
 import './styles.css';
 import './uiEnhancements.css';
+import './favorites.css';
 
 performance.mark('startup:react-modules-ready');
 console.info(

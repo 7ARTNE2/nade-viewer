@@ -5,6 +5,7 @@ import { assetUrl, getMaps, getRecentlyViewedGrenades } from '../lib/tauri';
 import { formatNumber, grenadeLabel } from '../lib/format';
 import type { MapSummary, ViewedGrenade } from '../types/domain';
 import { useI18n } from '../i18n';
+import FavoriteActions from '../components/FavoriteActions';
 
 type HomePageProps = {
   activeImportId?: number | null;
@@ -102,31 +103,33 @@ export default function HomePage({ activeImportId }: HomePageProps) {
           {recentlyViewed.length ? (
             <div className="recent-history-list">
               {recentlyViewed.map((grenade) => (
-                <button
-                  key={grenade.id}
-                  type="button"
-                  onClick={() => navigate(`/grenade/${grenade.id}`)}
-                >
-                  <span
-                    className={`type-pill ${String(grenade.grenade_type).toLowerCase()}`}
+                <div key={grenade.id} className="recent-history-entry">
+                  <button
+                    type="button"
+                    onClick={() => navigate(`/grenade/${grenade.id}`)}
                   >
-                    {grenadeLabel(grenade.grenade_type)}
-                  </span>
-                  <span className="recent-history-main">
-                    <strong>
-                      {grenade.thrower ||
-                        `${tr('Grenade', 'Граната')} #${grenade.id}`}
-                    </strong>
-                    <small>
-                      {grenade.map} / {grenade.side}
-                    </small>
-                  </span>
-                  {grenade.view_count > 1 ? (
-                    <span className="recent-history-count">
-                      {formatNumber(grenade.view_count)}x
+                    <span
+                      className={`type-pill ${String(grenade.grenade_type).toLowerCase()}`}
+                    >
+                      {grenadeLabel(grenade.grenade_type)}
                     </span>
-                  ) : null}
-                </button>
+                    <span className="recent-history-main">
+                      <strong>
+                        {grenade.thrower ||
+                          `${tr('Grenade', 'Граната')} #${grenade.id}`}
+                      </strong>
+                      <small>
+                        {grenade.map} / {grenade.side}
+                      </small>
+                    </span>
+                    {grenade.view_count > 1 ? (
+                      <span className="recent-history-count">
+                        {formatNumber(grenade.view_count)}x
+                      </span>
+                    ) : null}
+                  </button>
+                  <FavoriteActions grenade={grenade} />
+                </div>
               ))}
             </div>
           ) : (

@@ -95,6 +95,8 @@ export type MapSummary = {
 };
 
 export type MapFilters = {
+  favorites_only?: boolean;
+  favorite_collection_id?: number;
   grenade_type?: string;
   side?: string;
   movement?: 'all' | 'moving' | 'stationary';
@@ -129,6 +131,7 @@ export type MapOverview = {
 
 export type GrenadePreview = {
   id: number;
+  favorite_id?: number | null;
   map: string;
   side: 'T' | 'CT' | 'Any' | string;
   grenade_type: 'smoke' | 'flash' | 'molotov' | 'HE' | string;
@@ -197,4 +200,41 @@ export type SpawnPoint = {
   map_x?: number | null;
   map_y?: number | null;
   command: string;
+};
+
+export type FavoriteCollection = {
+  id: number;
+  name: string;
+  grenade_count: number;
+};
+
+export type FavoritePreview = GrenadePreview & {
+  favorite_id: number;
+  saved_at: string;
+  source_label: string;
+  collection_ids: number[];
+};
+
+export type FavoriteDetail = GrenadeDetail & {
+  saved_at: string;
+  source_label: string;
+};
+
+export type FavoriteFilters = {
+  map?: string;
+  grenade_type?: string;
+  side?: string;
+  search?: string;
+  collection_id?: number;
+  limit?: number;
+  offset?: number;
+};
+
+export type FavoriteList = { items: FavoritePreview[]; total: number };
+
+export type FavoritesState = {
+  collections: FavoriteCollection[];
+  maps: string[];
+  favorites: Record<number, number[]>;
+  source_matches: Record<number, number>;
 };

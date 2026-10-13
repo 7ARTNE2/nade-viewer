@@ -32,6 +32,8 @@ export const defaultMapFilters = (): MapFilters => ({
   tournament: [],
   min_usage: 0,
   is_insta: false,
+  favorites_only: false,
+  favorite_collection_id: undefined,
 });
 
 export function filtersMatchDefault(filters: MapFilters) {
@@ -46,7 +48,9 @@ export function filtersMatchDefault(filters: MapFilters) {
     !filters.thrower_steamid64?.length &&
     !filters.tournament?.length &&
     (filters.min_usage ?? 0) === defaults.min_usage &&
-    Boolean(filters.is_insta) === Boolean(defaults.is_insta)
+    Boolean(filters.is_insta) === Boolean(defaults.is_insta) &&
+    !filters.favorites_only &&
+    filters.favorite_collection_id === undefined
   );
 }
 
@@ -104,6 +108,13 @@ export function readStoredMapViewState(key: string): StoredMapViewState | null {
           parsed.filters?.thrower_steamid64,
         ),
         tournament: normalizeFilterSelection(parsed.filters?.tournament),
+        favorites_only: parsed.filters?.favorites_only === true,
+        favorite_collection_id:
+          typeof parsed.filters?.favorite_collection_id === 'number' &&
+          Number.isInteger(parsed.filters.favorite_collection_id) &&
+          parsed.filters.favorite_collection_id > 0
+            ? parsed.filters.favorite_collection_id
+            : undefined,
       },
       selectedClusterId,
       clusterPage: normalizeStoredNumber(parsed.clusterPage, 0),

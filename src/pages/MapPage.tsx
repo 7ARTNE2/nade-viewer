@@ -20,6 +20,7 @@ import {
   UserRound,
   Users,
   X,
+  Star,
 } from 'lucide-react';
 import MapCanvas, { type IconTheme } from '../components/MapCanvas';
 import GrenadeList from '../components/GrenadeList';
@@ -54,6 +55,7 @@ import type {
 } from '../types/domain';
 import { useI18n } from '../i18n';
 import { useToast } from '../components/Toast';
+import { useFavorites } from '../lib/favorites';
 import {
   defaultMapFilters,
   filtersMatchDefault,
@@ -88,6 +90,13 @@ export default function MapPage({
 }: MapPageProps) {
   const { locale, tr, count } = useI18n();
   const { showToast } = useToast();
+  const {
+    state: favoritesState,
+    revision: favoritesRevision,
+    loading: favoritesLoading,
+    error: favoritesError,
+    refresh: refreshFavorites,
+  } = useFavorites();
   const { mapName = '' } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
@@ -119,6 +128,26 @@ export default function MapPage({
     ...(hasNavigationSearch ? { search: navigationSearch } : {}),
   }));
   const [overview, setOverview] = useState<MapOverview | null>(null);
+  useEffect(() => {
+    if (
+      !favoritesLoading &&
+      !favoritesError &&
+      filters.favorite_collection_id !== undefined &&
+      !favoritesState.collections.some(
+        (collection) => collection.id === filters.favorite_collection_id,
+      )
+    ) {
+      setFilters((current) => ({
+        ...current,
+        favorite_collection_id: undefined,
+      }));
+    }
+  }, [
+    favoritesState.collections,
+    favoritesLoading,
+    favoritesError,
+    filters.favorite_collection_id,
+  ]);
   const [maps, setMaps] = useState<MapSummary[]>([]);
   const [players, setPlayers] = useState<ImportPlayerOption[]>([]);
   const [tournaments, setTournaments] = useState<ImportTournamentOption[]>([]);
@@ -515,6 +544,57 @@ export default function MapPage({
     }
   };
 
+  // Favorite mutations should not reset the map selection.  In favorites-only
+  // mode the overview still needs to be refreshed so counts and clusters stay
+  // in sync; preserve the current cluster and pagination while doing so.
+  useEffect(() => {
+    if (!filters.favorites_only) return;
+
+    const requestId = overviewRequestRef.current + 1;
+    overviewRequestRef.current = requestId;
+    const requestFilters: MapFilters = { ...filters, radar_level: radarMode };
+    const overviewLoader =
+      grenadeMode === 'throw' ? getThrowOverview : getMapOverview;
+
+    overviewLoader(decodedMap, requestFilters)
+      .then((nextOverview) => {
+        if (overviewRequestRef.current !== requestId) return;
+        setOverview(nextOverview);
+        const selectedId = restoredClusterIdRef.current;
+        if (!selectedId) return;
+        const nextCluster =
+          nextOverview.clusters.find((cluster) => cluster.id === selectedId) ??
+          null;
+        if (!nextCluster) {
+          restoredClusterIdRef.current = null;
+          restoredGrenadePageRef.current = 0;
+          setSelectedCluster(null);
+          setGrenades([]);
+          setMapGrenades([]);
+          setGrenadePage(0);
+          return;
+        }
+        setSelectedCluster(nextCluster);
+        const page = restoredGrenadePageRef.current;
+        Promise.all([
+          loadClusterGrenades(nextCluster, page),
+          loadClusterMapGrenades(nextCluster),
+        ]).catch((error) => {
+          console.error(error);
+          setGrenadeError(
+            tr('Unable to load grenades', 'Не удалось загрузить гранаты'),
+          );
+        });
+      })
+      .catch((error) => console.error(error));
+  }, [
+    decodedMap,
+    favoritesRevision,
+    filters.favorites_only,
+    grenadeMode,
+    radarMode,
+  ]);
+
   const selectCluster = async (cluster: LandingCluster) => {
     if (selectedCluster?.id === cluster.id) {
       restoredClusterIdRef.current = null;
@@ -602,6 +682,8 @@ export default function MapPage({
     Boolean(filters.thrower_steamid64?.length),
     Boolean(filters.tournament?.length),
     filters.is_insta,
+    filters.favorites_only,
+    filters.favorites_only && filters.favorite_collection_id !== undefined,
     (filters.movement ?? 'all') !== 'all',
     (filters.jump ?? 'all') !== 'all',
   ].filter(Boolean).length;
@@ -1062,6 +1144,56 @@ export default function MapPage({
           className="panel-section compact-filter inspector-filter"
           data-tour="map-filters"
         >
+          <div className="favorites-map-filter">
+            <button
+              type="button"
+              className={`toggle ${filters.favorites_only ? 'active' : ''}`}
+              aria-pressed={Boolean(filters.favorites_only)}
+              onClick={() =>
+                setFilters((current) => ({
+                  ...current,
+                  favorites_only: !current.favorites_only,
+                  favorite_collection_id: undefined,
+                }))
+              }
+            >
+              <Star size={15} />
+              {tr('Favorites only', 'Только избранные')}
+            </button>
+            {filters.favorites_only && (
+              <label className="favorites-field">
+                <span>{tr('Collection', 'Подборка')}</span>
+                <select
+                  value={filters.favorite_collection_id ?? ''}
+                  onChange={(event) =>
+                    setFilters((current) => ({
+                      ...current,
+                      favorite_collection_id: event.target.value
+                        ? Number(event.target.value)
+                        : undefined,
+                    }))
+                  }
+                >
+                  <option value="">
+                    {tr('All favorites', 'Все избранные')}
+                  </option>
+                  {favoritesState.collections.map((collection) => (
+                    <option key={collection.id} value={collection.id}>
+                      {collection.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            {favoritesError && (
+              <button
+                className="micro-btn"
+                onClick={() => void refreshFavorites()}
+              >
+                {tr('Retry favorites', 'Повторить загрузку избранного')}
+              </button>
+            )}
+          </div>
           <div className="section-title">
             <span>
               <Filter size={15} />

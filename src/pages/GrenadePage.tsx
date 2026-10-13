@@ -20,9 +20,11 @@ import {
 } from 'lucide-react';
 import MapCanvas from '../components/MapCanvas';
 import GrenadeList from '../components/GrenadeList';
+import FavoriteActions from '../components/FavoriteActions';
 import ThrowKeyIcon from '../components/ThrowKeyIcon';
 import {
   getGrenade,
+  getFavorite,
   getSimilarGrenades,
   getSpawnPoints,
   recordGrenadeView,
@@ -33,6 +35,7 @@ import { buildSpawnMapPoints, INSTA_LABEL, isInstaGrenade } from '../lib/insta';
 import { splitThrowKeys, throwKeyVisual } from '../lib/throwKeys';
 import type {
   GrenadeDetail,
+  FavoriteDetail,
   GrenadePreview,
   SpawnPoint,
 } from '../types/domain';
@@ -197,8 +200,8 @@ function UsageHistoryChart({
   );
 }
 
-export default function GrenadePage() {
-  const { tr, count } = useI18n();
+export default function GrenadePage({ saved = false }: { saved?: boolean }) {
+  const { tr, count, locale } = useI18n();
   const { showToast } = useToast();
   const { id = '' } = useParams();
   const navigate = useNavigate();
@@ -210,6 +213,7 @@ export default function GrenadePage() {
   const [selectedScreenshot, setSelectedScreenshot] = useState<
     'normal' | 'wide' | null
   >(null);
+  const [loadRetry, setLoadRetry] = useState(0);
   const [loadError, setLoadError] = useState<string | null>(null);
   const detailRef = useRef<HTMLDivElement>(null);
   const inspectorRef = useRef<HTMLElement>(null);
@@ -223,12 +227,17 @@ export default function GrenadePage() {
     inspectorRef.current?.scrollTo({ top: 0 });
 
     if (!Number.isInteger(grenadeId) || grenadeId <= 0) {
-      navigate('/maps', { replace: true });
+      navigate(saved ? '/favorites' : '/maps', { replace: true });
       return;
     }
     let cancelled = false;
     setLoadError(null);
-    getGrenade(grenadeId)
+    setGrenade(null);
+    setSimilar([]);
+    setSelectedScreenshot(null);
+    setCopied(false);
+    const loader = saved ? getFavorite : getGrenade;
+    loader(grenadeId)
       .then(async (detail) => {
         if (cancelled) return;
         setGrenade({
@@ -255,15 +264,16 @@ export default function GrenadePage() {
               : [],
           },
         });
-        recordGrenadeView(detail.id).catch((error) => {
-          console.warn(
-            `Unable to record grenade ${detail.id} in view history`,
-            error,
-          );
-        });
+        if (!saved)
+          recordGrenadeView(detail.id).catch((error) => {
+            console.warn(
+              `Unable to record grenade ${detail.id} in view history`,
+              error,
+            );
+          });
         const [list, spawns] = await Promise.all([
-          getSimilarGrenades(grenadeId, 10),
-          getSpawnPoints(detail.map, 'Any'),
+          saved ? Promise.resolve([]) : getSimilarGrenades(grenadeId, 10),
+          getSpawnPoints(detail.map, 'Any').catch(() => []),
         ]);
         if (cancelled) return;
         setSimilar(Array.isArray(list) ? list : []);
@@ -274,15 +284,19 @@ export default function GrenadePage() {
         console.error(error);
         setLoadError(
           tr(
-            'This grenade is no longer available in the active library.',
-            'Этой гранаты больше нет в активной библиотеке.',
+            saved
+              ? 'This saved grenade is no longer available.'
+              : 'This grenade is no longer available in the active library.',
+            saved
+              ? 'Эта сохранённая граната больше недоступна.'
+              : 'Этой гранаты больше нет в активной библиотеке.',
           ),
         );
       });
     return () => {
       cancelled = true;
     };
-  }, [grenadeId, navigate]);
+  }, [grenadeId, navigate, saved, loadRetry]);
 
   const previewPoint = useMemo(
     () => (grenade ? [{ ...grenade }] : []),
@@ -333,12 +347,14 @@ export default function GrenadePage() {
       navigate(-1);
       return;
     }
-    navigate(`/map/${encodeURIComponent(grenade.map)}`, { replace: true });
+    navigate(saved ? '/favorites' : `/map/${encodeURIComponent(grenade.map)}`, {
+      replace: true,
+    });
   };
 
   const searchByThrower = (thrower: string) => {
     if (!grenade) return;
-    navigate(`/map/${encodeURIComponent(grenade.map)}`, {
+    navigate(saved ? '/favorites' : `/map/${encodeURIComponent(grenade.map)}`, {
       state: { search: thrower },
     });
   };
@@ -351,8 +367,19 @@ export default function GrenadePage() {
             {tr('Unable to open grenade', 'Не удалось открыть гранату')}
           </strong>
           <p>{loadError}</p>
-          <button className="btn primary" onClick={() => navigate('/maps')}>
-            {tr('Back to maps', 'К картам')}
+          <button
+            className="btn"
+            onClick={() => setLoadRetry((value) => value + 1)}
+          >
+            {tr('Retry', 'Повторить')}
+          </button>
+          <button
+            className="btn primary"
+            onClick={() => navigate(saved ? '/favorites' : '/maps')}
+          >
+            {saved
+              ? tr('Back to favorites', 'К избранному')
+              : tr('Back to maps', 'К картам')}
           </button>
         </div>
       );
@@ -371,18 +398,30 @@ export default function GrenadePage() {
             className="icon-btn"
             data-tour="grenade-back-to-map"
             onClick={goBack}
-            aria-label={tr('Back to maps', 'К картам')}
+            aria-label={
+              saved
+                ? tr('Back to favorites', 'К избранному')
+                : tr('Back to maps', 'К картам')
+            }
           >
             <ArrowLeft size={16} />
           </button>
           <div className="map-heading">
             <strong>
-              {tr('Grenade', 'Граната')} #{grenade.id}
+              {saved
+                ? tr('Saved grenade', 'Сохранённая граната')
+                : tr('Grenade', 'Граната')}{' '}
+              #{grenade.id}
             </strong>
             <span>
               {grenade.map} / {grenadeLabel(grenade.grenade_type)}
             </span>
           </div>
+          <FavoriteActions
+            grenade={grenade}
+            saved={saved}
+            onRemoved={saved ? () => navigate('/favorites') : undefined}
+          />
         </div>
         <MapCanvas
           mapImagePath={grenade.map_image_path}
@@ -423,6 +462,21 @@ export default function GrenadePage() {
           ) : null}
           {isInsta ? <span className="insta-badge">{INSTA_LABEL}</span> : null}
         </div>
+
+        {saved && (
+          <div className="favorite-source">
+            <span>
+              {tr('Saved', 'Сохранено')}:{' '}
+              {new Date((grenade as FavoriteDetail).saved_at).toLocaleString(
+                locale,
+              )}
+            </span>
+            <span>
+              {tr('Source', 'Источник')}:{' '}
+              {(grenade as FavoriteDetail).source_label}
+            </span>
+          </div>
+        )}
 
         <div
           className="metric-grid detail-order-metrics"
@@ -651,6 +705,10 @@ export default function GrenadePage() {
               className={`micro-btn detail-copy-button ${copied ? 'copied' : ''}`}
               data-tour="grenade-copy-coordinates"
               type="button"
+              aria-label={tr(
+                'Copy grenade coordinates',
+                'Копировать координаты гранаты',
+              )}
               onClick={() => copy(grenade.coordinates)}
             >
               {copied ? (
@@ -731,21 +789,23 @@ export default function GrenadePage() {
           )}
         </div>
 
-        <div
-          className="info-block detail-order-similar"
-          data-tour="grenade-similar"
-        >
-          <div className="block-title">
-            {tr('Similar grenades', 'Похожие гранаты')}
+        {!saved && (
+          <div
+            className="info-block detail-order-similar"
+            data-tour="grenade-similar"
+          >
+            <div className="block-title">
+              {tr('Similar grenades', 'Похожие гранаты')}
+            </div>
+            <GrenadeList
+              grenades={similar}
+              compact
+              showCopy
+              spawnPoints={spawnPoints}
+              emptyLabel={tr('No similar grenades.', 'Похожих гранат нет.')}
+            />
           </div>
-          <GrenadeList
-            grenades={similar}
-            compact
-            showCopy
-            spawnPoints={spawnPoints}
-            emptyLabel={tr('No similar grenades.', 'Похожих гранат нет.')}
-          />
-        </div>
+        )}
       </aside>
       {selectedScreenshot && selectedScreenshotPath
         ? createPortal(

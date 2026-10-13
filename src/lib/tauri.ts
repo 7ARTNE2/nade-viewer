@@ -1,5 +1,9 @@
 import { invoke, convertFileSrc } from '@tauri-apps/api/core';
 import type {
+  FavoriteDetail,
+  FavoriteFilters,
+  FavoriteList,
+  FavoritesState,
   GrenadeDetail,
   GrenadePreview,
   ImportPlayerOption,
@@ -157,6 +161,42 @@ export function getThrowClusterGrenades(
 
 export function getGrenade(id: number) {
   return invoke<GrenadeDetail>('get_grenade', { id });
+}
+
+export function listFavorites(filters: FavoriteFilters) {
+  return invoke<FavoriteList>('list_favorites', { filters });
+}
+
+export function getFavorite(id: number) {
+  return invoke<FavoriteDetail>('get_favorite', { id });
+}
+
+export function getFavoritesState() {
+  return invoke<FavoritesState>('get_favorites_state');
+}
+
+export function saveFavorite(id: number) {
+  return invoke<number>('save_favorite', { id });
+}
+
+export function deleteFavorite(id: number) {
+  return invoke<void>('delete_favorite', { id });
+}
+
+export function createFavoriteCollection(name: string) {
+  return invoke<number>('create_favorite_collection', { name });
+}
+
+export function renameFavoriteCollection(id: number, name: string) {
+  return invoke<void>('rename_favorite_collection', { id, name });
+}
+
+export function deleteFavoriteCollection(id: number) {
+  return invoke<void>('delete_favorite_collection', { id });
+}
+
+export function setFavoriteCollections(id: number, collectionIds: number[]) {
+  return invoke<void>('set_favorite_collections', { id, collectionIds });
 }
 
 export function recordGrenadeView(id: number) {

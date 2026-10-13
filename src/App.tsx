@@ -21,6 +21,7 @@ import {
   GraduationCap,
   Wrench,
   X,
+  Star,
 } from 'lucide-react';
 import { check, type Update } from '@tauri-apps/plugin-updater';
 import {
@@ -58,6 +59,8 @@ import ImportPage from './pages/ImportPage';
 import MapPage from './pages/MapPage';
 import GrenadePage from './pages/GrenadePage';
 import ToolsPage from './pages/ToolsPage';
+import FavoritesPage from './pages/FavoritesPage';
+import { FavoritesProvider, useFavorites } from './lib/favorites';
 import Tooltip from './components/Tooltip';
 import OnboardingModal from './components/OnboardingModal';
 import BootScreen from './components/BootScreen';
@@ -83,6 +86,7 @@ function formatBytes(bytes: number, locale: string) {
 }
 
 function Shell() {
+  const { refresh: refreshFavorites } = useFavorites();
   const { locale, setLocale, tr, count } = useI18n();
   const { showToast } = useToast();
   const navigate = useNavigate();
@@ -181,6 +185,10 @@ function Shell() {
   useEffect(() => {
     refreshImports().catch(() => setLoading(false));
   }, [refreshImports]);
+
+  useEffect(() => {
+    void refreshFavorites();
+  }, [activeImport?.id, refreshFavorites]);
 
   useEffect(() => startWindowActiveTracking(), []);
 
@@ -391,7 +399,9 @@ function Shell() {
       setSnapshotMenuOpen(false);
       setLibraryActionsOpen(false);
       setEditingSnapshotId(null);
-      if (!isMapWorkspace) navigate('/maps');
+      if (!isMapWorkspace && !location.pathname.startsWith('/favorites'))
+        navigate('/maps');
+      await refreshFavorites();
       showToast(tr('Library switched', 'Библиотека переключена'), {
         tone: 'success',
       });
@@ -434,7 +444,9 @@ function Shell() {
       setDeleteSnapshotOpen(false);
       setLibraryActionsOpen(false);
       await refreshImports();
-      navigate(next ? '/maps' : '/import', { replace: true });
+      await refreshFavorites();
+      if (!location.pathname.startsWith('/favorites'))
+        navigate(next ? '/maps' : '/import', { replace: true });
       showToast(
         tr(
           `Library “${deletedName}” deleted`,
@@ -492,6 +504,7 @@ function Shell() {
                 <span className="topbar-divider" />
                 <button
                   className={`topbar-nav-link ${mapsRouteActive ? 'active' : ''}`}
+                  aria-label={tr('Maps', 'Карты')}
                   onClick={() => navigate('/maps')}
                 >
                   <Map size={16} />
@@ -499,13 +512,23 @@ function Shell() {
                 </button>
                 <button
                   className={`topbar-nav-link ${importRouteActive ? 'active' : ''}`}
+                  aria-label={tr('Import library', 'Импорт')}
                   onClick={() => navigate('/import')}
                 >
                   <Download size={16} />
                   <span>{tr('Import library', 'Импорт')}</span>
                 </button>
                 <button
+                  className={`topbar-nav-link ${location.pathname.startsWith('/favorites') ? 'active' : ''}`}
+                  aria-label={tr('Favorites', 'Избранное')}
+                  onClick={() => navigate('/favorites')}
+                >
+                  <Star size={16} />
+                  <span>{tr('Favorites', 'Избранное')}</span>
+                </button>
+                <button
                   className="topbar-nav-link"
+                  aria-label={tr('Tutorial', 'Обучение')}
                   onClick={() =>
                     restartTutorial().catch((error) => {
                       console.error(error);
@@ -523,6 +546,7 @@ function Shell() {
                 </button>
                 <button
                   className={`topbar-nav-link ${toolsRouteActive ? 'active' : ''}`}
+                  aria-label={tr('Tools', 'Инструменты')}
                   data-tour="topbar-tools"
                   onClick={() => navigate('/tools')}
                 >
@@ -802,6 +826,8 @@ function Shell() {
 
             <div className="view-frame viewer-frame">
               <Routes>
+                <Route path="/favorites" element={<FavoritesPage />} />
+                <Route path="/favorites/:id" element={<GrenadePage saved />} />
                 <Route
                   path="/"
                   element={
@@ -1130,5 +1156,9 @@ function Shell() {
 }
 
 export default function App() {
-  return <Shell />;
+  return (
+    <FavoritesProvider>
+      <Shell />
+    </FavoritesProvider>
+  );
 }

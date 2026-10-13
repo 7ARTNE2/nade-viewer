@@ -8,8 +8,11 @@ import { useI18n } from '../i18n';
 import { useToast } from './Toast';
 import ThrowKeyIcon from './ThrowKeyIcon';
 import { splitThrowKeys, throwKeyVisual } from '../lib/throwKeys';
+import FavoriteActions from './FavoriteActions';
 
 type Props = {
+  saved?: boolean;
+  showMap?: boolean;
   grenades: GrenadePreview[];
   compact?: boolean;
   showCopy?: boolean;
@@ -19,6 +22,8 @@ type Props = {
 };
 
 export default function GrenadeList({
+  saved = false,
+  showMap = false,
   grenades,
   compact,
   showCopy,
@@ -101,7 +106,7 @@ export default function GrenadeList({
             className={`nade-row type-${String(g.grenade_type).toLowerCase()} ${isInsta ? 'insta' : ''}`}
             onClick={(event) => {
               if ((event.target as HTMLElement).closest('button')) return;
-              navigate(`/grenade/${g.id}`);
+              navigate(saved ? `/favorites/${g.id}` : `/grenade/${g.id}`);
             }}
           >
             <div className="nade-type-stack">
@@ -148,7 +153,9 @@ export default function GrenadeList({
             <button
               className="nade-main nade-open-action"
               type="button"
-              onClick={() => navigate(`/grenade/${g.id}`)}
+              onClick={() =>
+                navigate(saved ? `/favorites/${g.id}` : `/grenade/${g.id}`)
+              }
               aria-label={`${grenadeLabel(g.grenade_type)} ${g.thrower || `${tr('Grenade', 'Граната')} #${g.id}`}`}
             >
               <span className="nade-title-line">
@@ -166,7 +173,9 @@ export default function GrenadeList({
                   <span className="insta-badge">{INSTA_LABEL}</span>
                 ) : null}
               </span>
+              {showMap && <small className="favorite-map-label">{g.map}</small>}
             </button>
+            <FavoriteActions grenade={g} saved={saved} />
             <span
               className="nade-stats"
               aria-label={tr('Grenade statistics', 'Статистика гранаты')}

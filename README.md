@@ -22,7 +22,30 @@ Current application version: **0.5.9**.
 - Uses a responsive map workspace, persistent view settings, onboarding, and
   localized animated notifications.
 - Stores imported data and settings locally in SQLite.
+- Saves independent grenade snapshots to Favorites and organizes them into named
+  collections. Saved data, trajectories, statistics, and screenshots remain
+  available after switching or deleting libraries, including the last library.
 - Provides English and Russian interfaces.
+
+### Favorites and collections
+
+Click a grenade's star in a lineup list or its detail page to save it. The
+collection button assigns the saved grenade to one or more collections; a grenade
+can also remain in All favorites without belonging to a collection. Removing a
+star removes that saved copy from all collections. Deleting a collection keeps
+its grenades in All favorites.
+
+Favorites are immutable snapshots of the data at the time of saving. Library
+updates do not replace their statistics or screenshots. The Favorites section
+works even when no imported library remains.
+
+The map's Favorites only filter shows matching records from the **active
+library**, optionally restricted to a collection. Matching requires the same
+normalized map, type, side, throw keys, coordinate text, and exact world
+positions; player names and usage counts may differ. Records without coordinate
+text and without complete start/landing positions match only their original
+source record. Saved copies from other or deleted libraries remain accessible
+through the Favorites section.
 
 The accepted library structures, field requirements, examples, and import
 limitations are documented in [Data formats](docs/data-formats.md).
@@ -341,6 +364,13 @@ npm run cargo:test
 npm run cargo:clippy -- --all-targets -- -D warnings
 ```
 
+The isolated Favorites browser regression check uses Playwright and an
+in-memory native-command fixture, without accessing the application's database.
+With Playwright available, run `node tests/favorites-ui.mjs`. An external
+Playwright package directory can be supplied as the first argument. Set
+`NADE_VIEWER_TEST_BROWSER` to a supported installed-browser channel, or
+`NADE_VIEWER_TEST_BROWSER_PATH` to its executable path, when needed.
+
 Run the Rust unit tests:
 
 ```powershell
@@ -366,6 +396,9 @@ database while the application is running. The database contains imports,
 lineups, legacy Core flags, view history, onboarding state, and the minimum-usage
 setting, usage events, player rosters, and tournament metadata. Deleting an
 import in the UI deletes that import's local data; it does not delete the source file.
+Favorites and collection membership are stored in the same database, while their
+independent screenshots are stored in the adjacent `favorites/` directory. Include
+that directory when backing up saved lineups.
 
 ### Nade Parser workspaces
 

@@ -23,6 +23,7 @@ use std::{
 use tauri::{AppHandle, Emitter, Manager};
 use thiserror::Error;
 mod dedup;
+mod favorites;
 mod parser_store;
 mod plugin;
 
@@ -36,7 +37,8 @@ const LARGE_IO_BUFFER_SIZE: usize = 1024 * 1024;
 const GRENADE_PREVIEW_COLUMNS: &str = "g.id, g.map, g.side, g.grenade_type,
     g.throw_keys, g.coordinates, g.thrower, g.thrower_steamid64, g.thrower_team, g.airtime, g.usage_count, g.round_time_seconds,
     g.start_map_x, g.start_map_y, g.explode_map_x, g.explode_map_y, g.explode_pos_z,
-    g.trajectory_preview_json";
+    g.trajectory_preview_json,
+    (SELECT fm.favorite_id FROM favorite_matches fm WHERE fm.grenade_id=g.id) AS favorite_id";
 
 #[derive(Debug, Error)]
 enum AppError {
@@ -267,6 +269,8 @@ struct ImportSummary {
 
 #[derive(Deserialize, Default)]
 struct MapFilters {
+    favorites_only: Option<bool>,
+    favorite_collection_id: Option<i64>,
     grenade_type: Option<String>,
     side: Option<String>,
     search: Option<String>,
@@ -581,6 +585,8 @@ struct LandingCluster {
 #[derive(Clone, Serialize, Deserialize)]
 struct GrenadePreview {
     id: i64,
+    #[serde(default)]
+    favorite_id: Option<i64>,
     map: String,
     side: String,
     grenade_type: String,
@@ -609,7 +615,7 @@ struct ViewedGrenade {
     view_count: i64,
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize, Deserialize)]
 struct GrenadeDetail {
     #[serde(flatten)]
     preview: GrenadePreview,
@@ -618,13 +624,11 @@ struct GrenadeDetail {
     throw_tick: Option<i64>,
     lineup_tick: Option<i64>,
     tickrate: Option<i64>,
-    round_time_seconds: Option<f64>,
     start_pos_x: Option<f64>,
     start_pos_y: Option<f64>,
     start_pos_z: Option<f64>,
     explode_pos_x: Option<f64>,
     explode_pos_y: Option<f64>,
-    explode_pos_z: Option<f64>,
     map_image_path: Option<String>,
     preview_image_path: Option<String>,
     screenshot_image_path: Option<String>,
@@ -632,7 +636,7 @@ struct GrenadeDetail {
     usage_stats: GrenadeUsageStats,
 }
 
-#[derive(Clone, Default, Serialize)]
+#[derive(Clone, Default, Serialize, Deserialize)]
 struct GrenadeUsageStats {
     tracked_throws: i64,
     peak: i64,
@@ -645,7 +649,7 @@ struct GrenadeUsageStats {
     history: Vec<GrenadeUsageHistoryPoint>,
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, Deserialize)]
 struct GrenadeUsageHistoryPoint {
     label: String,
     count: i64,
@@ -758,6 +762,15 @@ pub fn run() {
             get_cluster_grenades,
             get_throw_cluster_grenades,
             get_grenade,
+            favorites::list_favorites,
+            favorites::get_favorite,
+            favorites::save_favorite,
+            favorites::delete_favorite,
+            favorites::get_favorites_state,
+            favorites::create_favorite_collection,
+            favorites::rename_favorite_collection,
+            favorites::delete_favorite_collection,
+            favorites::set_favorite_collections,
             record_grenade_view,
             get_recently_viewed_grenades,
             get_similar_grenades,
@@ -823,6 +836,7 @@ fn init_state(app: &AppHandle) -> Result<AppState, Box<dyn std::error::Error>> {
     let app_dir = app.path().app_data_dir()?;
     fs::create_dir_all(&app_dir)?;
     fs::create_dir_all(app_dir.join("screenshots"))?;
+    fs::create_dir_all(app_dir.join("favorites"))?;
     let resource_dir = resolve_resource_dir(app)?;
     allow_asset_directories(app, &resource_dir, &app_dir)?;
     let db_path = app_dir.join("nadeviewer.sqlite");
@@ -869,6 +883,7 @@ fn allow_asset_directories(
         scope.allow_directory(directory, true)?;
     }
     scope.allow_directory(app_dir.join("screenshots"), true)?;
+    scope.allow_directory(app_dir.join("favorites"), true)?;
     Ok(())
 }
 
@@ -903,6 +918,7 @@ fn resolve_resource_dir(app: &AppHandle) -> Result<PathBuf, Box<dyn std::error::
 }
 
 fn init_schema(conn: &Connection) -> AppResult<()> {
+    favorites::init_schema(conn)?;
     conn.execute_batch(
         r#"
         PRAGMA journal_mode = WAL;
@@ -1199,6 +1215,7 @@ fn init_schema(conn: &Connection) -> AppResult<()> {
              ON grenade_usage_events(grenade_id, thrower_team, thrower_steamid64, thrower);",
     )?;
     conn.execute_batch("PRAGMA optimize")?;
+    favorites::init_match_index(conn)?;
     Ok(())
 }
 
@@ -1954,6 +1971,7 @@ fn import_online_library_blocking(
     if deferred_indexes {
         restore_import_indexes(&tx)?;
     }
+    favorites::match_import(&tx, Some(import_id))?;
     tx.commit()?;
     set_status(state, "done", total as u64, total as u64, "Import complete");
     Ok(ImportReport {
@@ -2761,6 +2779,17 @@ fn filter_sql(
     alias: &str,
 ) -> String {
     let mut parts = Vec::new();
+    if filters.favorites_only == Some(true) {
+        let collection = if let Some(id) = filters.favorite_collection_id {
+            args.push(Box::new(id));
+            " AND EXISTS (SELECT 1 FROM favorite_collection_members cm WHERE cm.favorite_id=fm.favorite_id AND cm.collection_id=?)"
+        } else {
+            ""
+        };
+        parts.push(format!(
+            "EXISTS (SELECT 1 FROM favorite_matches fm WHERE fm.grenade_id={alias}.id{collection})"
+        ));
+    }
     if let Some(t) = filters
         .grenade_type
         .as_deref()
@@ -2943,6 +2972,7 @@ fn grenade_preview_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Grenade
         == 1;
     Ok(GrenadePreview {
         id: row.get("id")?,
+        favorite_id: row.get("favorite_id").unwrap_or(None),
         map: row.get("map")?,
         side: row.get("side")?,
         grenade_type: row.get("grenade_type")?,
@@ -2964,7 +2994,6 @@ fn grenade_preview_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Grenade
     })
 }
 
-#[cfg(test)]
 fn raw_grenade_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<RawGrenade> {
     let usage_throwers_json: Option<String> = row.get("usage_throwers_json")?;
     let trajectory_json: Option<String> = row.get("trajectory_json")?;
@@ -3419,6 +3448,7 @@ fn import_workspace_rows_blocking(
     if deferred_indexes {
         restore_import_indexes(&tx)?;
     }
+    favorites::match_import(&tx, Some(import_id))?;
     tx.commit()?;
     set_status(
         state,
@@ -3965,6 +3995,7 @@ fn run_import<P: ImportPayload>(
     if deferred_indexes {
         restore_import_indexes(&tx)?;
     }
+    favorites::match_import(&tx, Some(import_id))?;
     tx.commit()?;
     set_status(
         state,
@@ -4955,8 +4986,15 @@ fn parse_cluster_id(id: &str) -> AppResult<(i64, i64)> {
 #[tauri::command]
 fn get_grenade(id: i64, state: tauri::State<'_, AppState>) -> AppResult<GrenadeDetail> {
     let conn = open_conn(&state)?;
-    active_grenade_import_id(&conn, id)?;
-    let radars = &state.radars;
+    get_grenade_from_conn(&conn, &state.radars, id)
+}
+
+fn get_grenade_from_conn(
+    conn: &Connection,
+    radars: &HashMap<String, RadarParams>,
+    id: i64,
+) -> AppResult<GrenadeDetail> {
+    active_grenade_import_id(conn, id)?;
     let mut stmt = conn.prepare(&format!(
         "SELECT {GRENADE_PREVIEW_COLUMNS}, g.usage_throwers_json, g.demo_filename,
                 g.throw_tick, g.lineup_tick, g.tickrate, g.round_time_seconds,
@@ -4997,13 +5035,11 @@ fn get_grenade(id: i64, state: tauri::State<'_, AppState>) -> AppResult<GrenadeD
             throw_tick,
             lineup_tick: row.get("lineup_tick")?,
             tickrate: row.get("tickrate")?,
-            round_time_seconds: row.get("round_time_seconds")?,
             start_pos_x: row.get("start_pos_x")?,
             start_pos_y: row.get("start_pos_y")?,
             start_pos_z: row.get("start_pos_z")?,
             explode_pos_x: row.get("explode_pos_x")?,
             explode_pos_y: row.get("explode_pos_y")?,
-            explode_pos_z: row.get("explode_pos_z")?,
             map_image_path,
             preview_image_path: row.get("preview_image_path")?,
             screenshot_image_path: row.get("screenshot_image_path")?,
@@ -5013,7 +5049,7 @@ fn get_grenade(id: i64, state: tauri::State<'_, AppState>) -> AppResult<GrenadeD
     })?;
     drop(stmt);
     detail.usage_stats = usage_stats_from_conn(
-        &conn,
+        conn,
         id,
         UsageFallback {
             usage_count: detail.preview.usage_count,
