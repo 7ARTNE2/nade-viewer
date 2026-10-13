@@ -595,26 +595,17 @@ function Shell() {
                       aria-expanded={snapshotMenuOpen}
                       aria-haspopup="dialog"
                       aria-controls="library-picker-popover"
+                      aria-label={`${tr('Library', 'Библиотека')} #${activeImport.id}: ${snapshotDisplayName(activeImport)}, ${count(activeImport.grenade_count, 'grenade', 'grenades', 'граната', 'гранаты', 'гранат')}`}
                       data-tip={activeImport.source_path}
                       data-tip-pos="bottom"
                     >
                       <Database size={14} />
                       <span className="active-library-id">
-                        {tr('Library', 'Библиотека')} #{activeImport.id}
+                        #{activeImport.id}
                       </span>
                       <strong>{snapshotDisplayName(activeImport)}</strong>
                       <span className="active-library-count">
                         <b>{formatNumber(activeImport.grenade_count)}</b>
-                        <small>
-                          {count(
-                            activeImport.grenade_count,
-                            'grenade',
-                            'grenades',
-                            'граната',
-                            'гранаты',
-                            'гранат',
-                          ).replace(/^\d+[\s\u00a0]*/, '')}
-                        </small>
                       </span>
                       <ChevronDown size={14} />
                     </button>

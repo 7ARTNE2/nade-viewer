@@ -277,21 +277,21 @@ button:focus-visible,[role="button"]:focus-visible,[role="link"]:focus-visible{o
 .language-switch button:hover{background:var(--surface-3);color:var(--text)}
 .language-switch button:active{background:var(--surface-3)}
 .language-switch button.active{background:rgba(var(--acid-rgb),.1);color:var(--acid)}
-.active-library-trigger{position:relative;max-width:460px;gap:8px;overflow:hidden;border-color:rgba(var(--acid-rgb),.32);background:linear-gradient(90deg,rgba(var(--acid-rgb),.16),rgba(var(--acid-rgb),.035) 68%,rgba(101,167,255,.08));box-shadow:inset 0 1px 0 rgba(255,255,255,.045),0 5px 16px rgba(0,0,0,.16);color:var(--text);isolation:isolate}
+.active-library-trigger{position:relative;max-width:280px;gap:6px;padding-inline:8px;overflow:hidden;border-color:rgba(var(--acid-rgb),.32);background:linear-gradient(90deg,rgba(var(--acid-rgb),.16),rgba(var(--acid-rgb),.035) 68%,rgba(101,167,255,.08));box-shadow:inset 0 1px 0 rgba(255,255,255,.045),0 5px 16px rgba(0,0,0,.16);color:var(--text);isolation:isolate}
 .active-library-trigger::before{position:absolute;z-index:-1;top:0;bottom:0;left:0;width:1px;background:var(--acid);box-shadow:0 0 14px rgba(var(--acid-rgb),.58);content:""}
 .active-library-trigger:hover{border-color:rgba(var(--acid-rgb),.62);background:linear-gradient(90deg,rgba(var(--acid-rgb),.23),rgba(var(--acid-rgb),.065) 68%,rgba(101,167,255,.12));box-shadow:inset 0 1px 0 rgba(255,255,255,.075),0 8px 21px rgba(0,0,0,.22);transform:translateY(-1px)}
 .active-library-trigger:active{transform:translateY(0);box-shadow:inset 0 2px 7px rgba(0,0,0,.24)}
 .active-library-trigger.active{border-color:var(--acid);background:linear-gradient(90deg,rgba(var(--acid-rgb),.27),rgba(var(--acid-rgb),.09) 68%,rgba(101,167,255,.13));box-shadow:inset 0 1px 0 rgba(255,255,255,.085),0 0 0 3px rgba(var(--acid-rgb),.09),0 9px 24px rgba(0,0,0,.26)}
 .active-library-trigger>svg:first-child,.active-library-trigger .active-library-id{color:var(--acid)}
+.active-library-trigger>svg{flex-shrink:0}
 .active-library-trigger>svg:first-child{filter:drop-shadow(0 0 5px rgba(var(--acid-rgb),.35))}
 .active-library-trigger>svg:last-child{margin-left:1px;color:var(--acid);transition:transform 150ms ease}
 .active-library-trigger.active>svg:last-child{transform:rotate(180deg)}
-.active-library-trigger strong{min-width:80px;flex:1;overflow:hidden;color:#fff;font-size:11px;text-overflow:ellipsis;white-space:nowrap}
+.active-library-trigger strong{min-width:0;flex:1;overflow:hidden;color:#fff;font-size:11px;text-overflow:ellipsis;white-space:nowrap}
 .active-library-id,.active-library-count{font-size:9px;white-space:nowrap}
 .active-library-id{font-weight:800;letter-spacing:.035em;text-transform:uppercase}
-.active-library-count{display:flex;align-items:baseline;gap:4px;padding:0 0 0 8px;border-left:1px solid var(--line);color:var(--muted);line-height:1}
+.active-library-count{display:flex;flex-shrink:0;align-items:baseline;padding:0 0 0 6px;border-left:1px solid var(--line);color:var(--muted);line-height:1}
 .active-library-count b{color:var(--acid);font-size:11px;font-variant-numeric:tabular-nums;letter-spacing:.01em}
-.active-library-count small{font-size:8px;font-weight:800;letter-spacing:.04em;text-transform:uppercase}
 .snapshot-menu{border-color:rgba(var(--acid-rgb),.24);background:linear-gradient(180deg,#171c17,#10140f)}
 .snapshot-option.active{background:rgba(var(--acid-rgb),.08)}
 .snapshot-picker .snapshot-id{color:var(--acid)}
@@ -730,10 +730,9 @@ html[lang="ru"] .boot-title{font-family:Orbitron,sans-serif}
   .topbar-nav-link{height:38px;padding:0 14px;font-size:12px;gap:8px}
   .language-switch{padding:3px;border-radius:10px}
   .language-switch button{min-width:36px;height:31px;font-size:9px}
-  .active-library-trigger{max-width:620px;min-height:42px;gap:10px;padding-block:6px}
+  .active-library-trigger{max-width:320px;height:38px;gap:6px}
   .active-library-trigger strong{font-size:12px}
   .active-library-id{font-size:10px}
-  .active-library-count{padding-left:10px;gap:5px}
   .active-library-count b{font-size:12px}
   .viewer-topbar .toast-slot{max-width:560px}
   .home-view{grid-template-columns:360px minmax(0,1fr)}
@@ -839,7 +838,6 @@ html[lang="ru"] .boot-title{font-family:Orbitron,sans-serif}
   .topnav-shell .viewer-topbar{min-height:68px;padding:0 36px}
   .topbar-navigation{gap:16px}
   .topbar-nav-link{height:40px;padding:0 16px;font-size:12px}
-  .active-library-trigger{max-width:680px}
   .home-view{grid-template-columns:400px minmax(0,1fr)}
   .home-sidebar{padding:60px 40px 32px}
   .home-sidebar h1{font-size:62px}
