@@ -16,6 +16,7 @@ export type FilterSelectOption = {
   label: string;
   meta?: string;
   searchText?: string;
+  icon?: ReactNode;
 };
 
 type Props = {
@@ -31,6 +32,8 @@ type Props = {
   loading?: boolean;
   loadingLabel?: string;
   disabled?: boolean;
+  selectionMode?: 'multiple' | 'single';
+  className?: string;
 };
 
 type MenuPosition = {
@@ -53,6 +56,8 @@ export default function FilterSelect({
   loading = false,
   loadingLabel = 'Loading',
   disabled = false,
+  selectionMode = 'multiple',
+  className = '',
 }: Props) {
   const menuId = useId();
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -186,6 +191,11 @@ export default function FilterSelect({
 
   const selectOption = (option: FilterSelectOption) => {
     if (disabled || loading) return;
+    if (selectionMode === 'single') {
+      onChange(option.value ? [option.value] : []);
+      close(true);
+      return;
+    }
     onChange(
       !option.value
         ? []
@@ -245,9 +255,12 @@ export default function FilterSelect({
 
   return (
     <div
-      className={`tactical-filter-select ${accent ? `accent-${accent}` : ''} ${value.length ? 'has-value' : ''} ${loading ? 'is-loading' : ''}`}
+      className={`tactical-filter-select ${accent ? `accent-${accent}` : ''} ${value.length ? 'has-value' : ''} ${loading ? 'is-loading' : ''} ${className}`}
     >
-      <span className="tactical-filter-label">
+      <span
+        className="tactical-filter-label"
+        aria-hidden={selectionMode === 'single' || undefined}
+      >
         {icon}
         {label}
       </span>
@@ -257,6 +270,9 @@ export default function FilterSelect({
         type="button"
         disabled={disabled || loading}
         aria-busy={loading}
+        role={selectionMode === 'single' ? 'combobox' : undefined}
+        aria-label={selectionMode === 'single' ? label : undefined}
+        data-value={selectionMode === 'single' ? (value[0] ?? '') : undefined}
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
@@ -284,6 +300,11 @@ export default function FilterSelect({
           </span>
         ) : (
           <>
+            {selectionMode === 'single' && (
+              <span className="tactical-filter-trigger-icon" aria-hidden="true">
+                {options.find((option) => isSelected(option))?.icon ?? icon}
+              </span>
+            )}
             <span className="tactical-filter-value">
               <strong>{selected.label}</strong>
               {selected.meta ? <small>{selected.meta}</small> : null}
@@ -296,7 +317,7 @@ export default function FilterSelect({
         ? createPortal(
             <div
               ref={menuRef}
-              className="tactical-filter-menu"
+              className={`tactical-filter-menu ${className ? `${className}-menu` : ''}`}
               role="dialog"
               aria-label={label}
               style={menuStyle}
@@ -332,7 +353,7 @@ export default function FilterSelect({
                 id={menuId}
                 className="tactical-filter-options"
                 role="listbox"
-                aria-multiselectable="true"
+                aria-multiselectable={selectionMode === 'multiple'}
                 aria-label={label}
               >
                 {filteredOptions.map((option, index) => (
@@ -351,6 +372,14 @@ export default function FilterSelect({
                     onMouseEnter={() => setActiveIndex(index)}
                     onClick={() => selectOption(option)}
                   >
+                    {option.icon && (
+                      <span
+                        className="tactical-filter-option-icon"
+                        aria-hidden="true"
+                      >
+                        {option.icon}
+                      </span>
+                    )}
                     <span>
                       <strong>{option.label}</strong>
                       {option.meta ? <small>{option.meta}</small> : null}

@@ -1,8 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Map, Pencil, Plus, Trash2, X } from 'lucide-react';
+import {
+  Check,
+  Folder,
+  FolderPlus,
+  Map,
+  MapPin,
+  Pencil,
+  Trash2,
+  Star,
+  X,
+} from 'lucide-react';
 import MapWorkspace from './MapWorkspace';
 import DestructiveConfirmDialog from '../components/DestructiveConfirmDialog';
+import FilterSelect from '../components/FilterSelect';
 import { useFavorites } from '../lib/favorites';
 import { useI18n } from '../i18n';
 import { useModalAccessibility } from '../lib/useModalAccessibility';
@@ -42,25 +53,23 @@ function CollectionNameDialog({
     useFavorites();
   const { tr } = useI18n();
   const [name, setName] = useState(collection?.name ?? '');
+  const [formError, setFormError] = useState('');
   const legacy = collection?.map === null;
   const [assignedMap, setAssignedMap] = useState(
     legacy ? '' : (collection?.map ?? map),
   );
   const inputRef = useRef<HTMLInputElement>(null);
+  const busyRef = useRef(busy);
+  busyRef.current = busy;
   const close = useCallback(() => {
-    if (!busy) onClose();
-  }, [busy, onClose]);
+    if (!busyRef.current) onClose();
+  }, [onClose]);
   const ref = useModalAccessibility<HTMLFormElement>(true, close, inputRef);
   return createPortal(
-    <div
-      className="modal-scrim"
-      onMouseDown={() => {
-        if (!busy) onClose();
-      }}
-    >
+    <div className="modal-scrim collection-picker-scrim" onMouseDown={close}>
       <form
         ref={ref}
-        className="favorites-dialog"
+        className="favorites-dialog collection-picker collection-name-dialog"
         role="dialog"
         aria-modal="true"
         aria-labelledby="collection-name-title"
@@ -68,15 +77,33 @@ function CollectionNameDialog({
         onMouseDown={(event) => event.stopPropagation()}
         onSubmit={async (event) => {
           event.preventDefault();
+          if (busy || !name.trim() || !assignedMap) return;
+          setFormError('');
           const result = legacy
             ? await assignCollectionMap(collection.id, assignedMap, name)
             : collection
               ? await renameCollection(collection.id, name)
               : (await createCollection(name, assignedMap)) !== undefined;
           if (result) onClose();
+          else
+            setFormError(
+              tr(
+                'Could not save collection. Try again.',
+                'Не удалось сохранить подборку. Повторите попытку.',
+              ),
+            );
         }}
       >
-        <div className="favorites-dialog-heading">
+        <header className="collection-picker-header">
+          <span className="collection-picker-mark" aria-hidden="true">
+            {legacy ? (
+              <MapPin size={21} />
+            ) : collection ? (
+              <Pencil size={21} />
+            ) : (
+              <FolderPlus size={21} />
+            )}
+          </span>
           <h2 id="collection-name-title">
             {legacy
               ? tr('Choose collection map', 'Выбрать карту подборки')
@@ -90,59 +117,87 @@ function CollectionNameDialog({
             disabled={busy}
             onClick={onClose}
             aria-label={tr('Close', 'Закрыть')}
+            title={tr('Close', 'Закрыть')}
           >
             <X size={16} />
           </button>
-        </div>
-        {legacy ? (
-          <label className="favorites-field">
-            <span>{tr('Map', 'Карта')}</span>
-            <select
-              value={assignedMap}
-              disabled={busy}
-              onChange={(event) => setAssignedMap(event.target.value)}
-              required
-            >
-              <option value="">{tr('Select map', 'Выберите карту')}</option>
-              {maps.map((item) => (
-                <option key={item.name} value={item.name}>
-                  {item.label}
-                </option>
-              ))}
-            </select>
-          </label>
-        ) : (
-          <p className="favorites-dialog-map">
-            {maps.find((item) => item.name === assignedMap)?.label ??
-              assignedMap}
-          </p>
+        </header>
+        {!legacy && (
+          <div className="collection-picker-context">
+            <MapPin size={14} aria-hidden="true" />
+            <strong>
+              {maps.find((item) => item.name === assignedMap)?.label ??
+                assignedMap}
+            </strong>
+          </div>
         )}
-        <label className="favorites-field">
-          <span>{tr('Name', 'Название')}</span>
-          <input
-            ref={inputRef}
-            value={name}
-            maxLength={100}
-            disabled={busy}
-            onChange={(event) => setName(event.target.value)}
-          />
-        </label>
-        <div className="favorites-dialog-footer">
+        <div className="collection-picker-body">
+          {legacy && (
+            <label className="collection-name-field">
+              <span>{tr('Map', 'Карта')}</span>
+              <select
+                value={assignedMap}
+                disabled={busy}
+                onChange={(event) => {
+                  setAssignedMap(event.target.value);
+                  setFormError('');
+                }}
+                required
+              >
+                <option value="">{tr('Select map', 'Выберите карту')}</option>
+                {maps.map((item) => (
+                  <option key={item.name} value={item.name}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          <label className="collection-name-field">
+            <span>{tr('Name', 'Название')}</span>
+            <input
+              ref={inputRef}
+              value={name}
+              placeholder={tr('Collection name', 'Название подборки')}
+              maxLength={100}
+              required
+              aria-invalid={Boolean(formError)}
+              aria-describedby={formError ? 'collection-name-error' : undefined}
+              disabled={busy}
+              onChange={(event) => {
+                setName(event.target.value);
+                setFormError('');
+              }}
+            />
+          </label>
+          {formError && (
+            <p
+              className="collection-picker-error"
+              id="collection-name-error"
+              role="alert"
+            >
+              {formError}
+            </p>
+          )}
+        </div>
+        <footer className="collection-picker-footer collection-name-footer">
           <button
             type="button"
-            className="btn"
+            className="btn collection-picker-cancel"
             disabled={busy}
             onClick={onClose}
           >
             {tr('Cancel', 'Отмена')}
           </button>
           <button
+            type="submit"
             className="btn primary"
             disabled={busy || !name.trim() || !assignedMap}
           >
-            {busy ? tr('Saving…', 'Сохранение…') : tr('Save', 'Сохранить')}
+            <Check size={15} aria-hidden="true" />
+            {busy ? tr('Saving...', 'Сохранение...') : tr('Save', 'Сохранить')}
           </button>
-        </div>
+        </footer>
       </form>
     </div>,
     document.body,
@@ -195,60 +250,84 @@ export default function FavoritesPage() {
 
   const controls = (
     <div className="favorites-map-controls">
-      <select
-        className="map-favorites-collection-trigger"
-        aria-label={tr('Collection', 'Подборка')}
-        value={selection.collectionId ?? ''}
-        disabled={loading || error}
-        onChange={(event) =>
+      <FilterSelect
+        className="favorites-collection-select"
+        selectionMode="single"
+        label={tr('Collection', 'Подборка')}
+        icon={<Folder size={16} />}
+        value={selection.collectionId ? [String(selection.collectionId)] : []}
+        disabled={busy || loading || error}
+        searchPlaceholder={tr('Search collections', 'Поиск подборок')}
+        emptyLabel={tr('No collections found', 'Подборки не найдены')}
+        selectedCountLabel={formatNumber}
+        options={[
+          {
+            value: '',
+            label: tr('All favorites', 'Все избранные'),
+            meta: formatNumber(
+              maps.find((m) => m.name === selection.map)?.grenade_count ?? 0,
+            ),
+            icon: <Star size={16} />,
+          },
+          ...state.collections
+            .filter((c) => c.map === selection.map)
+            .map((c) => ({
+              value: String(c.id),
+              label: c.name,
+              meta: formatNumber(c.grenade_count),
+              icon: <Folder size={16} />,
+            })),
+        ]}
+        onChange={(values) =>
           setSelection((current) => ({
             ...current,
-            collectionId: event.target.value
-              ? Number(event.target.value)
-              : undefined,
+            collectionId: values[0] ? Number(values[0]) : undefined,
           }))
         }
+      />
+      <div
+        className="favorites-collection-actions"
+        role="group"
+        aria-label={tr('Collection actions', 'Действия с подборками')}
       >
-        <option value="">{tr('All favorites', 'Все избранные')}</option>
-        {state.collections
-          .filter((c) => c.map === selection.map)
-          .map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-      </select>
-      <button
-        className="icon-btn"
-        disabled={busy || loading || error || !selection.map}
-        onClick={() => setEditing(null)}
-        aria-label={tr('Create collection', 'Создать подборку')}
-      >
-        <Plus size={16} />
-      </button>
-      {selected && (
-        <>
-          <button
-            className="icon-btn"
-            disabled={busy || error}
-            onClick={() => setEditing(selected)}
-            aria-label={tr('Rename collection', 'Переименовать подборку')}
-          >
-            <Pencil size={16} />
-          </button>
-          <button
-            className="icon-btn"
-            disabled={busy || error}
-            onClick={() => {
-              setDeleting(selected);
-              setDeleteError('');
-            }}
-            aria-label={tr('Delete collection', 'Удалить подборку')}
-          >
-            <Trash2 size={16} />
-          </button>
-        </>
-      )}
+        <button
+          type="button"
+          className="icon-btn favorites-collection-action create"
+          disabled={busy || loading || error || !selection.map}
+          onClick={() => setEditing(null)}
+          aria-label={tr('Create collection', 'Создать подборку')}
+          data-tip={tr('Create collection', 'Создать подборку')}
+        >
+          <FolderPlus size={16} />
+        </button>
+        {selected && (
+          <>
+            <button
+              type="button"
+              className="icon-btn favorites-collection-action"
+              disabled={busy || error}
+              onClick={() => setEditing(selected)}
+              aria-label={tr('Rename collection', 'Переименовать подборку')}
+              data-tip={tr('Rename collection', 'Переименовать подборку')}
+            >
+              <Pencil size={16} />
+            </button>
+            <button
+              type="button"
+              className="icon-btn favorites-collection-action delete"
+              disabled={busy || error}
+              onClick={() => {
+                setDeleting(selected);
+                setDeleteError('');
+              }}
+              aria-label={tr('Delete collection', 'Удалить подборку')}
+              data-tip={tr('Delete collection', 'Удалить подборку')}
+            >
+              <Trash2 size={16} />
+            </button>
+          </>
+        )}
+      </div>
     </div>
   );
   return (

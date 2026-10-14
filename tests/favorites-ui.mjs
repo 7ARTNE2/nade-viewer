@@ -365,6 +365,32 @@ try {
   assert.equal(await page.locator('.nade-row').count(), 30);
   const mapTab = (name) =>
     page.locator('.favorites-map-tab').filter({ hasText: name });
+  const collectionSelector = () =>
+    page.locator('.favorites-collection-select [role="combobox"]');
+  const chooseCollection = async (value) => {
+    await collectionSelector().click();
+    const options = page.locator(
+      '.favorites-collection-select-menu [role="option"]',
+    );
+    if (typeof value === 'object') {
+      await options.filter({ hasText: value.label }).click();
+    } else {
+      const index = await page.evaluate((id) => {
+        const map = JSON.parse(
+          window.sessionStorage.getItem('nadeviewer.favorites-selection'),
+        ).map;
+        return id
+          ? window.__favoritesFixture.collections
+              .filter((c) => c.map === map)
+              .findIndex((c) => String(c.id) === id) + 1
+          : 0;
+      }, value);
+      await options.nth(index).click();
+    }
+    await page
+      .locator('.favorites-collection-select-menu')
+      .waitFor({ state: 'hidden' });
+  };
   assert.equal(await mapTab('Mirage').locator('b').textContent(), '36');
   assert.equal(await mapTab('Nuke').locator('b').textContent(), '0');
   assert.equal(
@@ -460,13 +486,40 @@ try {
     await name.evaluate((node) => node === document.activeElement),
     true,
   );
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.screenshot({
+    path: 'dist/new-collection-wide.png',
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 360, height: 640 });
+  assert.equal(
+    await page.getByRole('dialog').evaluate((node) => {
+      const rect = node.getBoundingClientRect();
+      return (
+        node.scrollWidth <= node.clientWidth + 1 &&
+        rect.left >= 0 &&
+        rect.right <= window.innerWidth &&
+        rect.bottom <= window.innerHeight
+      );
+    }),
+    true,
+  );
+  await page.screenshot({
+    path: 'dist/new-collection-mobile.png',
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 900, height: 650 });
+  await page.evaluate(() => {
+    window.__favoritesFixture.failNext = 'create_favorite_collection';
+  });
+  await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await page.getByRole('dialog').getByRole('alert').waitFor();
+  assert.equal(await name.inputValue(), 'Раскидки на A');
   await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
   await page.getByRole('dialog').waitFor({ state: 'hidden' });
-  await page
-    .getByRole('combobox', { name: 'Подборка', exact: true })
-    .locator('option')
-    .filter({ hasText: 'Раскидки на A' })
-    .waitFor({ state: 'attached' });
+  await collectionSelector().click();
+  await page.getByRole('option', { name: /Раскидки на A/ }).waitFor();
+  await page.keyboard.press('Escape');
 
   // The same name on another map stays local to that map.
   await mapTab('Nuke').click();
@@ -477,16 +530,17 @@ try {
   assert.equal(
     await page
       .getByRole('combobox', { name: 'Подборка', exact: true })
-      .inputValue(),
+      .getAttribute('data-value'),
     '',
   );
+  await collectionSelector().click();
   assert.equal(
     await page
-      .getByRole('combobox', { name: 'Подборка', exact: true })
-      .locator('option')
+      .locator('.favorites-collection-select-menu [role="option"]')
       .count(),
     1,
   );
+  await page.keyboard.press('Escape');
   await page.getByRole('button', { name: 'Создать подборку' }).click();
   await page
     .getByRole('textbox', { name: 'Название', exact: true })
@@ -494,9 +548,7 @@ try {
   await page.getByRole('dialog').getByText('Nuke', { exact: true }).waitFor();
   await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
   await page.getByRole('dialog').waitFor({ state: 'hidden' });
-  await page
-    .getByRole('combobox', { name: 'Подборка', exact: true })
-    .selectOption('3');
+  await chooseCollection('3');
   await mapTab('Mirage').click();
   await page.waitForFunction(
     () =>
@@ -506,28 +558,151 @@ try {
   assert.equal(
     await page
       .getByRole('combobox', { name: 'Подборка', exact: true })
-      .inputValue(),
+      .getAttribute('data-value'),
     '',
   );
 
   const row = page.locator('.nade-row').filter({ hasText: 'Player 36' });
   await row.getByRole('button', { name: 'Управлять подборками' }).click();
+  const picker = page.getByRole('dialog');
+  const collectionSearch = picker.getByRole('searchbox', {
+    name: 'Поиск подборок',
+  });
+  assert.equal(
+    await collectionSearch.evaluate((node) => node === document.activeElement),
+    true,
+  );
+  await collectionSearch.fill('несуществующая');
+  await picker.getByText('Подборки не найдены', { exact: true }).waitFor();
+  await picker.getByRole('button', { name: 'Очистить поиск' }).click();
+  await collectionSearch.fill('на a');
+  assert.equal(await picker.getByRole('checkbox').count(), 1);
+  await picker.getByRole('button', { name: 'Очистить поиск' }).click();
+  await picker
+    .getByRole('textbox', { name: 'Название новой подборки' })
+    .fill('Ошибка создания');
+  await page.evaluate(() => {
+    window.__favoritesFixture.failNext = 'create_favorite_collection';
+  });
+  await picker.getByRole('button', { name: 'Создать', exact: true }).click();
+  await picker
+    .getByRole('alert')
+    .filter({ hasText: 'Не удалось создать подборку' })
+    .waitFor();
+  await picker
+    .getByRole('textbox', { name: 'Название новой подборки' })
+    .fill('');
   assert.equal(
     await page.getByRole('checkbox', { name: 'Раскидки на A' }).count(),
     1,
   );
   await page.getByRole('checkbox', { name: 'Тренировка Mirage' }).check();
   await page.getByRole('checkbox', { name: 'Раскидки на A' }).check();
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.screenshot({
+    path: 'dist/collection-picker-wide.png',
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 360, height: 640 });
+  assert.equal(
+    await picker.evaluate((node) => {
+      const rect = node.getBoundingClientRect();
+      return (
+        node.scrollWidth <= node.clientWidth + 1 &&
+        rect.left >= 0 &&
+        rect.right <= window.innerWidth &&
+        rect.bottom <= window.innerHeight
+      );
+    }),
+    true,
+  );
+  await page.screenshot({
+    path: 'dist/collection-picker-mobile.png',
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 900, height: 650 });
+  await page.evaluate(() => {
+    window.__favoritesFixture.failNext = 'set_favorite_collections';
+  });
+  await picker.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await picker
+    .getByRole('alert')
+    .filter({ hasText: 'Не удалось сохранить подборки' })
+    .waitFor();
+  assert.equal(
+    await picker.getByRole('checkbox', { checked: true }).count(),
+    2,
+  );
   await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
   await page.getByRole('dialog').waitFor({ state: 'hidden' });
-  await page
-    .getByRole('combobox', { name: 'Подборка', exact: true })
-    .selectOption({ label: 'Раскидки на A' });
+  await chooseCollection({ label: 'Раскидки на A' });
   await page.waitForFunction(
     () =>
       document.querySelectorAll('.nade-row').length === 1 &&
       !document.querySelector('.nade-list-skeleton'),
   );
+
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await collectionSelector().click();
+  const selectorMenu = page.locator('.favorites-collection-select-menu');
+  await selectorMenu
+    .getByRole('combobox', { name: 'Поиск подборок' })
+    .fill('на A');
+  assert.equal(await selectorMenu.getByRole('option').count(), 2);
+  await selectorMenu.getByRole('combobox').fill('');
+  await page.screenshot({
+    path: 'dist/collection-controls-wide.png',
+    fullPage: true,
+  });
+  await page.keyboard.press('Escape');
+  await page.waitForFunction(
+    () =>
+      document.activeElement ===
+      document.querySelector('.favorites-collection-select [role="combobox"]'),
+  );
+  await collectionSelector().press('ArrowDown');
+  await page.keyboard.press('End');
+  await page.keyboard.press('Enter');
+  await selectorMenu.waitFor({ state: 'hidden' });
+  assert.equal(await collectionSelector().getAttribute('data-value'), '2');
+  await page
+    .getByRole('button', { name: 'Переименовать подборку', exact: true })
+    .click();
+  await page
+    .getByRole('textbox', { name: 'Название', exact: true })
+    .fill('Раскидки на A: тренировка выходов и командные заготовки Mirage');
+  await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await page.getByRole('dialog').waitFor({ state: 'hidden' });
+  await page.setViewportSize({ width: 360, height: 640 });
+  assert.equal(
+    await page.locator('.favorites-map-controls').evaluate((node) => {
+      const rect = node.getBoundingClientRect();
+      return (
+        node.scrollWidth <= node.clientWidth + 1 &&
+        rect.left >= 0 &&
+        rect.right <= window.innerWidth
+      );
+    }),
+    true,
+  );
+  await collectionSelector().click();
+  assert.equal(
+    await selectorMenu.evaluate((node) => {
+      const rect = node.getBoundingClientRect();
+      return (
+        rect.left >= 0 &&
+        rect.right <= window.innerWidth &&
+        node.scrollWidth <= node.clientWidth + 1
+      );
+    }),
+    true,
+  );
+  await page.screenshot({
+    path: 'dist/collection-controls-mobile.png',
+    fullPage: true,
+  });
+  await page.keyboard.press('Escape');
+  await page.setViewportSize({ width: 900, height: 650 });
 
   assert.equal(await mapTab('Mirage').locator('b').textContent(), '36');
   assert.equal(await mapTab('Nuke').locator('b').textContent(), '0');
@@ -569,7 +744,7 @@ try {
   assert.equal(
     await page
       .getByRole('combobox', { name: 'Подборка', exact: true })
-      .inputValue(),
+      .getAttribute('data-value'),
     '2',
   );
   assert.equal(
@@ -687,9 +862,7 @@ try {
     false,
   );
   // Empty collections keep their map; restoring All favorites keeps its own filters.
-  await page
-    .getByRole('combobox', { name: 'Подборка', exact: true })
-    .selectOption('1');
+  await chooseCollection('1');
   await page
     .getByText(
       'В этой подборке или с такими фильтрами нет сохранённых раскидок.',
@@ -699,9 +872,7 @@ try {
     await page.locator('.map-selector-current strong').textContent(),
     'Mirage',
   );
-  await page
-    .getByRole('combobox', { name: 'Подборка', exact: true })
-    .selectOption('');
+  await chooseCollection('');
   await page.getByRole('button', { name: 'Сбросить', exact: true }).click();
   await page.waitForFunction(
     () =>
@@ -745,15 +916,11 @@ try {
   await page.evaluate(() => {
     window.__favoritesFixture.delayNextOverview = true;
   });
-  await page
-    .getByRole('combobox', { name: 'Подборка', exact: true })
-    .selectOption('1');
+  await chooseCollection('1');
   await page.waitForFunction(() =>
     Boolean(window.__favoritesFixture.releaseOverview),
   );
-  await page
-    .getByRole('combobox', { name: 'Подборка', exact: true })
-    .selectOption('');
+  await chooseCollection('');
   await page.waitForFunction(
     () =>
       document.querySelectorAll('.nade-row').length === 30 &&
@@ -803,9 +970,7 @@ try {
     .selectOption('de_mirage');
   await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
   await page.getByRole('dialog').waitFor({ state: 'hidden' });
-  await page
-    .getByRole('combobox', { name: 'Подборка', exact: true })
-    .selectOption('20');
+  await chooseCollection('20');
   assert.equal(await mapTab('Mirage').locator('b').textContent(), '0');
   await page.getByRole('button', { name: 'Создать подборку' }).click();
   await page
@@ -814,9 +979,7 @@ try {
   await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
   await page.getByRole('dialog').waitFor({ state: 'hidden' });
   await page.getByRole('button', { name: 'EN', exact: true }).click();
-  await page
-    .getByRole('combobox', { name: 'Collection', exact: true })
-    .selectOption('4');
+  await chooseCollection('4');
   await page.screenshot({
     path: 'dist/favorites-ui-empty-en.png',
     fullPage: true,
@@ -827,7 +990,7 @@ try {
   assert.equal(
     await page
       .getByRole('combobox', { name: 'Collection', exact: true })
-      .inputValue(),
+      .getAttribute('data-value'),
     '',
   );
   await page.getByRole('button', { name: 'RU', exact: true }).click();
@@ -846,9 +1009,7 @@ try {
     );
   });
   await page.reload();
-  await page
-    .getByRole('combobox', { name: 'Подборка', exact: true })
-    .selectOption('3');
+  await chooseCollection('3');
   await page.locator('.nade-row').first().waitFor();
   await page
     .locator('.nade-row')
@@ -862,7 +1023,7 @@ try {
   assert.equal(
     await page
       .getByRole('combobox', { name: 'Подборка', exact: true })
-      .inputValue(),
+      .getAttribute('data-value'),
     '3',
   );
   assert.equal(
