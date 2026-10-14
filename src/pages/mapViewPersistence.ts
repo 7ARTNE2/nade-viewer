@@ -33,11 +33,12 @@ export const defaultMapFilters = (): MapFilters => ({
   min_usage: 0,
   is_insta: false,
   favorites_only: false,
-  favorite_collection_id: undefined,
 });
 
-export function filtersMatchDefault(filters: MapFilters) {
-  const defaults = defaultMapFilters();
+export function filtersMatchDefault(
+  filters: MapFilters,
+  defaults: MapFilters = defaultMapFilters(),
+) {
   return (
     filters.grenade_type === defaults.grenade_type &&
     filters.side === defaults.side &&
@@ -49,8 +50,7 @@ export function filtersMatchDefault(filters: MapFilters) {
     !filters.tournament?.length &&
     (filters.min_usage ?? 0) === defaults.min_usage &&
     Boolean(filters.is_insta) === Boolean(defaults.is_insta) &&
-    !filters.favorites_only &&
-    filters.favorite_collection_id === undefined
+    !filters.favorites_only
   );
 }
 
@@ -76,7 +76,10 @@ function normalizeStoredIconTheme(value: unknown): IconTheme {
   return value === 'asset' ? 'asset' : 'base';
 }
 
-export function readStoredMapViewState(key: string): StoredMapViewState | null {
+export function readStoredMapViewState(
+  key: string,
+  defaults: MapFilters = defaultMapFilters(),
+): StoredMapViewState | null {
   try {
     const raw = window.sessionStorage.getItem(key);
     if (!raw) return null;
@@ -87,7 +90,7 @@ export function readStoredMapViewState(key: string): StoredMapViewState | null {
         : null;
     return {
       filters: {
-        ...defaultMapFilters(),
+        ...defaults,
         ...Object.fromEntries(
           Object.entries(parsed.filters ?? {}).filter(([key]) =>
             Object.prototype.hasOwnProperty.call(defaultMapFilters(), key),
@@ -108,13 +111,9 @@ export function readStoredMapViewState(key: string): StoredMapViewState | null {
           parsed.filters?.thrower_steamid64,
         ),
         tournament: normalizeFilterSelection(parsed.filters?.tournament),
-        favorites_only: parsed.filters?.favorites_only === true,
-        favorite_collection_id:
-          typeof parsed.filters?.favorite_collection_id === 'number' &&
-          Number.isInteger(parsed.filters.favorite_collection_id) &&
-          parsed.filters.favorite_collection_id > 0
-            ? parsed.filters.favorite_collection_id
-            : undefined,
+        // The favorites toggle is temporary; reopening a map starts with all
+        // grenades while restoring the other filters and view settings.
+        favorites_only: false,
       },
       selectedClusterId,
       clusterPage: normalizeStoredNumber(parsed.clusterPage, 0),
@@ -135,7 +134,13 @@ export function writeStoredMapViewState(
   state: StoredMapViewState,
 ) {
   try {
-    window.sessionStorage.setItem(key, JSON.stringify(state));
+    window.sessionStorage.setItem(
+      key,
+      JSON.stringify({
+        ...state,
+        filters: { ...state.filters, favorites_only: false },
+      }),
+    );
   } catch {
     // Session storage can be unavailable in constrained webviews.
   }

@@ -167,6 +167,43 @@ export function listFavorites(filters: FavoriteFilters) {
   return invoke<FavoriteList>('list_favorites', { filters });
 }
 
+export function getFavoriteFilterOptions(filters: FavoriteFilters) {
+  return invoke<{
+    players: ImportPlayerOption[];
+    tournaments: ImportTournamentOption[];
+  }>('get_favorite_filter_options', { filters });
+}
+
+export function getFavoriteMaps() {
+  return invoke<MapSummary[]>('get_favorite_maps');
+}
+
+export function getFavoriteMapOverview(
+  map: string,
+  filters: FavoriteFilters,
+  mode: 'landing' | 'throw',
+) {
+  return invoke<MapOverview>('get_favorite_map_overview', {
+    map,
+    filters,
+    mode,
+  });
+}
+
+export function getFavoriteClusterGrenades(
+  map: string,
+  clusterId: string,
+  filters: FavoriteFilters,
+  mode: 'landing' | 'throw',
+) {
+  return invoke<GrenadePreview[]>('get_favorite_cluster_grenades', {
+    map,
+    clusterId,
+    filters,
+    mode,
+  });
+}
+
 export function getFavorite(id: number) {
   return invoke<FavoriteDetail>('get_favorite', { id });
 }
@@ -183,8 +220,16 @@ export function deleteFavorite(id: number) {
   return invoke<void>('delete_favorite', { id });
 }
 
-export function createFavoriteCollection(name: string) {
-  return invoke<number>('create_favorite_collection', { name });
+export function createFavoriteCollection(name: string, map: string) {
+  return invoke<number>('create_favorite_collection', { name, map });
+}
+
+export function assignFavoriteCollectionMap(
+  id: number,
+  map: string,
+  name: string,
+) {
+  return invoke<void>('assign_favorite_collection_map', { id, map, name });
 }
 
 export function renameFavoriteCollection(id: number, name: string) {

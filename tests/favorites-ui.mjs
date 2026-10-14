@@ -32,6 +32,9 @@ try {
       side: 'T',
       grenade_type: 'smoke',
       thrower: `Player ${id}`,
+      thrower_steamid64: String(id),
+      thrower_team: id === 36 ? 'Blue' : 'Red',
+      tournament: id === 36 ? 'Cup A' : 'Cup B',
       coordinates: 'setpos 1 2 3; setang 10 20 0',
       throw_keys: 'M1+JUMP',
       usage_count: 4,
@@ -56,11 +59,56 @@ try {
       favorites: Object.fromEntries(
         Array.from({ length: 36 }, (_, i) => [i + 1, detail(i + 1)]),
       ),
-      collections: [{ id: 1, name: 'Тренировка Mirage', grenade_count: 0 }],
+      collections: [
+        {
+          id: 1,
+          name: 'Тренировка Mirage',
+          map: 'de_mirage',
+          grenade_count: 0,
+        },
+      ],
       calls: [],
       failNext: null,
       nextCollection: 2,
       active: null,
+    };
+    const seed = window.sessionStorage.getItem('favorites-test-seed');
+    if (seed) {
+      Object.assign(model, JSON.parse(seed));
+      window.sessionStorage.removeItem('favorites-test-seed');
+    }
+    const filtered = (f) =>
+      Object.values(model.favorites)
+        .filter(
+          (g) =>
+            (!f.collection_id || g.collection_ids.includes(f.collection_id)) &&
+            (!f.map || g.map === f.map) &&
+            (!f.side || f.side === 'Any' || f.side === g.side) &&
+            (!f.grenade_type ||
+              f.grenade_type === 'all' ||
+              f.grenade_type === g.grenade_type) &&
+            (!f.search ||
+              `${g.thrower} ${g.coordinates}`
+                .toLowerCase()
+                .includes(f.search.toLowerCase())) &&
+            (!f.jump || f.jump !== 'grounded') &&
+            (!f.movement || f.movement !== 'moving') &&
+            !f.is_insta &&
+            (!f.min_usage || g.usage_count >= f.min_usage) &&
+            (!f.thrower_team?.length ||
+              f.thrower_team.includes(g.thrower_team)) &&
+            (!f.thrower_steamid64?.length ||
+              f.thrower_steamid64.includes(g.thrower_steamid64)) &&
+            (!f.tournament?.length || f.tournament.includes(g.tournament)),
+        )
+        .sort((a, b) => b.id - a.id);
+    const mapSummary = {
+      name: 'de_mirage',
+      label: 'Mirage',
+      grenade_count: 36,
+      has_lower_radar: false,
+      map_image_path:
+        '/@fs/F:/Dev/NadeViewer/src-tauri/resources/maps/2d/de_mirage_radar_psd.png',
     };
     window.__favoritesFixture = model;
     let callback = 0;
@@ -156,31 +204,110 @@ try {
               source_matches:
                 model.active && model.favorites[35] ? { 101: 35 } : {},
             };
+          case 'get_favorite_filter_options': {
+            const all = filtered({
+              map: args.filters.map,
+              collection_id: args.filters.collection_id,
+            });
+            return {
+              players: all
+                .filter(
+                  (g) =>
+                    !args.filters.tournament?.length ||
+                    args.filters.tournament.includes(g.tournament),
+                )
+                .map((g) => ({
+                  steamid64: g.thrower_steamid64,
+                  name: g.thrower,
+                  team_name: g.thrower_team,
+                  side: g.side,
+                })),
+              tournaments: [...new Set(all.map((g) => g.tournament))].map(
+                (name) => ({
+                  name,
+                  start_date: '2026-10-01',
+                  end_date: '2026-10-01',
+                }),
+              ),
+            };
+          }
+          case 'get_favorite_maps':
+            return [
+              'de_ancient',
+              'de_anubis',
+              'de_cache',
+              'de_dust2',
+              'de_inferno',
+              'de_mirage',
+              'de_nuke',
+              'de_overpass',
+              'de_train',
+              'de_vertigo',
+            ].map((map) => ({
+              ...mapSummary,
+              name: map,
+              preview_image_path: `/@fs/F:/Dev/NadeViewer/src-tauri/resources/maps/preview/map_icon_${map}.svg`,
+              label:
+                map === 'de_mirage'
+                  ? 'Mirage'
+                  : map === 'de_nuke'
+                    ? 'Nuke'
+                    : map === 'de_dust2'
+                      ? 'Dust II'
+                      : map
+                          .slice(3)
+                          .replace(/^./, (letter) => letter.toUpperCase()),
+              grenade_count: filtered({ map }).length,
+            }));
+          case 'get_favorite_map_overview': {
+            const all = filtered(args.filters);
+            if (model.delayNextOverview) {
+              model.delayNextOverview = false;
+              await new Promise((resolve) => {
+                model.releaseOverview = resolve;
+              });
+            }
+            return {
+              map: {
+                ...mapSummary,
+                name: args.map,
+                label:
+                  args.map === 'de_mirage'
+                    ? 'Mirage'
+                    : args.map === 'de_nuke'
+                      ? 'Nuke'
+                      : 'Dust II',
+              },
+              grenade_count: all.length,
+              clusters: all.length
+                ? [
+                    {
+                      id: args.mode === 'throw' ? '2:3' : '1:2',
+                      x: 50,
+                      y: 60,
+                      count: all.length,
+                      first_grenade_id: all[0].id,
+                      side_key: 'T',
+                      unique_types: ['smoke'],
+                      radar_level: 'default',
+                    },
+                  ]
+                : [],
+              type_counts: { smoke: all.length },
+              side_counts: { T: all.length },
+            };
+          }
+          case 'get_favorite_cluster_grenades':
           case 'list_favorites': {
             const f = args.filters;
-            const all = Object.values(model.favorites)
-              .filter(
-                (g) =>
-                  (!f.collection_id ||
-                    g.collection_ids.includes(f.collection_id)) &&
-                  (!f.map || g.map === f.map) &&
-                  (!f.side || f.side === 'Any' || f.side === g.side) &&
-                  (!f.grenade_type ||
-                    f.grenade_type === 'all' ||
-                    f.grenade_type === g.grenade_type) &&
-                  (!f.search ||
-                    `${g.thrower} ${g.coordinates}`
-                      .toLowerCase()
-                      .includes(f.search.toLowerCase())),
-              )
-              .sort((a, b) => b.id - a.id);
-            return {
-              items: all.slice(
-                f.offset ?? 0,
-                (f.offset ?? 0) + (f.limit ?? 30),
-              ),
-              total: all.length,
-            };
+            const all = filtered(f);
+            const items =
+              f.limit === 0
+                ? all
+                : all.slice(f.offset ?? 0, (f.offset ?? 0) + (f.limit ?? 30));
+            return command === 'list_favorites'
+              ? { items, total: all.length }
+              : items;
           }
           case 'get_favorite':
             if (!model.favorites[args.id]) throw new Error('Missing favorite');
@@ -193,11 +320,17 @@ try {
             model.collections.push({
               id,
               name: args.name.trim(),
+              map: args.map,
               grenade_count: 0,
             });
             return id;
           }
           case 'rename_favorite_collection':
+            model.collections.find((c) => c.id === args.id).name =
+              args.name.trim();
+            return null;
+          case 'assign_favorite_collection_map':
+            model.collections.find((c) => c.id === args.id).map = args.map;
             model.collections.find((c) => c.id === args.id).name =
               args.name.trim();
             return null;
@@ -224,18 +357,95 @@ try {
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await page.goto('http://127.0.0.1:1427/favorites');
-  await page.getByRole('button', { name: 'Следующие избранные' }).waitFor();
+  await page
+    .getByRole('button', { name: 'Следующие выбранные гранаты' })
+    .waitFor();
   await page.locator('.boot-screen').waitFor({ state: 'hidden' });
   await page.locator('.nade-row').first().waitFor();
   assert.equal(await page.locator('.nade-row').count(), 30);
+  const mapTab = (name) =>
+    page.locator('.favorites-map-tab').filter({ hasText: name });
+  assert.equal(await mapTab('Mirage').locator('b').textContent(), '36');
+  assert.equal(await mapTab('Nuke').locator('b').textContent(), '0');
+  assert.equal(
+    await page.getByRole('button', { name: 'Выбрать карту' }).count(),
+    0,
+  );
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page
+    .locator('.favorites-map-tab img')
+    .first()
+    .evaluate((img) => img.decode());
+  assert.equal(
+    await page
+      .locator('.favorites-map-tab img')
+      .evaluateAll((imgs) =>
+        imgs.every((img) => img.complete && img.naturalWidth > 0),
+      ),
+    true,
+  );
   await page.screenshot({ path: 'dist/favorites-ui-wide.png', fullPage: true });
-  await page.getByRole('button', { name: 'Следующие избранные' }).click();
+  await page.setViewportSize({ width: 900, height: 650 });
+  await page
+    .getByRole('button', { name: 'Следующие выбранные гранаты' })
+    .click();
   await page.waitForFunction(
     () =>
       document.querySelectorAll('.nade-row').length === 6 &&
       !document.querySelector('.nade-list-skeleton'),
   );
-  await page.getByRole('button', { name: 'Предыдущие избранные' }).click();
+  await page
+    .getByRole('button', { name: 'Предыдущие выбранные гранаты' })
+    .click();
+  await page.waitForFunction(
+    () =>
+      document.querySelectorAll('.nade-row').length === 30 &&
+      !document.querySelector('.nade-list-skeleton'),
+  );
+
+  // All match filters use saved records while no import is active.
+  const chooseFilter = async (accent, option) => {
+    await page
+      .locator(`.accent-${accent} .tactical-filter-trigger`)
+      .press('ArrowDown');
+    const search = page.getByRole('dialog').getByRole('combobox');
+    await search.fill(option);
+    await search.press('ArrowDown');
+    await search.press('Enter');
+    await page.keyboard.press('Escape');
+  };
+  await chooseFilter('tournament', 'Cup A');
+  await page.waitForFunction(
+    () =>
+      document.querySelectorAll('.nade-row').length === 1 &&
+      !document.querySelector('.nade-list-skeleton'),
+  );
+  await chooseFilter('team', 'Blue');
+  await chooseFilter('player', 'Player 36');
+  await page.waitForFunction(() =>
+    window.__favoritesFixture.calls.some(
+      (c) =>
+        c.command === 'list_favorites' &&
+        c.args.filters.thrower_steamid64?.includes('36'),
+    ),
+  );
+  await page.locator('.inspector-visibility .section-toggle').click();
+  await page.locator('.inspector-visibility input[type="range"]').fill('5');
+  await page.getByRole('button', { name: 'Применить', exact: true }).click();
+  await page
+    .getByText(
+      'В этой подборке или с такими фильтрами нет сохранённых раскидок.',
+    )
+    .waitFor();
+  assert.equal(
+    await page.evaluate(() =>
+      window.__favoritesFixture.calls.some(
+        (c) => c.command === 'update_site_settings',
+      ),
+    ),
+    false,
+  );
+  await page.getByRole('button', { name: 'Сбросить', exact: true }).click();
   await page.waitForFunction(
     () =>
       document.querySelectorAll('.nade-row').length === 30 &&
@@ -253,23 +463,123 @@ try {
   await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
   await page.getByRole('dialog').waitFor({ state: 'hidden' });
   await page
-    .getByRole('button', { name: 'Раскидки на A 0', exact: true })
+    .getByRole('combobox', { name: 'Подборка', exact: true })
+    .locator('option')
+    .filter({ hasText: 'Раскидки на A' })
+    .waitFor({ state: 'attached' });
+
+  // The same name on another map stays local to that map.
+  await mapTab('Nuke').click();
+  await page
+    .locator('.map-selector-current strong')
+    .filter({ hasText: 'Nuke' })
     .waitFor();
+  assert.equal(
+    await page
+      .getByRole('combobox', { name: 'Подборка', exact: true })
+      .inputValue(),
+    '',
+  );
+  assert.equal(
+    await page
+      .getByRole('combobox', { name: 'Подборка', exact: true })
+      .locator('option')
+      .count(),
+    1,
+  );
+  await page.getByRole('button', { name: 'Создать подборку' }).click();
+  await page
+    .getByRole('textbox', { name: 'Название', exact: true })
+    .fill('Раскидки на A');
+  await page.getByRole('dialog').getByText('Nuke', { exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await page.getByRole('dialog').waitFor({ state: 'hidden' });
+  await page
+    .getByRole('combobox', { name: 'Подборка', exact: true })
+    .selectOption('3');
+  await mapTab('Mirage').click();
+  await page.waitForFunction(
+    () =>
+      document.querySelectorAll('.nade-row').length === 30 &&
+      !document.querySelector('.nade-list-skeleton'),
+  );
+  assert.equal(
+    await page
+      .getByRole('combobox', { name: 'Подборка', exact: true })
+      .inputValue(),
+    '',
+  );
 
   const row = page.locator('.nade-row').filter({ hasText: 'Player 36' });
   await row.getByRole('button', { name: 'Управлять подборками' }).click();
+  assert.equal(
+    await page.getByRole('checkbox', { name: 'Раскидки на A' }).count(),
+    1,
+  );
   await page.getByRole('checkbox', { name: 'Тренировка Mirage' }).check();
   await page.getByRole('checkbox', { name: 'Раскидки на A' }).check();
   await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
   await page.getByRole('dialog').waitFor({ state: 'hidden' });
   await page
-    .getByRole('button', { name: 'Раскидки на A 1', exact: true })
-    .click();
+    .getByRole('combobox', { name: 'Подборка', exact: true })
+    .selectOption({ label: 'Раскидки на A' });
   await page.waitForFunction(
     () =>
       document.querySelectorAll('.nade-row').length === 1 &&
       !document.querySelector('.nade-list-skeleton'),
   );
+
+  assert.equal(await mapTab('Mirage').locator('b').textContent(), '36');
+  assert.equal(await mapTab('Nuke').locator('b').textContent(), '0');
+
+  assert.equal(
+    await page
+      .locator('.map-workspace')
+      .getByRole('button', { name: 'Избранное', exact: true })
+      .count(),
+    0,
+  );
+  assert.equal(
+    await page.locator('.inspector-visibility .section-toggle').count(),
+    1,
+  );
+  assert.equal(
+    await page.locator('.accent-tournament .tactical-filter-trigger').count(),
+    1,
+  );
+  await page.getByRole('button', { name: 'Бросок', exact: true }).click();
+  await page.waitForFunction(() =>
+    window.__favoritesFixture.calls.some(
+      (c) =>
+        c.command === 'get_favorite_map_overview' && c.args.mode === 'throw',
+    ),
+  );
+  await page.locator('.cluster-list button').first().click();
+  await page.waitForFunction(() =>
+    window.__favoritesFixture.calls.some(
+      (c) =>
+        c.command === 'get_favorite_cluster_grenades' &&
+        c.args.filters.limit === 0,
+    ),
+  );
+  await page.locator('.nade-open-action').first().click();
+  await page.waitForURL('**/favorites/36');
+  await page.goBack();
+  await page.locator('.nade-row').first().waitFor();
+  assert.equal(
+    await page
+      .getByRole('combobox', { name: 'Подборка', exact: true })
+      .inputValue(),
+    '2',
+  );
+  assert.equal(
+    await page
+      .getByRole('button', { name: 'Бросок', exact: true })
+      .getAttribute('aria-pressed'),
+    'true',
+  );
+  assert.equal(await page.locator('.cluster-list button.selected').count(), 1);
+  await page.locator('.cluster-list button.selected').click();
 
   // Deleting a collection must leave saved snapshots intact.
   await page
@@ -293,9 +603,7 @@ try {
     [1],
   );
 
-  await page
-    .getByRole('searchbox', { name: 'Поиск в избранном' })
-    .fill('Player 36');
+  await page.getByRole('textbox', { name: 'Найти гранату' }).fill('Player 36');
   await page.waitForFunction(
     () =>
       document.querySelectorAll('.nade-row').length === 1 &&
@@ -351,7 +659,7 @@ try {
   );
   assert.equal(
     await page
-      .locator('.favorites-content')
+      .locator('.favorites-map-page')
       .evaluate((node) => node.scrollWidth <= node.clientWidth + 1),
     true,
   );
@@ -365,8 +673,218 @@ try {
     path: 'dist/favorites-ui-narrow.png',
     fullPage: true,
   });
+  assert.equal(
+    await page.evaluate(() =>
+      window.__favoritesFixture.calls.some((c) =>
+        [
+          'get_maps',
+          'get_map_overview',
+          'get_import_players',
+          'get_import_tournaments',
+        ].includes(c.command),
+      ),
+    ),
+    false,
+  );
+  // Empty collections keep their map; restoring All favorites keeps its own filters.
+  await page
+    .getByRole('combobox', { name: 'Подборка', exact: true })
+    .selectOption('1');
+  await page
+    .getByText(
+      'В этой подборке или с такими фильтрами нет сохранённых раскидок.',
+    )
+    .waitFor();
+  assert.equal(
+    await page.locator('.map-selector-current strong').textContent(),
+    'Mirage',
+  );
+  await page
+    .getByRole('combobox', { name: 'Подборка', exact: true })
+    .selectOption('');
+  await page.getByRole('button', { name: 'Сбросить', exact: true }).click();
+  await page.waitForFunction(
+    () =>
+      document.querySelectorAll('.nade-row').length === 30 &&
+      !document.querySelector('.nade-list-skeleton'),
+  );
+  await page
+    .getByRole('button', { name: 'Следующие выбранные гранаты' })
+    .click();
+  await page.waitForFunction(
+    () =>
+      document.querySelectorAll('.nade-row').length === 5 &&
+      !document.querySelector('.nade-list-skeleton'),
+  );
+  for (let id = 5; id >= 1; id--) {
+    await page
+      .locator('.nade-row')
+      .filter({ hasText: `Player ${id}` })
+      .getByRole('button', { name: 'Удалить из избранного и всех подборок' })
+      .click();
+    await page.waitForFunction(
+      (removed) =>
+        !window.__favoritesFixture.favorites[removed] &&
+        !document.querySelector('.nade-list-skeleton'),
+      id,
+    );
+  }
+  await page.waitForFunction(
+    () =>
+      document.querySelectorAll('.nade-row').length === 30 &&
+      !document.querySelector('.nade-list-skeleton'),
+  );
+  assert.equal(
+    await page
+      .getByRole('button', { name: 'Следующие выбранные гранаты' })
+      .count(),
+    0,
+  );
+
+  // A response from a superseded collection cannot replace the latest view.
+  await page.evaluate(() => {
+    window.__favoritesFixture.delayNextOverview = true;
+  });
+  await page
+    .getByRole('combobox', { name: 'Подборка', exact: true })
+    .selectOption('1');
+  await page.waitForFunction(() =>
+    Boolean(window.__favoritesFixture.releaseOverview),
+  );
+  await page
+    .getByRole('combobox', { name: 'Подборка', exact: true })
+    .selectOption('');
+  await page.waitForFunction(
+    () =>
+      document.querySelectorAll('.nade-row').length === 30 &&
+      !document.querySelector('.nade-list-skeleton'),
+  );
+  await page.evaluate(() => {
+    window.__favoritesFixture.releaseOverview();
+  });
+  await page.waitForFunction(
+    () =>
+      document.querySelector('.map-selector-filtered-count b')?.textContent ===
+      '30',
+  );
+  assert.equal(await page.locator('.nade-row').count(), 30);
+
+  // Failure and retry use the saved-map command, without an import fallback.
+  await page.evaluate(() => {
+    window.__favoritesFixture.failNext = 'get_favorite_map_overview';
+  });
+  await page.getByRole('button', { name: 'Бросок', exact: true }).click();
+  await page.getByText('Не удалось открыть карту', { exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Повторить', exact: true }).click();
+  await page.locator('.cluster-list button').first().waitFor();
+
+  // Empty Favorites still has map navigation and can create collections.
+  await page.evaluate(() => {
+    window.__favoritesFixture.backupFavorites =
+      window.__favoritesFixture.favorites;
+    window.__favoritesFixture.favorites = {};
+    window.__favoritesFixture.collections.push({
+      id: 20,
+      name: 'Старая пустая',
+      map: null,
+      grenade_count: 0,
+    });
+    window.sessionStorage.setItem(
+      'favorites-test-seed',
+      JSON.stringify(window.__favoritesFixture),
+    );
+  });
+  await page.reload();
+  await page
+    .getByRole('button', { name: 'Старая пустая', exact: true })
+    .click();
+  await page
+    .getByRole('combobox', { name: 'Карта', exact: true })
+    .selectOption('de_mirage');
+  await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await page.getByRole('dialog').waitFor({ state: 'hidden' });
+  await page
+    .getByRole('combobox', { name: 'Подборка', exact: true })
+    .selectOption('20');
+  assert.equal(await mapTab('Mirage').locator('b').textContent(), '0');
+  await page.getByRole('button', { name: 'Создать подборку' }).click();
+  await page
+    .getByRole('textbox', { name: 'Название', exact: true })
+    .fill('Пустая');
+  await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await page.getByRole('dialog').waitFor({ state: 'hidden' });
+  await page.getByRole('button', { name: 'EN', exact: true }).click();
+  await page
+    .getByRole('combobox', { name: 'Collection', exact: true })
+    .selectOption('4');
+  await page.screenshot({
+    path: 'dist/favorites-ui-empty-en.png',
+    fullPage: true,
+  });
+  await mapTab('Nuke').focus();
+  await page.keyboard.press('Enter');
+  assert.equal(await mapTab('Nuke').getAttribute('aria-pressed'), 'true');
+  assert.equal(
+    await page
+      .getByRole('combobox', { name: 'Collection', exact: true })
+      .inputValue(),
+    '',
+  );
+  await page.getByRole('button', { name: 'RU', exact: true }).click();
+  // Removing the final saved grenade preserves its empty collection and map.
+  await page.evaluate(() => {
+    window.__favoritesFixture.favorites = {
+      35: {
+        ...window.__favoritesFixture.backupFavorites[35],
+        map: 'de_nuke',
+        collection_ids: [3],
+      },
+    };
+    window.sessionStorage.setItem(
+      'favorites-test-seed',
+      JSON.stringify(window.__favoritesFixture),
+    );
+  });
+  await page.reload();
+  await page
+    .getByRole('combobox', { name: 'Подборка', exact: true })
+    .selectOption('3');
+  await page.locator('.nade-row').first().waitFor();
+  await page
+    .locator('.nade-row')
+    .getByRole('button', { name: 'Удалить из избранного и всех подборок' })
+    .click();
+  await page.waitForFunction(
+    () =>
+      document.querySelector('.favorites-map-tab.active b')?.textContent ===
+      '0',
+  );
+  assert.equal(
+    await page
+      .getByRole('combobox', { name: 'Подборка', exact: true })
+      .inputValue(),
+    '3',
+  );
+  assert.equal(
+    await page.locator('.map-selector-current strong').textContent(),
+    'Nuke',
+  );
+
   // Original library records pass favorite filters to map, cluster and trajectory requests.
   await page.evaluate(() => {
+    window.__favoritesFixture.favorites =
+      window.__favoritesFixture.backupFavorites;
+    window.sessionStorage.setItem(
+      'nadeviewer.map-view.1.de_mirage',
+      JSON.stringify({
+        filters: {
+          grenade_type: 'smoke',
+          side: 'T',
+          favorites_only: true,
+          favorite_collection_id: 999,
+        },
+      }),
+    );
     window.__favoritesFixture.active = {
       id: 1,
       kind: 'grenade_index',
@@ -381,9 +899,39 @@ try {
   await page.getByRole('button', { name: 'Maps', exact: true }).click();
   await page.locator('.map-tile').first().click();
   await page.waitForURL('**/map/de_mirage');
+  const favoritesToggle = page
+    .locator('.map-workspace')
+    .getByRole('button', { name: 'Favorites', exact: true });
+  assert.equal(await favoritesToggle.getAttribute('aria-pressed'), 'false');
+  await favoritesToggle.click();
+  assert.equal(await favoritesToggle.getAttribute('aria-pressed'), 'true');
+  await page.getByRole('button', { name: 'Maps', exact: true }).click();
+  await page.locator('.map-tile').first().click();
+  await page.waitForURL('**/map/de_mirage');
+  assert.equal(await favoritesToggle.getAttribute('aria-pressed'), 'false');
+  assert.equal(
+    await page.evaluate(
+      () =>
+        JSON.parse(
+          window.sessionStorage.getItem('nadeviewer.map-view.1.de_mirage'),
+        ).filters.grenade_type,
+    ),
+    'smoke',
+  );
   await page
-    .getByRole('button', { name: 'Favorites only', exact: true })
+    .locator('.map-workspace')
+    .getByRole('button', { name: 'Favorites', exact: true })
     .click();
+  assert.equal(
+    await page
+      .getByRole('combobox', { name: 'Collection', exact: true })
+      .count(),
+    0,
+  );
+  assert.equal(
+    await page.getByRole('button', { name: 'Collection', exact: true }).count(),
+    0,
+  );
   await page.locator('.cluster-list button').first().click();
   await page.locator('.nade-row').first().waitFor();
   const requests = await page.evaluate(() =>
@@ -392,6 +940,12 @@ try {
         ['get_map_overview', 'get_cluster_grenades'].includes(call.command) &&
         call.args.filters.favorites_only,
     ),
+  );
+  assert.equal(
+    requests.some((call) =>
+      Object.hasOwn(call.args.filters, 'favorite_collection_id'),
+    ),
+    false,
   );
   assert.ok(requests.some((call) => call.command === 'get_map_overview'));
   assert.ok(
@@ -422,7 +976,7 @@ try {
   );
   assert.deepEqual(errors, []);
   console.log(
-    'Favorites UI checks passed: pagination, collections, immutable navigation without an active library, copy, errors, narrow Russian layout, keyboard focus.',
+    'Favorites UI checks passed: saved maps without imports, collections, empty selections, stale responses, pagination after removal, state restoration, retries, legacy filters, copy and keyboard focus.',
   );
 } catch (error) {
   await page

@@ -30,10 +30,22 @@ Current application version: **0.5.9**.
 ### Favorites and collections
 
 Click a grenade's star in a lineup list or its detail page to save it. The
-collection button assigns the saved grenade to one or more collections; a grenade
+collection button assigns the saved grenade to one or more collections of its map; a grenade
 can also remain in All favorites without belonging to a collection. Removing a
 star removes that saved copy from all collections. Deleting a collection keeps
 its grenades in All favorites.
+
+Favorites opens with a persistent map strip showing the total number of saved
+grenades per map, regardless of filters or collection selection. Choose a map,
+then All favorites or one of that map's collections. Switching maps opens All
+favorites for the new map. Maps with no saved grenades remain available, and
+collections can be created before saving the first grenade. Counts do not double
+count grenades belonging to multiple collections.
+
+Existing single-map collections are assigned to their map automatically. Mixed
+collections split into collections with the same name for each map, preserving
+all memberships. Empty legacy collections require choosing a map in Favorites
+before they can be used.
 
 Favorites are immutable snapshots of the data at the time of saving. Library
 updates do not replace their statistics or screenshots. The Favorites section

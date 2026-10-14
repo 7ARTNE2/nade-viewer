@@ -96,7 +96,6 @@ export type MapSummary = {
 
 export type MapFilters = {
   favorites_only?: boolean;
-  favorite_collection_id?: number;
   grenade_type?: string;
   side?: string;
   movement?: 'all' | 'moving' | 'stationary';
@@ -205,6 +204,7 @@ export type SpawnPoint = {
 export type FavoriteCollection = {
   id: number;
   name: string;
+  map: string | null;
   grenade_count: number;
 };
 
@@ -220,7 +220,17 @@ export type FavoriteDetail = GrenadeDetail & {
   source_label: string;
 };
 
-export type FavoriteFilters = {
+export type FavoriteFilters = Pick<
+  MapFilters,
+  | 'movement'
+  | 'jump'
+  | 'is_insta'
+  | 'radar_level'
+  | 'thrower_team'
+  | 'thrower_steamid64'
+  | 'tournament'
+  | 'min_usage'
+> & {
   map?: string;
   grenade_type?: string;
   side?: string;

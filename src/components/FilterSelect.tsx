@@ -129,7 +129,9 @@ export default function FilterSelect({
 
   useEffect(() => {
     if (!open) return;
-    window.requestAnimationFrame(() => searchRef.current?.focus());
+    window.requestAnimationFrame(() =>
+      searchRef.current?.focus({ preventScroll: true }),
+    );
   }, [open]);
 
   useEffect(() => {
@@ -156,7 +158,8 @@ export default function FilterSelect({
         menuRef.current?.contains(event.target)
       )
         return;
-      close();
+      if (event.type === 'scroll') calculatePosition();
+      else close();
     };
     document.addEventListener('pointerdown', onPointerDown);
     window.addEventListener('resize', onViewportChange);
@@ -169,8 +172,17 @@ export default function FilterSelect({
   }, [open]);
 
   useEffect(() => {
-    optionRefs.current[activeIndex]?.scrollIntoView({ block: 'nearest' });
-  }, [activeIndex]);
+    if (!open) return;
+    const option = optionRefs.current[activeIndex];
+    const list = option?.parentElement;
+    if (!option || !list) return;
+    const optionRect = option.getBoundingClientRect();
+    const listRect = list.getBoundingClientRect();
+    if (optionRect.top < listRect.top)
+      list.scrollTop -= listRect.top - optionRect.top;
+    else if (optionRect.bottom > listRect.bottom)
+      list.scrollTop += optionRect.bottom - listRect.bottom;
+  }, [activeIndex, open]);
 
   const selectOption = (option: FilterSelectOption) => {
     if (disabled || loading) return;

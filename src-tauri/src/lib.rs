@@ -270,7 +270,6 @@ struct ImportSummary {
 #[derive(Deserialize, Default)]
 struct MapFilters {
     favorites_only: Option<bool>,
-    favorite_collection_id: Option<i64>,
     grenade_type: Option<String>,
     side: Option<String>,
     search: Option<String>,
@@ -763,11 +762,16 @@ pub fn run() {
             get_throw_cluster_grenades,
             get_grenade,
             favorites::list_favorites,
+            favorites::get_favorite_maps,
+            favorites::get_favorite_map_overview,
+            favorites::get_favorite_cluster_grenades,
+            favorites::get_favorite_filter_options,
             favorites::get_favorite,
             favorites::save_favorite,
             favorites::delete_favorite,
             favorites::get_favorites_state,
             favorites::create_favorite_collection,
+            favorites::assign_favorite_collection_map,
             favorites::rename_favorite_collection,
             favorites::delete_favorite_collection,
             favorites::set_favorite_collections,
@@ -1216,6 +1220,7 @@ fn init_schema(conn: &Connection) -> AppResult<()> {
     )?;
     conn.execute_batch("PRAGMA optimize")?;
     favorites::init_match_index(conn)?;
+    favorites::backfill_snapshot_metadata(conn)?;
     Ok(())
 }
 
@@ -2780,14 +2785,8 @@ fn filter_sql(
 ) -> String {
     let mut parts = Vec::new();
     if filters.favorites_only == Some(true) {
-        let collection = if let Some(id) = filters.favorite_collection_id {
-            args.push(Box::new(id));
-            " AND EXISTS (SELECT 1 FROM favorite_collection_members cm WHERE cm.favorite_id=fm.favorite_id AND cm.collection_id=?)"
-        } else {
-            ""
-        };
         parts.push(format!(
-            "EXISTS (SELECT 1 FROM favorite_matches fm WHERE fm.grenade_id={alias}.id{collection})"
+            "EXISTS (SELECT 1 FROM favorite_matches fm WHERE fm.grenade_id={alias}.id)"
         ));
     }
     if let Some(t) = filters
@@ -4688,11 +4687,24 @@ fn map_summary(
     import_id: i64,
     map: &str,
 ) -> AppResult<MapSummary> {
+    let mut summary = map_asset_summary(conn, radars, map)?;
+    summary.grenade_count = conn.query_row(
+        "SELECT COUNT(*) FROM grenades WHERE import_id=?1 AND map=?2 AND usage_count >= ?3",
+        params![import_id, map, public_min_usage_count(conn)?],
+        |row| row.get(0),
+    )?;
+    Ok(summary)
+}
+
+fn map_asset_summary(
+    conn: &Connection,
+    radars: &HashMap<String, RadarParams>,
+    map: &str,
+) -> AppResult<MapSummary> {
     let mut summary = conn.query_row(
         "SELECT a.name, a.label, a.preview_image_path, a.map_image_path, a.lower_map_image_path,
-         (SELECT COUNT(*) FROM grenades g WHERE g.import_id=?1 AND g.map=a.name AND g.usage_count >= ?3)
-         FROM map_assets a WHERE a.name=?2",
-        params![import_id, map, public_min_usage_count(conn)?],
+         0 FROM map_assets a WHERE a.name=?1",
+        params![map],
         |row| {
             let name: String = row.get(0)?;
             Ok(MapSummary {
@@ -4753,6 +4765,15 @@ fn cluster_cell_size(coord: &str) -> i64 {
         // so distinct stances stay as separate markers.
         "start" => 10,
         _ => 28,
+    }
+}
+
+fn cluster_side_key(has_t: bool, has_ct: bool) -> &'static str {
+    match (has_t, has_ct) {
+        (true, true) => "MIX",
+        (true, false) => "T",
+        (false, true) => "CT",
+        _ => "NEUTRAL",
     }
 }
 
@@ -4861,15 +4882,7 @@ fn map_overview_by(
             let side_values = sides.split(',').collect::<Vec<_>>();
             let has_t = side_values.contains(&"T");
             let has_ct = side_values.contains(&"CT");
-            let side_key = if has_t && has_ct {
-                "MIX"
-            } else if has_t {
-                "T"
-            } else if has_ct {
-                "CT"
-            } else {
-                "NEUTRAL"
-            };
+            let side_key = cluster_side_key(has_t, has_ct);
             Ok(LandingCluster {
                 id: format!("{}:{}", cx, cy),
                 x: row.get(2)?,

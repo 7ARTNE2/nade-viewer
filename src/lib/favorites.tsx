@@ -7,12 +7,18 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import type { FavoritesState, GrenadePreview } from '../types/domain';
+import type {
+  FavoritesState,
+  GrenadePreview,
+  MapSummary,
+} from '../types/domain';
 import {
   createFavoriteCollection,
+  assignFavoriteCollectionMap,
   deleteFavorite,
   deleteFavoriteCollection,
   getFavoritesState,
+  getFavoriteMaps,
   initializeApplication,
   renameFavoriteCollection,
   saveFavorite,
@@ -29,6 +35,7 @@ const emptyState: FavoritesState = {
 };
 type FavoritesContextValue = {
   state: FavoritesState;
+  maps: MapSummary[];
   revision: number;
   loading: boolean;
   error: boolean;
@@ -36,7 +43,12 @@ type FavoritesContextValue = {
   refresh: () => Promise<void>;
   favoriteId: (grenade: GrenadePreview, saved?: boolean) => number | undefined;
   toggle: (grenade: GrenadePreview, saved?: boolean) => Promise<boolean>;
-  createCollection: (name: string) => Promise<number | undefined>;
+  createCollection: (name: string, map: string) => Promise<number | undefined>;
+  assignCollectionMap: (
+    id: number,
+    map: string,
+    name: string,
+  ) => Promise<boolean>;
   renameCollection: (id: number, name: string) => Promise<boolean>;
   deleteCollection: (id: number) => Promise<boolean>;
   setCollections: (id: number, ids: number[]) => Promise<boolean>;
@@ -45,6 +57,7 @@ const FavoritesContext = createContext<FavoritesContextValue | null>(null);
 
 export function FavoritesProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState(emptyState);
+  const [maps, setMaps] = useState<MapSummary[]>([]);
   const [revision, setRevision] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -57,9 +70,13 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
     const token = ++request.current;
     try {
       await initializeApplication();
-      const next = await getFavoritesState();
+      const [next, nextMaps] = await Promise.all([
+        getFavoritesState(),
+        getFavoriteMaps(),
+      ]);
       if (token !== request.current) return;
       setState(next);
+      setMaps(nextMaps);
       setError(false);
       setRevision((value) => value + 1);
     } catch (cause) {
@@ -142,17 +159,30 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
     );
     return true;
   };
-  const createCollection = (name: string) =>
+  const createCollection = (name: string, map: string) =>
     perform(
-      () => createFavoriteCollection(name),
+      () => createFavoriteCollection(name, map),
       (id, current) => ({
         ...current,
         collections: [
           ...current.collections,
-          { id, name: name.trim(), grenade_count: 0 },
+          { id, name: name.trim(), map, grenade_count: 0 },
         ],
       }),
     );
+  const assignCollectionMap = async (id: number, map: string, name: string) =>
+    (await perform(
+      async () => {
+        await assignFavoriteCollectionMap(id, map, name);
+        return true;
+      },
+      (_, current) => ({
+        ...current,
+        collections: current.collections.map((c) =>
+          c.id === id ? { ...c, map, name: name.trim() } : c,
+        ),
+      }),
+    )) === true;
   const renameCollection = async (id: number, name: string) =>
     (await perform(
       async () => {
@@ -198,6 +228,7 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
     <FavoritesContext.Provider
       value={{
         state,
+        maps,
         revision,
         loading,
         error,
@@ -206,6 +237,7 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
         favoriteId,
         toggle,
         createCollection,
+        assignCollectionMap,
         renameCollection,
         deleteCollection,
         setCollections,

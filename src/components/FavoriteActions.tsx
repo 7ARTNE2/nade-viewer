@@ -8,15 +8,18 @@ import { useModalAccessibility } from '../lib/useModalAccessibility';
 
 function CollectionPicker({
   id,
+  map,
   onClose,
 }: {
   id: number;
+  map: string;
   onClose: () => void;
 }) {
   const { state, busy, setCollections, createCollection } = useFavorites();
   const { tr } = useI18n();
   const [selected, setSelected] = useState(state.favorites[id] ?? []);
   const [name, setName] = useState('');
+  const collections = state.collections.filter((c) => c.map === map);
   const close = useCallback(() => {
     if (!busy) onClose();
   }, [busy, onClose]);
@@ -57,7 +60,7 @@ function CollectionPicker({
           )}
         </p>
         <div className="favorites-collection-checks">
-          {state.collections.map((c) => (
+          {collections.map((c) => (
             <label key={c.id}>
               <input
                 type="checkbox"
@@ -75,7 +78,7 @@ function CollectionPicker({
               <small>{c.grenade_count}</small>
             </label>
           ))}
-          {!state.collections.length && (
+          {!collections.length && (
             <p>
               {tr(
                 'Create your first collection below.',
@@ -88,7 +91,7 @@ function CollectionPicker({
           className="favorites-inline-form"
           onSubmit={async (event) => {
             event.preventDefault();
-            const created = await createCollection(name);
+            const created = await createCollection(name, map);
             if (created !== undefined) {
               setName('');
               setSelected((ids) => [...ids, created]);
@@ -179,7 +182,11 @@ export default function FavoriteActions({
         </button>
       )}
       {picker && id && (
-        <CollectionPicker id={id} onClose={() => setPicker(false)} />
+        <CollectionPicker
+          id={id}
+          map={grenade.map}
+          onClose={() => setPicker(false)}
+        />
       )}
       {error && (
         <button
