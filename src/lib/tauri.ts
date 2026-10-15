@@ -1,4 +1,5 @@
 import { invoke, convertFileSrc } from '@tauri-apps/api/core';
+import type { FavoriteShareScope } from '../types/domain';
 import type {
   FavoriteDetail,
   FavoriteFilters,
@@ -210,6 +211,10 @@ export function getFavorite(id: number) {
 
 export function getFavoritesState() {
   return invoke<FavoritesState>('get_favorites_state');
+}
+
+export function exportFavoritesShare(scope: FavoriteShareScope) {
+  return invoke<string | null>('export_favorites_share', { scope });
 }
 
 export function saveFavorite(id: number) {

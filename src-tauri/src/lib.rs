@@ -172,6 +172,7 @@ struct LibraryUpdate {
 
 #[derive(Deserialize, Default)]
 struct ImportEnvelopeShape {
+    format: Option<String>,
     version: Option<Value>,
     updated_at: Option<String>,
     core_nades: Option<bool>,
@@ -215,6 +216,16 @@ struct ImportReport {
 #[derive(Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum JsonImportReport {
+    FavoritesShare {
+        grenade_count: u64,
+        map_count: u64,
+        added_count: u64,
+        reused_count: u64,
+        collection_count: u64,
+        added_collections: u64,
+        merged_collections: u64,
+        source_path: String,
+    },
     GrenadeIndex {
         import_id: i64,
         grenade_count: u64,
@@ -775,6 +786,7 @@ pub fn run() {
             favorites::rename_favorite_collection,
             favorites::delete_favorite_collection,
             favorites::set_favorite_collections,
+            favorites::share::export_favorites_share,
             record_grenade_view,
             get_recently_viewed_grenades,
             get_similar_grenades,
@@ -2068,6 +2080,12 @@ fn import_stream_blocking(
     let source_path = PathBuf::from(path);
     let messagepack = is_messagepack_path(&source_path);
     let shape = read_import_shape(&source_path, messagepack)?;
+    if messagepack
+        && (shape.format.as_deref() == Some("nade-viewer-favorites")
+            || path.to_lowercase().ends_with(".nvshare.msgpack"))
+    {
+        return favorites::share::import_blocking(state, path);
+    }
     validate_import_shape(&shape)?;
     // Inspecting the envelope can take a while on huge files, so honour a
     // cancel request that arrived during that pass before streaming begins.
@@ -3265,7 +3283,7 @@ fn trajectory_storage_json(
 fn select_import_file() -> Option<String> {
     rfd::FileDialog::new()
         .add_filter(
-            "Nade libraries",
+            "Nade libraries and favorites",
             &["json", "messagepack", "msgpack", "mpk", "zip"],
         )
         .pick_file()

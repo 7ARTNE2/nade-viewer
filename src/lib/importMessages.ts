@@ -30,6 +30,11 @@ const IMPORT_STAGE_LABELS: Record<string, readonly [string, string]> = {
  * messages (for example reading a library or indexing grenades).
  */
 const IMPORT_STATUS_MESSAGES: Record<string, readonly [string, string]> = {
+  'Importing favorites': ['Importing favorites', 'Импорт избранного'],
+  'Favorites import complete': [
+    'Favorites import complete',
+    'Импорт избранного завершён',
+  ],
   Ready: ['Ready', 'Готово'],
   'Reading import': ['Reading import', 'Чтение файла импорта'],
   'Import state is unavailable': [
@@ -100,6 +105,18 @@ const IMPORT_STATUS_MESSAGES: Record<string, readonly [string, string]> = {
  * `AppError::Import { code, .. }`.
  */
 const IMPORT_ERROR_LABELS: Record<string, readonly [string, string]> = {
+  unsupported_share_format: [
+    'Expected a favorites sharing file',
+    'Ожидается файл обмена избранным',
+  ],
+  unsupported_share_version: [
+    'This favorites file version is not supported',
+    'Версия файла избранного не поддерживается',
+  ],
+  invalid_share_package: [
+    'The favorites file is invalid',
+    'Файл избранного содержит некорректные данные',
+  ],
   import_cancelled: ['Import cancelled', 'Импорт отменён'],
   import_already_running: [
     'An import is already running',
@@ -110,8 +127,8 @@ const IMPORT_ERROR_LABELS: Record<string, readonly [string, string]> = {
     'Состояние импорта недоступно',
   ],
   file_unavailable: [
-    'The library file cannot be opened',
-    'Не удалось открыть файл библиотеки',
+    'The import file cannot be opened',
+    'Не удалось открыть файл импорта',
   ],
   invalid_json: [
     'The JSON file is invalid',

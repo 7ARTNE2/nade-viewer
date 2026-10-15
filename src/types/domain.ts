@@ -67,6 +67,17 @@ export type OnboardingState = {
 
 export type JsonImportReport =
   | {
+      kind: 'favorites_share';
+      grenade_count: number;
+      map_count: number;
+      added_count: number;
+      reused_count: number;
+      collection_count: number;
+      added_collections: number;
+      merged_collections: number;
+      source_path: string;
+    }
+  | {
       kind: 'grenade_index';
       import_id: number;
       grenade_count: number;
@@ -93,6 +104,11 @@ export type MapSummary = {
   radar_split_z?: number | null;
   radar_scale?: number | null;
 };
+
+export type FavoriteShareScope =
+  | { kind: 'collection'; collection_id: number }
+  | { kind: 'map'; map: string }
+  | { kind: 'all' };
 
 export type MapFilters = {
   favorites_only?: boolean;

@@ -1,5 +1,6 @@
 //! Durable, immutable lineup snapshots. Source matches are disposable links.
 use super::*;
+pub(super) mod share;
 
 pub(super) fn init_schema(conn: &Connection) -> AppResult<()> {
     conn.execute_batch(
@@ -96,7 +97,7 @@ pub(super) fn init_match_index(conn: &Connection) -> AppResult<()> {
     Ok(())
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 struct Snapshot {
     detail: GrenadeDetail,
     raw: RawGrenade,
@@ -1061,12 +1062,12 @@ pub(super) fn set_favorite_collections(
 mod tests {
     use super::*;
 
-    struct Fixture {
-        state: AppState,
-        root: PathBuf,
+    pub(super) struct Fixture {
+        pub(super) state: AppState,
+        pub(super) root: PathBuf,
     }
     impl Fixture {
-        fn new() -> Self {
+        pub(super) fn new() -> Self {
             let root = env::temp_dir().join(format!(
                 "nade-favorites-{}-{}",
                 std::process::id(),
@@ -1085,7 +1086,7 @@ mod tests {
             super::super::init_schema(&open_conn(&state).unwrap()).unwrap();
             Self { state, root }
         }
-        fn import(&self, usage: i64, complete: bool) -> (i64, i64) {
+        pub(super) fn import(&self, usage: i64, complete: bool) -> (i64, i64) {
             let positions = if complete {
                 r#", "start_pos_x":1, "start_pos_y":2, "start_pos_z":3, "explode_pos_x":4, "explode_pos_y":5, "explode_pos_z":6, "coordinates":"setpos 1 2 3; setang 10 20 0""#
             } else {

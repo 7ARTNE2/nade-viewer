@@ -14,6 +14,7 @@ import {
 import MapWorkspace from './MapWorkspace';
 import DestructiveConfirmDialog from '../components/DestructiveConfirmDialog';
 import FilterSelect from '../components/FilterSelect';
+import FavoritesExportMenu from '../components/FavoritesExportMenu';
 import { useFavorites } from '../lib/favorites';
 import { useI18n } from '../i18n';
 import { useModalAccessibility } from '../lib/useModalAccessibility';
@@ -328,6 +329,13 @@ export default function FavoritesPage() {
           </>
         )}
       </div>
+      <FavoritesExportMenu
+        map={selection.map}
+        maps={maps}
+        collections={state.collections}
+        selectedCollectionId={selected?.id}
+        disabled={busy || loading || error}
+      />
     </div>
   );
   return (

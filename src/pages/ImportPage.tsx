@@ -43,6 +43,7 @@ import type {
 } from '../types/domain';
 import { useI18n } from '../i18n';
 import { useToast } from '../components/Toast';
+import { useFavorites } from '../lib/favorites';
 
 type Props = {
   onImported: () => Promise<void>;
@@ -68,6 +69,7 @@ export default function ImportPage({
 }: Props) {
   const { locale, tr, count } = useI18n();
   const { showToast } = useToast();
+  const { refresh: refreshFavorites } = useFavorites();
   const navigate = useNavigate();
   const [path, setPath] = useState('');
   const [status, setStatus] = useState<ImportStatus>(IMPORT_STATUS_IDLE);
@@ -175,7 +177,16 @@ export default function ImportPage({
       if (token !== runTokenRef.current) return;
       setStatus(await getImportStatus());
       await onImported();
-      if (report.kind === 'screenshot_archive') {
+      await refreshFavorites();
+      if (report.kind === 'favorites_share') {
+        showToast(
+          tr(
+            `Added ${formatNumber(report.added_count)} favorites and ${formatNumber(report.added_collections)} collections`,
+            `Добавлено ${formatNumber(report.added_count)} раскидок и ${formatNumber(report.added_collections)} подборок`,
+          ),
+          { tone: 'success', duration: 3000 },
+        );
+      } else if (report.kind === 'screenshot_archive') {
         showToast(
           tr(
             `Imported ${formatNumber(report.grenade_count)} lineups and ${formatNumber(report.screenshot_count)} screenshots`,
@@ -325,8 +336,8 @@ export default function ImportPage({
           <h1>{tr('Bring your lineups in.', 'Импортируйте раскидки.')}</h1>
           <p className="muted wide">
             {tr(
-              'Load a grenade index in JSON or MessagePack. Everything stays on this device.',
-              'Загрузите индекс гранат в JSON или MessagePack. Все данные останутся на этом устройстве.',
+              'Load a library in JSON or MessagePack, or a .nvshare.msgpack favorites file. Everything stays on this device.',
+              'Загрузите библиотеку в JSON или MessagePack либо файл избранного .nvshare.msgpack. Все данные останутся на этом устройстве.',
             )}
           </p>
           <div className="import-features">
@@ -350,8 +361,20 @@ export default function ImportPage({
               <div className="eyebrow">
                 {tr('Import complete', 'Импорт завершён')}
               </div>
-              <h2>{tr('Your library is ready', 'Библиотека готова')}</h2>
+              <h2>
+                {completion.kind === 'favorites_share'
+                  ? tr('Favorites imported', 'Избранное импортировано')
+                  : tr('Your library is ready', 'Библиотека готова')}
+              </h2>
               <p className="muted">{sourceFileName(completion.source_path)}</p>
+              {completion.kind === 'favorites_share' && (
+                <p className="muted">
+                  {tr(
+                    `Added: ${formatNumber(completion.added_count)} favorites, ${formatNumber(completion.added_collections)} collections. Already saved: ${formatNumber(completion.reused_count)}. Merged collections: ${formatNumber(completion.merged_collections)}.`,
+                    `Добавлено: ${formatNumber(completion.added_count)} раскидок, ${formatNumber(completion.added_collections)} подборок. Уже сохранено: ${formatNumber(completion.reused_count)}. Объединено подборок: ${formatNumber(completion.merged_collections)}.`,
+                  )}
+                </p>
+              )}
               <div className="import-complete-counts">
                 <div>
                   <b>{formatNumber(completion.grenade_count)}</b>
@@ -399,10 +422,19 @@ export default function ImportPage({
                 <button
                   className="btn primary"
                   data-tour="import-view-maps"
-                  onClick={() => navigate('/maps', { replace: true })}
+                  onClick={() =>
+                    navigate(
+                      completion.kind === 'favorites_share'
+                        ? '/favorites'
+                        : '/maps',
+                      { replace: true },
+                    )
+                  }
                 >
                   <Map size={17} />
-                  {tr('View maps', 'К картам')}
+                  {completion.kind === 'favorites_share'
+                    ? tr('View favorites', 'К избранному')
+                    : tr('View maps', 'К картам')}
                 </button>
                 <button className="btn" onClick={startAnotherImport}>
                   <Upload size={17} />
@@ -422,20 +454,20 @@ export default function ImportPage({
                     ? busyLabel
                     : dragging
                       ? tr(
-                          'Release to import the library',
-                          'Отпустите для импорта библиотеки',
+                          'Release to import the file',
+                          'Отпустите для импорта файла',
                         )
                       : tr(
-                          'Drop a library file here',
-                          'Перетащите файл библиотеки сюда',
+                          'Drop a library or favorites file here',
+                          'Перетащите файл библиотеки или избранного сюда',
                         )}
                 </strong>
                 <span>
                   {busy
                     ? progressText
                     : tr(
-                        'grenade_index JSON/MessagePack or Nadegrid Screenshot ZIP',
-                        'grenade_index в JSON/MessagePack или ZIP скриншотов Nadegrid',
+                        'JSON / MessagePack, Nadegrid ZIP or .nvshare.msgpack',
+                        'JSON / MessagePack, ZIP Nadegrid или .nvshare.msgpack',
                       )}
                 </span>
               </div>

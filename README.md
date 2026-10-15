@@ -51,6 +51,25 @@ Favorites are immutable snapshots of the data at the time of saving. Library
 updates do not replace their statistics or screenshots. The Favorites section
 works even when no imported library remains.
 
+Use the compact Export menu next to the collection selector in Favorites to
+save a portable `.nvshare.msgpack` file. Choose Collection to export any named
+collection on the current map (including an empty collection), All favorites
+on this map, or All maps. Exports include the complete selected
+set regardless of filters or pagination, collection names and memberships,
+statistics, trajectories, demo metadata, saved dates, and embedded screenshots.
+An individual collection export includes only that collection. Map and all-map
+exports also retain empty collections with an assigned map; assign a map to
+legacy empty collections before sharing them.
+
+The recipient opens the file on the regular Import page (file picker or drag and
+drop). The app detects favorites packages separately from library files and
+adds them directly to Favorites, keeping the active library. Existing saved
+lineups retain their data and screenshots, while new collection memberships
+are added. Collections with the same name on the same map are merged. Repeating
+an import does not duplicate saved lineups or memberships. Files use the
+`nade-viewer-favorites` MessagePack envelope, version 1, and require an app
+version that supports favorites sharing.
+
 The map's Favorites only filter shows matching records from the **active
 library**, optionally restricted to a collection. Matching requires the same
 normalized map, type, side, throw keys, coordinate text, and exact world

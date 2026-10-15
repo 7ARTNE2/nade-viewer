@@ -186,6 +186,41 @@ try {
             ];
           case 'get_onboarding_state':
             return { completed: true };
+          case 'export_favorites_share':
+            return model.cancelShare ? null : 'favorites-test.nvshare.msgpack';
+          case 'select_import_file':
+            return 'received.nvshare.msgpack';
+          case 'get_import_status':
+            return {
+              running: false,
+              stage: 'done',
+              current: 1,
+              total: 1,
+              message: 'Favorites import complete',
+              phase_current: 1,
+              phase_total: 1,
+            };
+          case 'import_json': {
+            const id = 200;
+            model.favorites[id] = { ...detail(id), collection_ids: [30] };
+            model.collections.push({
+              id: 30,
+              name: 'Полученная подборка',
+              map: 'de_mirage',
+              grenade_count: 1,
+            });
+            return {
+              kind: 'favorites_share',
+              grenade_count: 1,
+              map_count: 1,
+              added_count: 1,
+              reused_count: 0,
+              collection_count: 1,
+              added_collections: 1,
+              merged_collections: 0,
+              source_path: args.path,
+            };
+          }
           case 'get_favorites_state':
             return {
               collections: model.collections.map((c) => ({
@@ -393,6 +428,87 @@ try {
   };
   assert.equal(await mapTab('Mirage').locator('b').textContent(), '36');
   assert.equal(await mapTab('Nuke').locator('b').textContent(), '0');
+  const exportTrigger = () =>
+    page.getByRole('button', {
+      name: /^(Экспорт избранного|Export favorites)$/,
+    });
+  const exportMenu = () => page.locator('.favorites-export-menu');
+  const exportScope = async (name) => {
+    await exportTrigger().click();
+    await exportMenu().getByRole('menuitem', { name }).click();
+    await exportMenu().waitFor({ state: 'hidden' });
+    await page.waitForFunction(
+      () => !document.querySelector('.favorites-export-trigger')?.disabled,
+    );
+  };
+  assert.equal(await page.locator('.favorites-share-actions').count(), 0);
+  await exportTrigger().press('ArrowDown');
+  await exportMenu().getByRole('menuitem').first().waitFor();
+  await page.keyboard.press('Escape');
+  await page.waitForFunction(() =>
+    document.activeElement?.classList.contains('favorites-export-trigger'),
+  );
+  assert.equal(
+    await exportTrigger().evaluate((el) => el === document.activeElement),
+    true,
+  );
+  await exportScope(/Все избранные карты/);
+  await exportScope(/Все карты/);
+  const shareCalls = await page.evaluate(() =>
+    window.__favoritesFixture.calls
+      .filter((call) => call.command === 'export_favorites_share')
+      .map((call) => call.args.scope),
+  );
+  assert.deepEqual(shareCalls, [
+    { kind: 'map', map: 'de_mirage' },
+    { kind: 'all' },
+  ]);
+  await mapTab('Nuke').click();
+  await exportTrigger().click();
+  assert.equal(
+    await exportMenu()
+      .getByRole('menuitem', { name: /Все избранные карты/ })
+      .isDisabled(),
+    true,
+  );
+  await page.keyboard.press('Escape');
+  await mapTab('Mirage').click();
+  await page.locator('.nade-row').first().waitFor();
+  await page.evaluate(() => {
+    window.__favoritesFixture.cancelShare = true;
+  });
+  await exportScope(/Все карты/);
+  await page.waitForFunction(
+    () =>
+      window.__favoritesFixture.calls.filter(
+        (call) => call.command === 'export_favorites_share',
+      ).length === 3,
+  );
+  await page.waitForFunction(
+    () =>
+      ![...document.querySelectorAll('.favorites-export-trigger')].some(
+        (button) => button.disabled,
+      ),
+  );
+  await page.evaluate(() => {
+    window.__favoritesFixture.cancelShare = false;
+    window.__favoritesFixture.failNext = 'export_favorites_share';
+  });
+  await exportTrigger().click();
+  await exportMenu()
+    .getByRole('menuitem', { name: /Все карты/ })
+    .click();
+  await page.waitForFunction(
+    () =>
+      window.__favoritesFixture.calls.filter(
+        (call) => call.command === 'export_favorites_share',
+      ).length === 4,
+  );
+  await page
+    .locator('.favorites-share-error')
+    .filter({ hasText: 'Не удалось экспортировать избранное' })
+    .waitFor();
+  await page.keyboard.press('Escape');
   assert.equal(
     await page.getByRole('button', { name: 'Выбрать карту' }).count(),
     0,
@@ -411,6 +527,44 @@ try {
     true,
   );
   await page.screenshot({ path: 'dist/favorites-ui-wide.png', fullPage: true });
+  await exportTrigger().click();
+  await exportMenu()
+    .getByRole('menuitem', { name: /Подборка/ })
+    .click();
+  await page.screenshot({
+    path: 'dist/favorites-export-collections.png',
+    fullPage: true,
+  });
+  await exportMenu()
+    .getByRole('menuitem', { name: /Тренировка Mirage/ })
+    .click();
+  await exportMenu().waitFor({ state: 'hidden' });
+  assert.deepEqual(
+    await page.evaluate(
+      () =>
+        window.__favoritesFixture.calls
+          .filter((call) => call.command === 'export_favorites_share')
+          .at(-1).args.scope,
+    ),
+    { kind: 'collection', collection_id: 1 },
+  );
+  // Exporting an empty collection works without selecting it in the workspace.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await exportTrigger().click();
+  await exportMenu().evaluate((el) =>
+    Promise.all(el.getAnimations().map((animation) => animation.finished)),
+  );
+  await page.screenshot({
+    path: 'dist/favorites-export-mobile.png',
+    fullPage: true,
+  });
+  const menuBounds = await exportMenu().boundingBox();
+  assert.ok(menuBounds.x >= 0 && menuBounds.x + menuBounds.width <= 390);
+  await page.keyboard.press('Escape');
+  await exportTrigger().click();
+  await page.locator('.favorites-map-tab').first().click();
+  assert.equal(await exportMenu().count(), 0);
+  await mapTab('Mirage').click();
   await page.setViewportSize({ width: 900, height: 650 });
   await page
     .getByRole('button', { name: 'Следующие выбранные гранаты' })
@@ -436,8 +590,11 @@ try {
       .press('ArrowDown');
     const search = page.getByRole('dialog').getByRole('combobox');
     await search.fill(option);
-    await search.press('ArrowDown');
-    await search.press('Enter');
+    await page
+      .getByRole('dialog')
+      .getByRole('option')
+      .filter({ hasText: option })
+      .press('Enter');
     await page.keyboard.press('Escape');
   };
   await chooseFilter('tournament', 'Cup A');
@@ -757,6 +914,30 @@ try {
   await page.locator('.cluster-list button.selected').click();
 
   // Deleting a collection must leave saved snapshots intact.
+  await exportTrigger().click();
+  await exportMenu()
+    .getByRole('menuitem', { name: /Подборка/ })
+    .click();
+  await exportMenu()
+    .getByRole('menuitem')
+    .filter({ hasText: 'Выбранная подборка' })
+    .click();
+  await exportMenu().waitFor({ state: 'hidden' });
+  const sharedCollection = await page.evaluate(() => {
+    const current = JSON.parse(
+      window.sessionStorage.getItem('nadeviewer.favorites-selection'),
+    );
+    return {
+      scope: window.__favoritesFixture.calls
+        .filter((call) => call.command === 'export_favorites_share')
+        .at(-1).args.scope,
+      selected: current.collectionId,
+    };
+  });
+  assert.deepEqual(sharedCollection.scope, {
+    kind: 'collection',
+    collection_id: sharedCollection.selected,
+  });
   await page
     .getByRole('button', { name: 'Удалить подборку', exact: true })
     .click();
@@ -1136,10 +1317,82 @@ try {
       ),
   );
   assert.deepEqual(errors, []);
+  // Shared favorites use the common Import page and refresh saved map counts.
+  const beforeImportCount = await page.evaluate(
+    () =>
+      Object.values(window.__favoritesFixture.favorites).filter(
+        (favorite) => favorite.map === 'de_mirage',
+      ).length,
+  );
+  await page
+    .getByRole('button', { name: 'Import library', exact: true })
+    .first()
+    .click();
+  await page.getByRole('button', { name: 'Choose file', exact: true }).click();
+  await page
+    .getByRole('heading', { name: 'Favorites imported', exact: true })
+    .waitFor();
+  await page
+    .getByText(
+      'Added: 1 favorites, 1 collections. Already saved: 0. Merged collections: 0.',
+      { exact: true },
+    )
+    .waitFor();
+  await page
+    .getByRole('button', { name: 'View favorites', exact: true })
+    .click();
+  await page.waitForURL('**/favorites');
+  await mapTab('Mirage').click();
+  await page.locator('.nade-row').first().waitFor();
+  assert.equal(
+    await mapTab('Mirage').locator('b').textContent(),
+    String(beforeImportCount + 1),
+  );
+  assert.equal(
+    await page.evaluate(() => window.__favoritesFixture.active.id),
+    1,
+  );
+  // Empty collections remain exportable even when no saved grenades remain.
+  await page.evaluate(() => {
+    window.__favoritesFixture.favorites = {};
+    window.sessionStorage.setItem(
+      'favorites-test-seed',
+      JSON.stringify({
+        favorites: {},
+        collections: window.__favoritesFixture.collections,
+        active: window.__favoritesFixture.active,
+      }),
+    );
+  });
+  await page.reload();
+  await page.locator('.boot-screen').waitFor({ state: 'hidden' });
+  await page.waitForFunction(
+    () => document.querySelector('.favorites-map-tab b')?.textContent === '0',
+  );
+  assert.equal(await page.locator('.favorites-share-actions').count(), 0);
+  await exportTrigger().click();
+  assert.equal(
+    await exportMenu()
+      .getByRole('menuitem', { name: /All maps|Все карты/ })
+      .isEnabled(),
+    true,
+  );
+  await page.keyboard.press('Escape');
+  assert.deepEqual(errors, []);
   console.log(
-    'Favorites UI checks passed: saved maps without imports, collections, empty selections, stale responses, pagination after removal, state restoration, retries, legacy filters, copy and keyboard focus.',
+    'Favorites UI checks passed: all sharing scopes, export cancellation/failure, common favorites import, saved maps without imports, collections, empty selections, stale responses, pagination after removal, state restoration, retries, legacy filters, copy and keyboard focus.',
   );
 } catch (error) {
+  console.error(
+    await page?.evaluate(() => ({
+      recentCalls: window.__favoritesFixture?.calls.slice(-10),
+      shareCalls: window.__favoritesFixture?.calls.filter(
+        (call) => call.command === 'export_favorites_share',
+      ),
+      failNext: window.__favoritesFixture?.failNext,
+      toast: document.querySelector('.toast-viewport')?.textContent,
+    })),
+  );
   await page
     ?.screenshot({ path: 'dist/favorites-ui-failure.png', fullPage: true })
     .catch(() => {});
