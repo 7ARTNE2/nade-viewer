@@ -52,7 +52,7 @@ updates do not replace their statistics or screenshots. The Favorites section
 works even when no imported library remains.
 
 Use the compact Export menu next to the collection selector in Favorites to
-save a portable `.nvshare.msgpack` file. Choose Collection to export any named
+save a portable `.nvshare` file. Choose Collection to export any named
 collection on the current map (including an empty collection), All favorites
 on this map, or All maps. Exports include the complete selected
 set regardless of filters or pagination, collection names and memberships,
@@ -69,6 +69,18 @@ are added. Collections with the same name on the same map are merged. Repeating
 an import does not duplicate saved lineups or memberships. Files use the
 `nade-viewer-favorites` MessagePack envelope, version 1, and require an app
 version that supports favorites sharing.
+
+Default names include the local date in `YYYY-MM-DD` format:
+`mirage-2026-10-15.nvshare` for a map,
+`mirage-Атака-A-2026-10-15.nvshare` for a collection, and
+`all-2026-10-15.nvshare` for all maps.
+Collection names retain Unicode, are limited to 32 characters, and have invalid
+Windows filename characters replaced with hyphens. The complete filename stem
+is limited to 64 characters including the date. Existing files use the native overwrite prompt;
+if a manually entered extension needs correction, the save dialog reopens with
+the final `.nvshare` filename before anything is written.
+The content remains MessagePack. Older `.nvshare.msgpack`, `.msgpack`,
+`.messagepack`, and `.mpk` favorites packages remain importable.
 
 The map's Favorites only filter shows matching records from the **active
 library**, optionally restricted to a collection. Matching requires the same

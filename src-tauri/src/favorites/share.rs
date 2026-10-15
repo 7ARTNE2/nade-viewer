@@ -223,17 +223,129 @@ fn package_from_conn(
     })
 }
 
-fn write_package(path: &Path, package: &SharePackage) -> AppResult<()> {
-    let temporary = path.with_extension(format!(
-        "msgpack.{}.{}.tmp",
+fn safe_filename_part(value: &str, limit: usize) -> String {
+    let mut result = String::new();
+    for character in value.chars() {
+        let character = if character.is_whitespace()
+            || character.is_control()
+            || "<>:\"/\\|?*".contains(character)
+        {
+            '-'
+        } else {
+            character
+        };
+        if character != '-' || !result.ends_with('-') {
+            result.push(character);
+        }
+    }
+    let trim = |c: char| matches!(c, '.' | '-' | '_');
+    result = result.trim_matches(trim).chars().take(limit).collect();
+    result = result.trim_end_matches(trim).to_string();
+    if result.is_empty() {
+        result = "collection".into();
+    }
+    let device = result.split('.').next().unwrap_or_default().to_uppercase();
+    if matches!(
+        device.as_str(),
+        "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$"
+    ) || ["COM", "LPT"].iter().any(|prefix| {
+        device.strip_prefix(prefix).is_some_and(|suffix| {
+            matches!(
+                suffix,
+                "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "¹" | "²" | "³"
+            )
+        })
+    }) {
+        result = format!("nv-{result}");
+        result = result.chars().take(limit).collect();
+    }
+    result
+}
+
+fn default_filename(
+    map: Option<&str>,
+    collection: Option<&str>,
+    date: chrono::NaiveDate,
+) -> String {
+    let Some(map) = map else {
+        return format!("all-{}.nvshare", date.format("%Y-%m-%d"));
+    };
+    let map = map.trim();
+    let map = map
+        .strip_prefix("de_")
+        .or_else(|| map.strip_prefix("cs_"))
+        .unwrap_or(map);
+    // Reserve 11 characters for the separator and local calendar date.
+    let map = safe_filename_part(map, if collection.is_some() { 20 } else { 53 });
+    let stem = match collection {
+        Some(name) => format!("{map}-{}", safe_filename_part(name, 32)),
+        None => map,
+    };
+    format!(
+        "{}-{}.nvshare",
+        safe_filename_part(&stem, 53),
+        date.format("%Y-%m-%d")
+    )
+}
+
+fn normalize_export_path(path: &Path) -> PathBuf {
+    let Some(name) = path.file_name() else {
+        return path.to_path_buf();
+    };
+    let name = name.to_string_lossy();
+    let mut stem = name.trim_end_matches(['.', ' ']).to_string();
+    // Collapse legacy and accidentally repeated extensions into one suffix.
+    loop {
+        let lower = stem.to_lowercase();
+        let suffix = [".nvshare", ".messagepack", ".msgpack", ".mpk"]
+            .into_iter()
+            .find(|suffix| lower.ends_with(suffix));
+        let Some(suffix) = suffix else {
+            break;
+        };
+        stem.truncate(stem.len() - suffix.len());
+        stem = stem.trim_end_matches(['.', ' ']).to_string();
+    }
+    if stem.is_empty() {
+        stem = "collection".into();
+    }
+    path.with_file_name(format!("{stem}.nvshare"))
+}
+
+// A changed extension can point at a different existing file. Reopen the native
+// dialog with that exact path so its overwrite prompt applies to the file written.
+fn select_export_path(
+    suggested: &str,
+    mut pick: impl FnMut(&Path) -> Option<PathBuf>,
+) -> Option<PathBuf> {
+    let mut suggested = PathBuf::from(suggested);
+    loop {
+        let selected = pick(&suggested)?;
+        let normalized = normalize_export_path(&selected);
+        if selected == normalized {
+            return Some(selected);
+        }
+        suggested = normalized;
+    }
+}
+
+fn temporary_export_path(path: &Path) -> PathBuf {
+    path.with_file_name(format!(
+        ".nv-{:x}-{:x}.tmp",
         std::process::id(),
         Utc::now().timestamp_nanos_opt().unwrap_or_default()
-    ));
+    ))
+}
+
+fn write_package(path: &Path, package: &SharePackage) -> AppResult<()> {
+    let temporary = temporary_export_path(path);
+    let mut created = false;
     let result = (|| -> AppResult<()> {
         let file = fs::OpenOptions::new()
             .write(true)
             .create_new(true)
             .open(&temporary)?;
+        created = true;
         let mut writer = BufWriter::new(file);
         rmp_serde::encode::write_named(&mut writer, package).map_err(|e| invalid(e.to_string()))?;
         writer.flush()?;
@@ -242,7 +354,7 @@ fn write_package(path: &Path, package: &SharePackage) -> AppResult<()> {
         fs::rename(&temporary, path)?;
         Ok(())
     })();
-    if result.is_err() {
+    if result.is_err() && created {
         let _ = fs::remove_file(&temporary);
     }
     result
@@ -256,35 +368,29 @@ pub(crate) async fn export_favorites_share(
     let state = state.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
         let conn = open_conn(&state)?;
-        let label = match &scope {
-            ShareScope::All => "all".into(),
-            ShareScope::Map { map } => map.clone(),
-            ShareScope::Collection { collection_id } => conn.query_row(
-                "SELECT name FROM favorite_collections WHERE id=?1",
-                [collection_id],
-                |r| r.get::<_, String>(0),
-            )?,
+        let date = chrono::Local::now().date_naive();
+        let name = match &scope {
+            ShareScope::All => default_filename(None, None, date),
+            ShareScope::Map { map } => default_filename(Some(map), None, date),
+            ShareScope::Collection { collection_id } => {
+                let (name, map): (String, Option<String>) = conn.query_row(
+                    "SELECT name, map FROM favorite_collections WHERE id=?1",
+                    [collection_id],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )?;
+                let map = map.ok_or_else(|| invalid("Choose a map for this collection first"))?;
+                default_filename(Some(&map), Some(&name), date)
+            }
         };
-        let label: String = label
-            .chars()
-            .map(|c| {
-                if c.is_control() || "<>:\"/\\|?*".contains(c) {
-                    '_'
-                } else {
-                    c
-                }
-            })
-            .take(80)
-            .collect();
-        let name = format!(
-            "favorites-{label}-{}.nvshare.msgpack",
-            Utc::now().format("%Y-%m-%d")
-        );
-        let Some(path) = rfd::FileDialog::new()
-            .add_filter("Nade Viewer favorites", &["nvshare.msgpack"])
-            .set_file_name(name)
-            .save_file()
-        else {
+        let Some(path) = select_export_path(&name, |suggested| {
+            let mut dialog = rfd::FileDialog::new()
+                .add_filter("Nade Viewer favorites", &["nvshare"])
+                .set_file_name(suggested.file_name().unwrap_or_default().to_string_lossy());
+            if let Some(parent) = suggested.parent().filter(|p| !p.as_os_str().is_empty()) {
+                dialog = dialog.set_directory(parent);
+            }
+            dialog.save_file()
+        }) else {
             return Ok(None);
         };
         let package = package_from_conn(&conn, &state, &scope)?;
@@ -566,6 +672,141 @@ mod tests {
     }
 
     #[test]
+    fn export_names_are_short_unicode_and_windows_safe() {
+        let date = chrono::NaiveDate::from_ymd_opt(2026, 10, 15).unwrap();
+        let filename = |map, collection| default_filename(map, collection, date);
+        assert_eq!(filename(None, None), "all-2026-10-15.nvshare");
+        assert_eq!(
+            filename(Some("de_mirage"), None),
+            "mirage-2026-10-15.nvshare"
+        );
+        assert_eq!(
+            filename(Some("cs_office"), None),
+            "office-2026-10-15.nvshare"
+        );
+        assert_eq!(
+            filename(Some("de_mirage"), Some("Атака A")),
+            "mirage-Атака-A-2026-10-15.nvshare"
+        );
+        for (input, expected) in [
+            (" ..__ Атака\tA / B:*?<>|\"\\\n\0 ..--", "Атака-A-B"),
+            ("", "collection"),
+            (" ._-\t? ", "collection"),
+            ("..Тактика...", "Тактика"),
+            ("con", "nv-con"),
+            ("NUL.txt", "nv-NUL.txt"),
+            ("COM1", "nv-COM1"),
+            ("LPT²", "nv-LPT²"),
+            ("CONOUT$", "nv-CONOUT$"),
+            ("COM10", "COM10"),
+        ] {
+            assert_eq!(safe_filename_part(input, 32), expected, "{input:?}");
+        }
+        assert_eq!(
+            filename(Some("de_"), Some("...")),
+            "collection-collection-2026-10-15.nvshare"
+        );
+        assert_eq!(filename(Some("cs_CON"), None), "nv-CON-2026-10-15.nvshare");
+        let long = "Я".repeat(100);
+        assert_eq!(
+            filename(Some("de_mirage"), Some(&long)),
+            format!("mirage-{}-2026-10-15.nvshare", "Я".repeat(32))
+        );
+        assert_eq!(
+            filename(Some(&long), Some(&long)),
+            format!("{}-{}-2026-10-15.nvshare", "Я".repeat(20), "Я".repeat(32))
+        );
+        assert_eq!(
+            filename(Some(&long), Some(&long))
+                .trim_end_matches(".nvshare")
+                .chars()
+                .count(),
+            64
+        );
+        assert_eq!(
+            filename(Some(&long), None)
+                .trim_end_matches(".nvshare")
+                .chars()
+                .count(),
+            64
+        );
+        assert!(!safe_filename_part(&format!("{}-tail", "Я".repeat(31)), 32).ends_with('-'));
+    }
+
+    #[test]
+    fn manual_export_names_have_one_final_extension() {
+        for (input, expected) in [
+            ("Атака A", "Атака A.nvshare"),
+            ("mirage.nvshare", "mirage.nvshare"),
+            ("mirage.NVSHARE", "mirage.nvshare"),
+            ("mirage.nvshare.msgpack", "mirage.nvshare"),
+            ("mirage.nvshare.nvshare", "mirage.nvshare"),
+            ("mirage.MESSAGEPACK", "mirage.nvshare"),
+            ("mirage.mpk", "mirage.nvshare"),
+            ("mirage .msgpack. ", "mirage.nvshare"),
+            ("custom.backup", "custom.backup.nvshare"),
+            (".nvshare", "collection.nvshare"),
+        ] {
+            let parent = Path::new("folder.with.dots");
+            let actual = normalize_export_path(&parent.join(input));
+            assert_eq!(actual, parent.join(expected));
+            assert_eq!(normalize_export_path(&actual), actual);
+        }
+    }
+
+    #[test]
+    fn save_dialog_confirms_the_final_path_and_can_cancel() {
+        let fixture = Fixture::new();
+        let final_path = fixture.root.join("mirage.nvshare");
+        fs::write(&final_path, b"existing export").unwrap();
+        let typed = fixture.root.join("mirage.msgpack");
+        let mut calls = 0;
+        assert_eq!(
+            select_export_path("all.nvshare", |suggested| {
+                calls += 1;
+                if calls == 1 {
+                    assert_eq!(suggested, Path::new("all.nvshare"));
+                    Some(typed.clone())
+                } else {
+                    assert_eq!(suggested, final_path);
+                    Some(suggested.to_path_buf())
+                }
+            }),
+            Some(final_path.clone())
+        );
+        assert_eq!(calls, 2);
+        let mut calls = 0;
+        assert!(select_export_path("all.nvshare", |_| {
+            calls += 1;
+            (calls == 1).then(|| typed.clone())
+        })
+        .is_none());
+        assert_eq!(calls, 2);
+        assert!(select_export_path("all.nvshare", |_| None).is_none());
+        assert_eq!(fs::read(final_path).unwrap(), b"existing export");
+    }
+
+    #[test]
+    fn temporary_export_is_a_short_sibling_and_removed_on_write_failure() {
+        let fixture = Fixture::new();
+        let destination = fixture.root.join("Атака.nvshare");
+        let temporary = temporary_export_path(&destination);
+        assert_eq!(temporary.parent(), destination.parent());
+        let name = temporary.file_name().unwrap().to_str().unwrap();
+        assert!(name.starts_with(".nv-") && name.ends_with(".tmp"));
+        assert!(name.len() < 40);
+        // A directory cannot be replaced with the completed export file.
+        fs::create_dir(&destination).unwrap();
+        assert!(write_package(&destination, &package(&fixture)).is_err());
+        assert!(destination.is_dir());
+        assert!(!fs::read_dir(&fixture.root).unwrap().any(|entry| entry
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .starts_with(".nv-")));
+    }
+
+    #[test]
     fn scopes_include_all_rows_and_preserve_only_selected_collections() {
         let sender = Fixture::new();
         let id = saved(&sender, true);
@@ -667,7 +908,7 @@ mod tests {
             .screenshot_image_path
             .is_none());
         assert_eq!(data.favorites[0].source_label, "library.json");
-        let path = sender.root.join("roundtrip.nvshare.msgpack");
+        let path = sender.root.join("roundtrip.nvshare");
         write_package(&path, &data).unwrap();
         // Existing export targets are replaced as a complete file.
         write_package(&path, &data).unwrap();
@@ -704,14 +945,23 @@ mod tests {
         assert_eq!(membership(&conn, 1).unwrap().len(), 1);
         recipient.import(2, true);
         assert_eq!(state_from_conn(&conn).unwrap().source_matches.len(), 1);
-        let renamed = sender.root.join("renamed.msgpack");
-        fs::copy(path, &renamed).unwrap();
-        assert_eq!(
-            report(
-                import_typed_path_blocking(&recipient.state, &renamed.to_string_lossy()).unwrap()
-            )["added_count"],
-            0
-        );
+        for extension in [
+            "nvshare.msgpack",
+            "msgpack",
+            "messagepack",
+            "mpk",
+            "NVSHARE",
+        ] {
+            let renamed = sender.root.join(format!("renamed.{extension}"));
+            fs::copy(&path, &renamed).unwrap();
+            let repeated = report(
+                import_typed_path_blocking(&recipient.state, &renamed.to_string_lossy()).unwrap(),
+            );
+            assert_eq!(repeated["kind"], "favorites_share");
+            assert_eq!(repeated["added_count"], 0);
+            assert_eq!(repeated["reused_count"], 1);
+            assert_eq!(membership(&conn, 1).unwrap().len(), 1);
+        }
     }
 
     #[test]

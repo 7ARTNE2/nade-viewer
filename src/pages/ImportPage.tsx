@@ -284,7 +284,7 @@ export default function ImportPage({
         } else {
           setDragging(false);
           const droppedPath = payload.paths.find((candidate) =>
-            /\.(json|messagepack|msgpack|mpk|zip)$/i.test(candidate),
+            /\.(json|messagepack|msgpack|mpk|nvshare|zip)$/i.test(candidate),
           );
           if (droppedPath) {
             setPath(droppedPath);
@@ -296,8 +296,8 @@ export default function ImportPage({
             });
           } else {
             const title = tr(
-              'Drop a JSON, MessagePack, or Nadegrid ZIP file',
-              'Перетащите JSON-, MessagePack- или ZIP-файл Nadegrid',
+              'Drop a JSON, MessagePack, .nvshare, or Nadegrid ZIP file',
+              'Перетащите JSON-, MessagePack-, .nvshare- или ZIP-файл Nadegrid',
             );
             setOutcome({ tone: 'info', title });
             showToast(title, { tone: 'info' });
@@ -336,8 +336,8 @@ export default function ImportPage({
           <h1>{tr('Bring your lineups in.', 'Импортируйте раскидки.')}</h1>
           <p className="muted wide">
             {tr(
-              'Load a library in JSON or MessagePack, or a .nvshare.msgpack favorites file. Everything stays on this device.',
-              'Загрузите библиотеку в JSON или MessagePack либо файл избранного .nvshare.msgpack. Все данные останутся на этом устройстве.',
+              'Load a library in JSON or MessagePack, or a .nvshare favorites file. Everything stays on this device.',
+              'Загрузите библиотеку в JSON или MessagePack либо файл избранного .nvshare. Все данные останутся на этом устройстве.',
             )}
           </p>
           <div className="import-features">
@@ -466,8 +466,8 @@ export default function ImportPage({
                   {busy
                     ? progressText
                     : tr(
-                        'JSON / MessagePack, Nadegrid ZIP or .nvshare.msgpack',
-                        'JSON / MessagePack, ZIP Nadegrid или .nvshare.msgpack',
+                        'JSON / MessagePack, Nadegrid ZIP or .nvshare',
+                        'JSON / MessagePack, ZIP Nadegrid или .nvshare',
                       )}
                 </span>
               </div>
@@ -552,8 +552,8 @@ export default function ImportPage({
                   value={path}
                   onChange={(event) => setPath(event.target.value)}
                   placeholder={tr(
-                    'Path to JSON or MessagePack file',
-                    'Путь к JSON- или MessagePack-файлу',
+                    'Path to library or .nvshare file',
+                    'Путь к библиотеке или .nvshare-файлу',
                   )}
                   disabled={busy}
                 />

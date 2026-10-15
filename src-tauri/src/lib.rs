@@ -2082,7 +2082,8 @@ fn import_stream_blocking(
     let shape = read_import_shape(&source_path, messagepack)?;
     if messagepack
         && (shape.format.as_deref() == Some("nade-viewer-favorites")
-            || path.to_lowercase().ends_with(".nvshare.msgpack"))
+            || path.to_lowercase().ends_with(".nvshare.msgpack")
+            || path.to_lowercase().ends_with(".nvshare"))
     {
         return favorites::share::import_blocking(state, path);
     }
@@ -2149,6 +2150,7 @@ fn is_messagepack_path(path: &Path) -> bool {
         .and_then(|extension| extension.to_str())
         .is_some_and(|extension| {
             extension.eq_ignore_ascii_case("messagepack")
+                || extension.eq_ignore_ascii_case("nvshare")
                 || extension.eq_ignore_ascii_case("msgpack")
                 || extension.eq_ignore_ascii_case("mpk")
         })
@@ -3284,7 +3286,7 @@ fn select_import_file() -> Option<String> {
     rfd::FileDialog::new()
         .add_filter(
             "Nade libraries and favorites",
-            &["json", "messagepack", "msgpack", "mpk", "zip"],
+            &["json", "messagepack", "msgpack", "mpk", "nvshare", "zip"],
         )
         .pick_file()
         .map(|p| p.to_string_lossy().to_string())
@@ -5757,7 +5759,7 @@ mod tests {
             Some("76561198000000001")
         );
         assert_eq!(index.canonical_grenades[0].tickrate, Some(128.5));
-        for extension in ["messagepack", "msgpack", "mpk"] {
+        for extension in ["messagepack", "msgpack", "mpk", "nvshare", "NVSHARE"] {
             assert!(is_messagepack_path(Path::new(&format!(
                 "library.{extension}"
             ))));

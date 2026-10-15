@@ -72,13 +72,17 @@ function normalizeStoredGrenadeMode(value: unknown): GrenadeMode {
   return value === 'throw' ? 'throw' : 'landing';
 }
 
-function normalizeStoredIconTheme(value: unknown): IconTheme {
-  return value === 'asset' ? 'asset' : 'base';
+function normalizeStoredIconTheme(
+  value: unknown,
+  fallback: IconTheme,
+): IconTheme {
+  return value === 'asset' || value === 'base' ? value : fallback;
 }
 
 export function readStoredMapViewState(
   key: string,
   defaults: MapFilters = defaultMapFilters(),
+  defaultIconTheme: IconTheme = 'base',
 ): StoredMapViewState | null {
   try {
     const raw = window.sessionStorage.getItem(key);
@@ -122,7 +126,7 @@ export function readStoredMapViewState(
         typeof parsed.showSpawns === 'boolean' ? parsed.showSpawns : true,
       radarMode: normalizeStoredRadarMode(parsed.radarMode),
       grenadeMode: normalizeStoredGrenadeMode(parsed.grenadeMode),
-      iconTheme: normalizeStoredIconTheme(parsed.iconTheme),
+      iconTheme: normalizeStoredIconTheme(parsed.iconTheme, defaultIconTheme),
     };
   } catch {
     return null;

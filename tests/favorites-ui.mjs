@@ -112,17 +112,43 @@ try {
     };
     window.__favoritesFixture = model;
     let callback = 0;
-    window.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener() {} };
+    const callbacks = new Map();
+    const listeners = new Map();
+    window.__favoritesDrop = (path) => {
+      for (const [id, listener] of listeners) {
+        if (listener.event === 'tauri://drag-drop') {
+          callbacks.get(listener.handler)?.({
+            event: listener.event,
+            id,
+            payload: { paths: [path], position: { x: 0, y: 0 } },
+          });
+        }
+      }
+    };
+    window.__TAURI_EVENT_PLUGIN_INTERNALS__ = {
+      unregisterListener: (_event, id) => listeners.delete(id),
+    };
     window.__TAURI_INTERNALS__ = {
       metadata: { currentWindow: { label: 'main' } },
-      transformCallback: () => ++callback,
-      unregisterCallback() {},
+      transformCallback: (handler) => {
+        callbacks.set(++callback, handler);
+        return callback;
+      },
+      unregisterCallback: (id) => callbacks.delete(id),
       convertFileSrc: (path) => path,
       async invoke(command, args) {
         model.calls.push({ command, args });
         if (model.failNext === command) {
           model.failNext = null;
           throw new Error('Test failure');
+        }
+        if (command === 'plugin:event|listen') {
+          listeners.set(args.handler, args);
+          return args.handler;
+        }
+        if (command === 'plugin:event|unlisten') {
+          listeners.delete(args.eventId);
+          return null;
         }
         if (command.startsWith('plugin:'))
           return command.endsWith('listen') ? 1 : null;
@@ -187,9 +213,9 @@ try {
           case 'get_onboarding_state':
             return { completed: true };
           case 'export_favorites_share':
-            return model.cancelShare ? null : 'favorites-test.nvshare.msgpack';
+            return model.cancelShare ? null : 'mirage-2026-10-15.nvshare';
           case 'select_import_file':
-            return 'received.nvshare.msgpack';
+            return model.importPath ?? 'received.nvshare';
           case 'get_import_status':
             return {
               running: false,
@@ -202,22 +228,24 @@ try {
             };
           case 'import_json': {
             const id = 200;
+            const reused = Boolean(model.favorites[id]);
             model.favorites[id] = { ...detail(id), collection_ids: [30] };
-            model.collections.push({
-              id: 30,
-              name: 'Полученная подборка',
-              map: 'de_mirage',
-              grenade_count: 1,
-            });
+            if (!reused)
+              model.collections.push({
+                id: 30,
+                name: 'Полученная подборка',
+                map: 'de_mirage',
+                grenade_count: 1,
+              });
             return {
               kind: 'favorites_share',
               grenade_count: 1,
               map_count: 1,
-              added_count: 1,
-              reused_count: 0,
+              added_count: reused ? 0 : 1,
+              reused_count: reused ? 1 : 0,
               collection_count: 1,
-              added_collections: 1,
-              merged_collections: 0,
+              added_collections: reused ? 0 : 1,
+              merged_collections: reused ? 1 : 0,
               source_path: args.path,
             };
           }
@@ -428,6 +456,11 @@ try {
   };
   assert.equal(await mapTab('Mirage').locator('b').textContent(), '36');
   assert.equal(await mapTab('Nuke').locator('b').textContent(), '0');
+  const pointIcons = page.locator('.map-appearance-toggle');
+  assert.equal(await pointIcons.getAttribute('aria-pressed'), 'true');
+  await page.locator('.map-canvas.icon-theme-asset').waitFor();
+  await pointIcons.click();
+  assert.equal(await pointIcons.getAttribute('aria-pressed'), 'false');
   const exportTrigger = () =>
     page.getByRole('button', {
       name: /^(Экспорт избранного|Export favorites)$/,
@@ -464,6 +497,7 @@ try {
     { kind: 'all' },
   ]);
   await mapTab('Nuke').click();
+  assert.equal(await pointIcons.getAttribute('aria-pressed'), 'true');
   await exportTrigger().click();
   assert.equal(
     await exportMenu()
@@ -474,6 +508,8 @@ try {
   await page.keyboard.press('Escape');
   await mapTab('Mirage').click();
   await page.locator('.nade-row').first().waitFor();
+  assert.equal(await pointIcons.getAttribute('aria-pressed'), 'false');
+  await pointIcons.click();
   await page.evaluate(() => {
     window.__favoritesFixture.cancelShare = true;
   });
@@ -1338,6 +1374,68 @@ try {
       { exact: true },
     )
     .waitFor();
+  assert.equal(
+    await page.evaluate(
+      () =>
+        window.__favoritesFixture.calls.findLast(
+          (call) => call.command === 'import_json',
+        ).args.path,
+    ),
+    'received.nvshare',
+  );
+  // Both entry points accept the new extension and every legacy extension.
+  for (const mode of ['picker', 'drop']) {
+    for (const extension of [
+      'nvshare',
+      'nvshare.msgpack',
+      'msgpack',
+      'messagepack',
+      'mpk',
+      'NVSHARE',
+    ]) {
+      await page
+        .getByRole('button', { name: 'Import another', exact: true })
+        .click();
+      const path = `received-${mode}.${extension}`;
+      if (mode === 'picker') {
+        await page.evaluate((path) => {
+          window.__favoritesFixture.importPath = path;
+        }, path);
+        await page
+          .getByRole('button', { name: 'Choose file', exact: true })
+          .click();
+      } else {
+        await page.evaluate((path) => window.__favoritesDrop(path), path);
+      }
+      await page
+        .getByRole('heading', { name: 'Favorites imported', exact: true })
+        .waitFor();
+      await page
+        .getByText(
+          'Added: 0 favorites, 0 collections. Already saved: 1. Merged collections: 1.',
+          { exact: true },
+        )
+        .waitFor();
+      assert.equal(
+        await page.evaluate(
+          () =>
+            window.__favoritesFixture.calls.findLast(
+              (call) => call.command === 'import_json',
+            ).args.path,
+        ),
+        path,
+      );
+      assert.equal(
+        await page.evaluate(
+          () =>
+            window.__favoritesFixture.collections.filter(
+              (collection) => collection.id === 30,
+            ).length,
+        ),
+        1,
+      );
+    }
+  }
   await page
     .getByRole('button', { name: 'View favorites', exact: true })
     .click();
@@ -1380,7 +1478,7 @@ try {
   await page.keyboard.press('Escape');
   assert.deepEqual(errors, []);
   console.log(
-    'Favorites UI checks passed: all sharing scopes, export cancellation/failure, common favorites import, saved maps without imports, collections, empty selections, stale responses, pagination after removal, state restoration, retries, legacy filters, copy and keyboard focus.',
+    'Favorites UI checks passed: all sharing scopes, export cancellation/failure, new and legacy favorites imports via picker/drop, repeated import, saved maps without imports, collections, empty selections, stale responses, pagination after removal, state restoration, retries, legacy filters, copy and keyboard focus.',
   );
 } catch (error) {
   console.error(

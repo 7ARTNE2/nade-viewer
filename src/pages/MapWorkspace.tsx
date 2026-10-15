@@ -102,6 +102,7 @@ export default function MapWorkspace({
   tutorialStep,
 }: MapWorkspaceProps) {
   const saved = source.kind === 'favorites';
+  const defaultIconTheme: IconTheme = saved ? 'asset' : 'base';
   const activeImportId = source.kind === 'import' ? source.activeImportId : 0;
   const collectionId =
     source.kind === 'favorites' ? source.collectionId : undefined;
@@ -142,6 +143,7 @@ export default function MapWorkspace({
     initialViewStateRef.current = readStoredMapViewState(
       stateStorageKey,
       viewDefaults(),
+      defaultIconTheme,
     );
   }
   const initialViewState = initialViewStateRef.current;
@@ -204,7 +206,7 @@ export default function MapWorkspace({
     initialViewState?.grenadeMode ?? 'landing',
   );
   const [iconTheme, setIconTheme] = useState<IconTheme>(
-    initialViewState?.iconTheme ?? 'base',
+    initialViewState?.iconTheme ?? defaultIconTheme,
   );
   const [siteMinUsage, setSiteMinUsage] = useState(1);
   const [pendingSiteMinUsage, setPendingSiteMinUsage] = useState<number | null>(
@@ -397,6 +399,7 @@ export default function MapWorkspace({
     const nextViewState = readStoredMapViewState(
       stateStorageKey,
       viewDefaults(),
+      defaultIconTheme,
     );
     skipNextStatePersistenceRef.current = true;
     restoredClusterIdRef.current = isImportSwitch
@@ -419,7 +422,7 @@ export default function MapWorkspace({
       setShowSpawns(nextViewState?.showSpawns ?? true);
       setRadarMode(nextViewState?.radarMode ?? 'default');
       setGrenadeMode(nextViewState?.grenadeMode ?? 'landing');
-      setIconTheme(nextViewState?.iconTheme ?? 'base');
+      setIconTheme(nextViewState?.iconTheme ?? defaultIconTheme);
     }
     clusterRequestRef.current += 1;
     mapTrajectoriesRequestRef.current += 1;
