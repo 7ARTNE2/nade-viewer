@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useNavigate } from 'react-router-dom';
 import {
+  ArrowUpRight,
   Check,
+  ChevronDown,
   Folder,
   FolderPlus,
   Map,
@@ -9,6 +12,7 @@ import {
   Pencil,
   Trash2,
   Star,
+  Upload,
   X,
 } from 'lucide-react';
 import MapWorkspace from './MapWorkspace';
@@ -205,19 +209,32 @@ function CollectionNameDialog({
   );
 }
 
-export default function FavoritesPage() {
+export default function FavoritesPage({
+  hasLibrary = false,
+}: {
+  hasLibrary?: boolean;
+}) {
   const { state, maps, loading, error, busy, refresh, deleteCollection } =
     useFavorites();
   const { tr } = useI18n();
+  const navigate = useNavigate();
   const [selection, setSelection] = useState(readSelection);
+  const [showAllMaps, setShowAllMaps] = useState(false);
   const [editing, setEditing] = useState<
     FavoriteCollection | null | undefined
   >();
   const [deleting, setDeleting] = useState<FavoriteCollection | null>(null);
   const [deleteError, setDeleteError] = useState('');
+  const isEmpty = !error && Object.keys(state.favorites).length === 0;
   const selected = state.collections.find(
     (c) => c.id === selection.collectionId && c.map === selection.map,
   );
+  const savedMaps = maps.filter((map) => map.grenade_count > 0);
+  const emptyMaps = maps.filter((map) => map.grenade_count === 0);
+  const visibleMaps = [
+    ...savedMaps,
+    ...emptyMaps.filter((map) => showAllMaps || map.name === selection.map),
+  ];
   useEffect(() => {
     if (loading || error) return;
     setSelection((current) => {
@@ -344,7 +361,7 @@ export default function FavoritesPage() {
         className="favorites-map-strip"
         aria-label={tr('Saved maps', 'Карты избранного')}
       >
-        {maps.map((map) => (
+        {visibleMaps.map((map) => (
           <button
             key={map.name}
             type="button"
@@ -364,6 +381,19 @@ export default function FavoritesPage() {
             <b>{formatNumber(map.grenade_count)}</b>
           </button>
         ))}
+        {emptyMaps.length > 0 && (
+          <button
+            type="button"
+            className={`favorites-map-tab favorites-all-maps ${showAllMaps ? 'expanded' : ''}`}
+            aria-expanded={showAllMaps}
+            disabled={loading || error}
+            onClick={() => setShowAllMaps((current) => !current)}
+          >
+            <Map size={16} aria-hidden="true" />
+            <span>{tr('All maps', 'Все карты')}</span>
+            <ChevronDown size={14} aria-hidden="true" />
+          </button>
+        )}
       </nav>
       {state.collections.some((c) => c.map === null) && (
         <div className="favorites-unassigned">
@@ -400,6 +430,73 @@ export default function FavoritesPage() {
       {loading ? (
         <div className="empty-note">
           {tr('Loading favorites', 'Загрузка избранного')}
+        </div>
+      ) : isEmpty ? (
+        <div className="favorites-empty-workspace">
+          <div className="favorites-empty-toolbar">
+            {selection.map && (
+              <span className="map-selector-current">
+                <MapPin size={15} aria-hidden="true" />
+                <strong>
+                  {maps.find((map) => map.name === selection.map)?.label ??
+                    selection.map}
+                </strong>
+              </span>
+            )}
+            {controls}
+          </div>
+          <section
+            className="favorites-empty-state"
+            aria-labelledby="favorites-empty-title"
+          >
+            <div className="favorites-empty-mark" aria-hidden="true">
+              <Star size={36} strokeWidth={1.5} />
+            </div>
+            <h1 id="favorites-empty-title">
+              {tr('No saved lineups yet', 'В избранном пока нет раскидок')}
+            </h1>
+            <p>
+              {tr(
+                'Click the star next to a lineup to save it here. You can also import a shared favorites file.',
+                'Нажмите на звёздочку рядом с раскидкой, чтобы сохранить её здесь. Или импортируйте файл избранного.',
+              )}
+            </p>
+            <div className="favorites-empty-actions">
+              <button
+                className="btn primary"
+                type="button"
+                onClick={() => navigate(hasLibrary ? '/maps' : '/import')}
+              >
+                {hasLibrary ? (
+                  <Map size={17} aria-hidden="true" />
+                ) : (
+                  <Upload size={17} aria-hidden="true" />
+                )}
+                {hasLibrary
+                  ? tr('Open maps', 'Открыть карты')
+                  : tr('Import a file', 'Импортировать файл')}
+              </button>
+              {hasLibrary && (
+                <button
+                  className="favorites-empty-import"
+                  type="button"
+                  onClick={() => navigate('/import')}
+                >
+                  {tr('Import favorites', 'Импортировать избранное')}
+                  <ArrowUpRight size={15} aria-hidden="true" />
+                </button>
+              )}
+            </div>
+            <div className="favorites-empty-hint">
+              <Folder size={15} aria-hidden="true" />
+              <span>
+                {tr(
+                  'Collections help organize lineups by map and strategy.',
+                  'Подборки помогут разложить раскидки по картам и тактикам.',
+                )}
+              </span>
+            </div>
+          </section>
         </div>
       ) : (
         selection.map && (

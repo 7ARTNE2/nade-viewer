@@ -16,6 +16,7 @@ import {
   createFavoriteCollection,
   assignFavoriteCollectionMap,
   deleteFavorite,
+  clearFavorites,
   deleteFavoriteCollection,
   getFavoritesState,
   getFavoriteMaps,
@@ -51,6 +52,7 @@ type FavoritesContextValue = {
   ) => Promise<boolean>;
   renameCollection: (id: number, name: string) => Promise<boolean>;
   deleteCollection: (id: number) => Promise<boolean>;
+  clearAll: () => Promise<boolean>;
   setCollections: (id: number, ids: number[]) => Promise<boolean>;
 };
 const FavoritesContext = createContext<FavoritesContextValue | null>(null);
@@ -159,6 +161,29 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
     );
     return true;
   };
+  const clearAll = async () => {
+    const result = await perform(
+      async () => {
+        await clearFavorites();
+        return true;
+      },
+      (_, current) => ({
+        ...current,
+        favorites: {},
+        source_matches: {},
+        maps: [],
+        collections: current.collections.map((collection) => ({
+          ...collection,
+          grenade_count: 0,
+        })),
+      }),
+    );
+    if (result !== true) return false;
+    showToast(tr('Favorites cleared', 'Избранное очищено'), {
+      tone: 'success',
+    });
+    return true;
+  };
   const createCollection = (name: string, map: string) =>
     perform(
       () => createFavoriteCollection(name, map),
@@ -240,6 +265,7 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
         assignCollectionMap,
         renameCollection,
         deleteCollection,
+        clearAll,
         setCollections,
       }}
     >

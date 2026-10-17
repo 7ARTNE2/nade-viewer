@@ -428,12 +428,18 @@ export default function GrenadePage({ saved = false }: { saved?: boolean }) {
           mapLabel={grenade.map}
           grenades={previewPoint}
           spawnPoints={spawnPoints}
+          onGrenadeOpen={() => {
+            inspectorRef.current?.focus({ preventScroll: true });
+            inspectorRef.current?.scrollIntoView({ block: 'nearest' });
+          }}
         />
       </section>
 
       <aside
         ref={inspectorRef}
         className="detail-inspector"
+        tabIndex={-1}
+        aria-label={tr('Lineup details', 'Детали раскидки')}
         style={
           {
             '--dot': detailAccent,

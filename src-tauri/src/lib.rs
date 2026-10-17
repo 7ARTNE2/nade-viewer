@@ -780,6 +780,7 @@ pub fn run() {
             favorites::get_favorite,
             favorites::save_favorite,
             favorites::delete_favorite,
+            favorites::clear_favorites,
             favorites::get_favorites_state,
             favorites::create_favorite_collection,
             favorites::assign_favorite_collection_map,

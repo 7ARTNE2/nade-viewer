@@ -886,6 +886,35 @@ pub(super) async fn delete_favorite(id: i64, state: tauri::State<'_, AppState>) 
     .map_err(|e| AppError::Message(e.to_string()))?
 }
 
+fn clear_from_conn(conn: &mut Connection, state: &AppState) -> AppResult<()> {
+    let root = favorite_root(state)?;
+    let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+    let ids = tx
+        .prepare("SELECT id FROM favorites")?
+        .query_map([], |row| row.get::<_, i64>(0))?
+        .collect::<Result<Vec<_>, _>>()?;
+    tx.execute("DELETE FROM favorites", [])?;
+    tx.commit()?;
+    // Only remove snapshots deleted by this transaction; collections and imports stay intact.
+    for id in ids {
+        let folder = root.join(id.to_string());
+        if folder.exists() {
+            if let Err(error) = fs::remove_dir_all(folder) {
+                eprintln!("Favorite image cleanup failed: {error}");
+            }
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub(super) async fn clear_favorites(state: tauri::State<'_, AppState>) -> AppResult<()> {
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || clear_from_conn(&mut open_conn(&state)?, &state))
+        .await
+        .map_err(|error| AppError::Message(error.to_string()))?
+}
+
 #[derive(Serialize)]
 pub(super) struct FavoriteCollection {
     id: i64,
@@ -1117,6 +1146,65 @@ mod tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.root);
         }
+    }
+
+    #[test]
+    fn clear_favorites_is_atomic_and_preserves_collections_and_library() {
+        let fixture = Fixture::new();
+        let (import_id, source) = fixture.import(3, true);
+        let mut conn = open_conn(&fixture.state).unwrap();
+        let saved = save_from_conn(&mut conn, &fixture.state, source).unwrap();
+        conn.execute("INSERT INTO favorites(identity_key, snapshot_json, map, grenade_type, side, search_text, source_label, saved_at) SELECT 'second-map', snapshot_json, 'de_other', grenade_type, side, search_text, source_label, saved_at FROM favorites WHERE id=?1", [saved]).unwrap();
+        conn.execute(
+            "INSERT INTO favorite_collections(id, name, map) VALUES (1, 'Practice', 'de_test')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO favorite_collection_members VALUES (1, ?1)",
+            [saved],
+        )
+        .unwrap();
+        let folder = favorite_root(&fixture.state)
+            .unwrap()
+            .join(saved.to_string());
+        fs::create_dir_all(&folder).unwrap();
+        fs::write(folder.join("test.jpg"), b"saved image").unwrap();
+        conn.execute_batch("CREATE TRIGGER fail_clear BEFORE DELETE ON favorites WHEN OLD.map='de_other' BEGIN SELECT RAISE(ABORT, 'test failure'); END;").unwrap();
+        assert!(clear_from_conn(&mut conn, &fixture.state).is_err());
+        assert_eq!(state_from_conn(&conn).unwrap().favorites.len(), 2);
+        assert_eq!(membership(&conn, saved).unwrap(), vec![1]);
+        assert!(folder.join("test.jpg").exists());
+        conn.execute_batch("DROP TRIGGER fail_clear").unwrap();
+        clear_from_conn(&mut conn, &fixture.state).unwrap();
+        let state = state_from_conn(&conn).unwrap();
+        assert!(state.favorites.is_empty());
+        assert!(state.source_matches.is_empty());
+        assert_eq!(state.collections.len(), 1);
+        assert_eq!(state.collections[0].name, "Practice");
+        assert_eq!(state.collections[0].map.as_deref(), Some("de_test"));
+        assert_eq!(state.collections[0].grenade_count, 0);
+        for table in ["favorite_matches", "favorite_collection_members"] {
+            assert_eq!(
+                conn.query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| row
+                    .get::<_, i64>(0))
+                    .unwrap(),
+                0
+            );
+        }
+        assert!(conn
+            .query_row("SELECT id FROM imports WHERE id=?1", [import_id], |row| row
+                .get::<_, i64>(0))
+            .is_ok());
+        assert!(conn
+            .query_row("SELECT id FROM grenades WHERE id=?1", [source], |row| row
+                .get::<_, i64>(
+                0
+            ))
+            .is_ok());
+        assert!(!folder.exists());
+        clear_from_conn(&mut conn, &fixture.state).unwrap();
+        assert_eq!(state_from_conn(&conn).unwrap().collections.len(), 1);
     }
 
     fn filters() -> FavoriteFilters {

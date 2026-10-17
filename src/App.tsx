@@ -60,6 +60,7 @@ import MapPage from './pages/MapPage';
 import GrenadePage from './pages/GrenadePage';
 import ToolsPage from './pages/ToolsPage';
 import FavoritesPage from './pages/FavoritesPage';
+import ClearFavoritesDialog from './components/ClearFavoritesDialog';
 import { FavoritesProvider, useFavorites } from './lib/favorites';
 import Tooltip from './components/Tooltip';
 import OnboardingModal from './components/OnboardingModal';
@@ -86,7 +87,13 @@ function formatBytes(bytes: number, locale: string) {
 }
 
 function Shell() {
-  const { refresh: refreshFavorites } = useFavorites();
+  const {
+    refresh: refreshFavorites,
+    state: favoritesState,
+    busy: favoritesBusy,
+    loading: favoritesLoading,
+    error: favoritesError,
+  } = useFavorites();
   const { locale, setLocale, tr, count } = useI18n();
   const { showToast } = useToast();
   const navigate = useNavigate();
@@ -99,6 +106,7 @@ function Shell() {
   const finishBoot = useCallback(() => setBootVisible(false), []);
   const [snapshotMenuOpen, setSnapshotMenuOpen] = useState(false);
   const [libraryActionsOpen, setLibraryActionsOpen] = useState(false);
+  const [clearFavoritesOpen, setClearFavoritesOpen] = useState(false);
   const [editingSnapshotId, setEditingSnapshotId] = useState<number | null>(
     null,
   );
@@ -759,6 +767,28 @@ function Shell() {
                   </button>
                   {libraryActionsOpen ? (
                     <div className="library-actions-popover">
+                      {location.pathname === '/favorites' &&
+                        Object.keys(favoritesState.favorites).length > 0 && (
+                          <button
+                            className="danger"
+                            type="button"
+                            disabled={
+                              favoritesBusy ||
+                              favoritesLoading ||
+                              favoritesError
+                            }
+                            onClick={() => {
+                              setLibraryActionsOpen(false);
+                              setClearFavoritesOpen(true);
+                            }}
+                          >
+                            <Trash2 size={15} />
+                            {tr(
+                              'Clear all favorites',
+                              'Очистить всё избранное',
+                            )}
+                          </button>
+                        )}
                       <button
                         type="button"
                         onClick={() => {
@@ -817,7 +847,10 @@ function Shell() {
 
             <div className="view-frame viewer-frame">
               <Routes>
-                <Route path="/favorites" element={<FavoritesPage />} />
+                <Route
+                  path="/favorites"
+                  element={<FavoritesPage hasLibrary={Boolean(activeImport)} />}
+                />
                 <Route path="/favorites/:id" element={<GrenadePage saved />} />
                 <Route
                   path="/"
@@ -1049,6 +1082,11 @@ function Shell() {
             </div>
           ) : null}
 
+          {clearFavoritesOpen && (
+            <ClearFavoritesDialog
+              onClose={() => setClearFavoritesOpen(false)}
+            />
+          )}
           {deleteSnapshotOpen && activeImport ? (
             <div
               className="modal-scrim"

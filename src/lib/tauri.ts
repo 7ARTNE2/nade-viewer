@@ -225,6 +225,10 @@ export function deleteFavorite(id: number) {
   return invoke<void>('delete_favorite', { id });
 }
 
+export function clearFavorites() {
+  return invoke<void>('clear_favorites');
+}
+
 export function createFavoriteCollection(name: string, map: string) {
   return invoke<number>('create_favorite_collection', { name, map });
 }

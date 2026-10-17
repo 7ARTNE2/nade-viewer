@@ -378,6 +378,9 @@ try {
           case 'delete_favorite':
             delete model.favorites[args.id];
             return null;
+          case 'clear_favorites':
+            model.favorites = {};
+            return null;
           case 'create_favorite_collection': {
             const id = model.nextCollection++;
             model.collections.push({
@@ -428,6 +431,14 @@ try {
   assert.equal(await page.locator('.nade-row').count(), 30);
   const mapTab = (name) =>
     page.locator('.favorites-map-tab').filter({ hasText: name });
+  const allMapsToggle = () =>
+    page.getByRole('button', { name: /^(Все карты|All maps)$/ });
+  const chooseMap = async (name) => {
+    if (!(await mapTab(name).count())) await allMapsToggle().click();
+    await mapTab(name).click();
+    if ((await allMapsToggle().getAttribute('aria-expanded')) === 'true')
+      await allMapsToggle().click();
+  };
   const collectionSelector = () =>
     page.locator('.favorites-collection-select [role="combobox"]');
   const chooseCollection = async (value) => {
@@ -455,7 +466,21 @@ try {
       .waitFor({ state: 'hidden' });
   };
   assert.equal(await mapTab('Mirage').locator('b').textContent(), '36');
+  assert.equal(await mapTab('Nuke').count(), 0);
+  assert.equal(await allMapsToggle().getAttribute('aria-expanded'), 'false');
+  await allMapsToggle().click();
+  assert.equal(await allMapsToggle().getAttribute('aria-expanded'), 'true');
+  assert.equal(
+    await page
+      .locator('.favorites-map-tab')
+      .first()
+      .locator('span')
+      .textContent(),
+    'Mirage',
+  );
   assert.equal(await mapTab('Nuke').locator('b').textContent(), '0');
+  await allMapsToggle().click();
+  assert.equal(await mapTab('Nuke').count(), 0);
   const pointIcons = page.locator('.map-appearance-toggle');
   assert.equal(await pointIcons.getAttribute('aria-pressed'), 'true');
   await page.locator('.map-canvas.icon-theme-asset').waitFor();
@@ -496,7 +521,9 @@ try {
     { kind: 'map', map: 'de_mirage' },
     { kind: 'all' },
   ]);
-  await mapTab('Nuke').click();
+  await chooseMap('Nuke');
+  assert.equal(await mapTab('Nuke').getAttribute('aria-pressed'), 'true');
+  assert.equal(await mapTab('Ancient').count(), 0);
   assert.equal(await pointIcons.getAttribute('aria-pressed'), 'true');
   await exportTrigger().click();
   assert.equal(
@@ -621,9 +648,8 @@ try {
 
   // All match filters use saved records while no import is active.
   const chooseFilter = async (accent, option) => {
-    await page
-      .locator(`.accent-${accent} .tactical-filter-trigger`)
-      .press('ArrowDown');
+    const trigger = page.locator(`.accent-${accent} .tactical-filter-trigger`);
+    await trigger.press('ArrowDown');
     const search = page.getByRole('dialog').getByRole('combobox');
     await search.fill(option);
     await page
@@ -632,6 +658,13 @@ try {
       .filter({ hasText: option })
       .press('Enter');
     await page.keyboard.press('Escape');
+    await page.getByRole('dialog').waitFor({ state: 'hidden' });
+    await page.waitForFunction(
+      (accent) =>
+        document.activeElement ===
+        document.querySelector(`.accent-${accent} .tactical-filter-trigger`),
+      accent,
+    );
   };
   await chooseFilter('tournament', 'Cup A');
   await page.waitForFunction(
@@ -715,7 +748,7 @@ try {
   await page.keyboard.press('Escape');
 
   // The same name on another map stays local to that map.
-  await mapTab('Nuke').click();
+  await chooseMap('Nuke');
   await page
     .locator('.map-selector-current strong')
     .filter({ hasText: 'Nuke' })
@@ -898,7 +931,7 @@ try {
   await page.setViewportSize({ width: 900, height: 650 });
 
   assert.equal(await mapTab('Mirage').locator('b').textContent(), '36');
-  assert.equal(await mapTab('Nuke').locator('b').textContent(), '0');
+  assert.equal(await mapTab('Nuke').count(), 0);
 
   assert.equal(
     await page
@@ -1001,9 +1034,47 @@ try {
       document.querySelectorAll('.nade-row').length === 1 &&
       !document.querySelector('.nade-list-skeleton'),
   );
+  // Use a full-length path so its middle is reachable separately from the throw marker.
+  await page.evaluate(() => {
+    window.__favoritesFixture.favorites[36].trajectory_preview = [
+      [20, 30],
+      [500, 600],
+    ];
+  });
   await page.locator('.nade-open-action').click();
   await page.waitForURL('**/favorites/36');
   await page.getByText('Сохранённая граната #36').waitFor();
+  const detailTrajectory = page.locator(
+    '.grenade-detail .trajectory-interactive',
+  );
+  assert.equal(await detailTrajectory.getAttribute('role'), 'button');
+  const trajectoryHit = detailTrajectory.locator('.trajectory-hit-area');
+  await trajectoryHit.hover();
+  await page.locator('.throw-preview-popover').waitFor();
+  await trajectoryHit.click({ button: 'right' });
+  await page.waitForFunction(() =>
+    document.querySelector('.grenade-detail .trajectory-copied'),
+  );
+  assert.equal(
+    await page.evaluate(() => navigator.clipboard.readText()),
+    'setpos 1 2 3; setang 10 20 0',
+  );
+  await trajectoryHit.click();
+  assert.equal(
+    await page
+      .locator('.detail-inspector')
+      .evaluate((node) => node === document.activeElement),
+    true,
+  );
+  await detailTrajectory.focus();
+  await page.keyboard.press('Enter');
+  assert.equal(
+    await page
+      .locator('.detail-inspector')
+      .evaluate((node) => node === document.activeElement),
+    true,
+  );
+  assert.ok(page.url().endsWith('/favorites/36'));
   await page
     .getByRole('button', { name: 'Копировать координаты гранаты' })
     .click();
@@ -1180,6 +1251,18 @@ try {
   });
   await page.reload();
   await page
+    .getByRole('heading', { name: 'В избранном пока нет раскидок' })
+    .waitFor();
+  assert.equal(await page.locator('.map-workspace').count(), 0);
+  assert.equal(await page.locator('.inspector').count(), 0);
+  await page
+    .locator('.favorites-empty-actions')
+    .getByRole('button', { name: 'Импортировать файл' })
+    .click();
+  await page.waitForURL('**/import');
+  await page.getByRole('button', { name: 'Избранное', exact: true }).click();
+  await page.waitForURL('**/favorites');
+  await page
     .getByRole('button', { name: 'Старая пустая', exact: true })
     .click();
   await page
@@ -1201,9 +1284,14 @@ try {
     path: 'dist/favorites-ui-empty-en.png',
     fullPage: true,
   });
+  await allMapsToggle().focus();
+  await page.keyboard.press('Enter');
   await mapTab('Nuke').focus();
   await page.keyboard.press('Enter');
   assert.equal(await mapTab('Nuke').getAttribute('aria-pressed'), 'true');
+  await allMapsToggle().click();
+  assert.equal(await mapTab('Nuke').getAttribute('aria-pressed'), 'true');
+  assert.equal(await mapTab('Mirage').count(), 0);
   assert.equal(
     await page
       .getByRole('combobox', { name: 'Collection', exact: true })
@@ -1450,13 +1538,19 @@ try {
     await page.evaluate(() => window.__favoritesFixture.active.id),
     1,
   );
-  // Empty collections remain exportable even when no saved grenades remain.
+  // Clearing affects every map, requires confirmation, and preserves collections/library.
   await page.evaluate(() => {
-    window.__favoritesFixture.favorites = {};
+    window.__favoritesFixture.favorites[100] = {
+      ...Object.values(window.__favoritesFixture.favorites)[0],
+      id: 100,
+      favorite_id: 100,
+      map: 'de_nuke',
+      collection_ids: [3],
+    };
     window.sessionStorage.setItem(
       'favorites-test-seed',
       JSON.stringify({
-        favorites: {},
+        favorites: window.__favoritesFixture.favorites,
         collections: window.__favoritesFixture.collections,
         active: window.__favoritesFixture.active,
       }),
@@ -1464,6 +1558,143 @@ try {
   });
   await page.reload();
   await page.locator('.boot-screen').waitFor({ state: 'hidden' });
+  const beforeClear = await page.evaluate(() => ({
+    total: Object.keys(window.__favoritesFixture.favorites).length,
+    collections: window.__favoritesFixture.collections,
+    active: window.__favoritesFixture.active,
+  }));
+  const openClearDialog = async () => {
+    await page
+      .getByRole('button', {
+        name: /^(Library actions|Действия с библиотекой)$/,
+      })
+      .click();
+    await page
+      .getByRole('button', {
+        name: /^(Clear all favorites|Очистить всё избранное)$/,
+      })
+      .click();
+    await page
+      .getByRole('dialog', {
+        name: /Clear all favorites|Очистить всё избранное/,
+      })
+      .waitFor();
+  };
+  const clearDialog = () => page.getByRole('dialog');
+  const confirmClear = () =>
+    clearDialog().getByRole('button', {
+      name: /^(Clear all favorites|Очистить всё избранное)$/,
+    });
+  await openClearDialog();
+  assert.equal(
+    await clearDialog().locator('.snapshot-delete-meta strong').textContent(),
+    String(beforeClear.total),
+  );
+  await clearDialog()
+    .getByRole('button', { name: /^(Cancel|Отмена)$/ })
+    .click();
+  assert.equal(
+    await page.evaluate(
+      () =>
+        window.__favoritesFixture.calls.filter(
+          (call) => call.command === 'clear_favorites',
+        ).length,
+    ),
+    0,
+  );
+  await openClearDialog();
+  const exportBeforeClear = () =>
+    clearDialog().getByRole('button', {
+      name: /Export before clearing|Экспортировать перед очисткой/,
+    });
+  await page.evaluate(() => {
+    window.__favoritesFixture.failNext = 'export_favorites_share';
+  });
+  await exportBeforeClear().click();
+  await clearDialog().getByRole('alert').waitFor();
+  assert.equal(
+    await page.evaluate(
+      () => Object.keys(window.__favoritesFixture.favorites).length,
+    ),
+    beforeClear.total,
+  );
+  await exportBeforeClear().click();
+  await confirmClear().waitFor({ state: 'visible' });
+  await page.waitForFunction(
+    () =>
+      !document.querySelector('[role="dialog"]')?.getAttribute('aria-busy') ||
+      document.querySelector('[role="dialog"]').getAttribute('aria-busy') ===
+        'false',
+  );
+  assert.deepEqual(
+    await page.evaluate(
+      () =>
+        window.__favoritesFixture.calls
+          .filter((call) => call.command === 'export_favorites_share')
+          .at(-1).args.scope,
+    ),
+    { kind: 'all' },
+  );
+  await page.evaluate(() => {
+    window.__favoritesFixture.failNext = 'clear_favorites';
+  });
+  await confirmClear().click();
+  await clearDialog().getByRole('alert').waitFor();
+  assert.equal(
+    await page.evaluate(
+      () => Object.keys(window.__favoritesFixture.favorites).length,
+    ),
+    beforeClear.total,
+  );
+  await page.setViewportSize({ width: 390, height: 780 });
+  assert.equal(
+    await clearDialog().evaluate(
+      (node) =>
+        node.getBoundingClientRect().right <= window.innerWidth &&
+        node.scrollWidth <= node.clientWidth + 1,
+    ),
+    true,
+  );
+  await page.screenshot({
+    path: 'dist/favorites-clear-dialog-mobile.png',
+    fullPage: true,
+  });
+  await confirmClear().click();
+  await clearDialog().waitFor({ state: 'hidden' });
+  await page
+    .getByRole('heading', {
+      name: /No saved lineups yet|В избранном пока нет раскидок/,
+    })
+    .waitFor();
+  assert.deepEqual(
+    await page.evaluate(() => window.__favoritesFixture.collections),
+    beforeClear.collections,
+  );
+  assert.deepEqual(
+    await page.evaluate(() => window.__favoritesFixture.active),
+    beforeClear.active,
+  );
+  assert.equal(
+    await page.evaluate(
+      () => Object.keys(window.__favoritesFixture.favorites).length,
+    ),
+    0,
+  );
+  await page
+    .getByRole('button', { name: /^(Library actions|Действия с библиотекой)$/ })
+    .click();
+  assert.equal(
+    await page
+      .getByRole('button', {
+        name: /^(Clear all favorites|Очистить всё избранное)$/,
+      })
+      .count(),
+    0,
+  );
+  await page
+    .getByRole('button', { name: /^(Library actions|Действия с библиотекой)$/ })
+    .click();
+  // Empty collections remain exportable even when no saved grenades remain.
   await page.waitForFunction(
     () => document.querySelector('.favorites-map-tab b')?.textContent === '0',
   );
@@ -1477,6 +1708,38 @@ try {
   );
   await page.keyboard.press('Escape');
   assert.deepEqual(errors, []);
+  const russianToggle = page.getByRole('button', { name: 'RU', exact: true });
+  if (await russianToggle.count()) await russianToggle.click();
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page
+    .getByRole('heading', { name: 'В избранном пока нет раскидок' })
+    .waitFor();
+  await page.screenshot({
+    path: 'dist/favorites-empty-ru.png',
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 390, height: 780 });
+  assert.equal(
+    await page
+      .locator('.favorites-map-page')
+      .evaluate((node) => node.scrollWidth <= node.clientWidth + 1),
+    true,
+  );
+  await page.screenshot({
+    path: 'dist/favorites-empty-mobile-ru.png',
+    fullPage: true,
+  });
+  await page
+    .locator('.favorites-empty-actions')
+    .getByRole('button', { name: 'Открыть карты' })
+    .click();
+  await page.waitForURL('**/maps');
+  await page.getByRole('button', { name: 'Избранное', exact: true }).click();
+  await page
+    .locator('.favorites-empty-actions')
+    .getByRole('button', { name: 'Импортировать избранное' })
+    .click();
+  await page.waitForURL('**/import');
   console.log(
     'Favorites UI checks passed: all sharing scopes, export cancellation/failure, new and legacy favorites imports via picker/drop, repeated import, saved maps without imports, collections, empty selections, stale responses, pagination after removal, state restoration, retries, legacy filters, copy and keyboard focus.',
   );

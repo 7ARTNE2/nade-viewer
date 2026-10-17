@@ -15,6 +15,7 @@ type Props = {
   error: string;
   onCancel: () => void;
   onConfirm: () => void;
+  secondaryAction?: ReactNode;
   fallbackFocusRef?: { readonly current: HTMLElement | null };
 };
 
@@ -30,6 +31,7 @@ export default function DestructiveConfirmDialog({
   error,
   onCancel,
   onConfirm,
+  secondaryAction,
   fallbackFocusRef,
 }: Props) {
   const { tr } = useI18n();
@@ -46,7 +48,10 @@ export default function DestructiveConfirmDialog({
   useEffect(() => {
     // Keep focus in the dialog while both actions are disabled.
     if (busy) dialogRef.current?.focus();
-    else dialogRef.current?.querySelector<HTMLButtonElement>('button')?.focus();
+    else
+      dialogRef.current
+        ?.querySelector<HTMLButtonElement>('.snapshot-delete-actions button')
+        ?.focus();
   }, [busy, dialogRef]);
 
   useEffect(() => {
@@ -85,6 +90,7 @@ export default function DestructiveConfirmDialog({
           <p id={`${id}-description`}>{description}</p>
         </div>
         <div className="snapshot-delete-meta">{metadata}</div>
+        {secondaryAction}
         {error && (
           <p className="tools-confirm-error" role="alert">
             {error}
