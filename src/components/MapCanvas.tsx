@@ -47,7 +47,7 @@ type Props = {
   onGrenadeOpen?: (id: number) => void;
 };
 
-export type IconTheme = 'base' | 'asset';
+export type IconTheme = 'base' | 'asset' | 'tile';
 
 const typeColor: Record<string, string> = {
   smoke: '#67e8f9',
@@ -582,10 +582,10 @@ export default function MapCanvas({
     : undefined;
 
   const markerIcon = (grenadeType: string) =>
-    iconTheme === 'asset' ? (
-      <GrenadeMapIcon grenadeType={grenadeType} />
-    ) : (
+    iconTheme === 'base' ? (
       <Crosshair size={10} />
+    ) : (
+      <GrenadeMapIcon grenadeType={grenadeType} />
     );
 
   return (

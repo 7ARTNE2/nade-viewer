@@ -223,6 +223,8 @@ button:focus-visible,[role="button"]:focus-visible,[role="link"]:focus-visible{o
 .icon-theme-asset .grenade-map-icon{display:block;width:17px;height:23px;color:var(--dot);filter:drop-shadow(0 1px 2px #000)}
 .icon-theme-asset .grenade-map-icon svg{display:block;width:100%;height:100%;overflow:visible}
 .icon-theme-asset .grenade-map-icon path{fill:currentColor}
+.icon-theme-tile .grenade-map-icon svg{display:block;width:100%;height:100%;overflow:visible}
+.icon-theme-tile .grenade-map-icon path{fill:currentColor}
 .icon-theme-asset .throw-stack-dot{position:relative}
 .icon-theme-asset .throw-stack-dot .grenade-map-icon{opacity:1}
 .icon-theme-asset .throw-stack-dot span{position:absolute;z-index:1;right:-5px;bottom:-5px;min-width:13px;height:13px;padding:0 3px;border:1px solid rgba(255,255,255,.24);border-radius:7px;background:#080b0f;color:#fff;font-size:8px;line-height:11px}
@@ -232,6 +234,26 @@ button:focus-visible,[role="button"]:focus-visible,[role="link"]:focus-visible{o
 .icon-theme-asset .cluster-dot.single-type span{position:absolute;z-index:2;right:-6px;bottom:-5px;min-width:14px;height:14px;padding:0 3px;border:1px solid rgba(255,255,255,.25);border-radius:8px;background:#080b0f;color:#fff;font-size:8px;line-height:12px}
 .icon-theme-asset .cluster-dot.single-type.selected{filter:none}
 .icon-theme-asset .cluster-dot.single-type.selected .grenade-map-icon{filter:drop-shadow(0 2px 2px #000) drop-shadow(0 0 3px color-mix(in srgb,var(--dot) 55%,transparent))}
+.icon-theme-tile .throw-dot{border:0;border-radius:6px;background:var(--dot);color:#0a0c0f;box-shadow:0 2px 7px rgba(0,0,0,.45)}
+.icon-theme-tile .throw-dot{width:20px;height:20px}
+.icon-theme-tile .throw-dot:hover{background:color-mix(in srgb,var(--dot) 84%,#fff);box-shadow:0 4px 11px rgba(0,0,0,.5)}
+.icon-theme-tile .throw-dot .grenade-map-icon{display:block;width:11px;height:15px;filter:none}
+.icon-theme-tile .throw-dot>svg{width:12px;height:12px;flex:none}
+.icon-theme-tile .throw-stack-dot{width:22px;height:22px;border-radius:6px}
+.icon-theme-tile .throw-stack-dot span{font-size:10px;font-weight:800}
+.icon-theme-tile .throw-strip-dot{width:24px;height:24px;border:0;border-radius:7px;background:var(--dot);color:#0a0c0f;box-shadow:0 2px 7px rgba(0,0,0,.45)}
+.icon-theme-tile .throw-strip-dot:hover{background:color-mix(in srgb,var(--dot) 84%,#fff)}
+.icon-theme-tile .throw-strip-dot .grenade-map-icon{display:block;width:13px;height:18px;filter:none}
+.icon-theme-tile .cluster-dot{min-width:26px;height:26px;padding:0 7px;border:0;border-radius:7px;background:var(--dot);color:#0a0c0f;box-shadow:0 2px 8px rgba(0,0,0,.45)}
+.icon-theme-tile .cluster-dot:hover{background:color-mix(in srgb,var(--dot) 84%,#fff)}
+.icon-theme-tile .cluster-dot span{color:#0a0c0f;font-size:11px}
+.icon-theme-tile .cluster-dot.selected{background:var(--dot);box-shadow:0 0 0 2px #080b0f,0 0 0 4px var(--dot),0 4px 14px rgba(0,0,0,.5)}
+.icon-theme-tile .cluster-dot.selected span{color:#0a0c0f}
+.icon-theme-tile .throw-strip .throw-strip-dot.spawn-match{border:0;box-shadow:0 0 0 2px rgba(255,116,71,.85),0 3px 10px rgba(0,0,0,.45)}
+.icon-theme-tile .legend-throw{border:0;border-radius:3px;background:#dce3eb;color:#0a0c0f;box-shadow:none}
+.icon-theme-tile .legend-throw.legend-stack{border-radius:3px}
+.icon-theme-tile .legend-throw.legend-insta{background:#fbbf24;box-shadow:0 0 0 2px rgba(251,191,36,.25),0 0 7px rgba(251,191,36,.45)}
+.icon-theme-tile .legend-dot{border-radius:2px}
 .throw-preview-plus{color:var(--dot);font-size:8px}
 .throw-preview-empty{padding:8px 10px 2px;font-size:8px}
 .throw-preview-info{grid-template-columns:minmax(0,1fr) auto auto;gap:5px;padding:7px 10px 8px}
@@ -631,6 +653,11 @@ html[lang="ru"] .boot-title{font-family:Orbitron,sans-serif}
 .icon-theme-asset .marker-layer > .throw-dot.coordinates-copied .grenade-map-icon{animation:throw-copy-glow 1.2s ease-out both}
 .icon-theme-asset .marker-layer > .throw-dot .throw-copy-badge{position:absolute;z-index:2;right:-6px;bottom:-3px;display:grid;width:15px;height:15px;place-items:center;border:1px solid rgba(var(--acid-rgb),.55);border-radius:5px;background:#10191b;color:var(--acid);box-shadow:0 2px 7px rgba(0,0,0,.5);pointer-events:none;animation:throw-copy-badge-in .3s cubic-bezier(.2,1.4,.4,1) both}
 .icon-theme-asset .marker-layer > .throw-dot .throw-copy-badge svg{display:block}
+.icon-theme-tile .marker-layer > .throw-dot.coordinates-copied,.icon-theme-tile .throw-strip-dot.coordinates-copied{animation:none;background:var(--acid);color:#0a0c0f!important;box-shadow:0 0 0 2px rgba(var(--acid-rgb),.28),0 3px 12px rgba(var(--acid-rgb),.28)}
+.icon-theme-tile .marker-layer > .throw-dot.coordinates-copied::after,.icon-theme-tile .throw-strip-dot.coordinates-copied::after{content:none;animation:none}
+.icon-theme-tile .marker-layer > .throw-dot.coordinates-copied .grenade-map-icon,.icon-theme-tile .throw-strip-dot.coordinates-copied .grenade-map-icon{animation:throw-copy-glow 1.2s ease-out both}
+.icon-theme-tile .throw-dot.spawn-match{box-shadow:0 0 0 2px rgba(255,116,71,.8),0 3px 10px rgba(0,0,0,.45)}
+.icon-theme-tile .throw-dot.spawn-match:after{inset:-4px;border-radius:9px}
 @keyframes throw-copy-glow{0%{filter:drop-shadow(0 1px 2px #000) drop-shadow(0 0 0 rgba(var(--acid-rgb),0))}30%{filter:drop-shadow(0 1px 2px #000) drop-shadow(0 0 6px rgba(var(--acid-rgb),.8))}100%{filter:drop-shadow(0 1px 2px #000) drop-shadow(0 0 2px rgba(var(--acid-rgb),.24))}}
 @keyframes throw-copy-badge-in{from{opacity:0;transform:translateY(4px) scale(.65)}to{opacity:1;transform:translateY(0) scale(1)}}
 .segmented button.filter-molotov.active .filter-label-molotov{color:#ff8296}

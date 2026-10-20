@@ -16,6 +16,7 @@ import {
   Search,
   Send,
   Shapes,
+  Square,
   Trophy,
   UserRound,
   Users,
@@ -208,6 +209,8 @@ export default function MapWorkspace({
   const [iconTheme, setIconTheme] = useState<IconTheme>(
     initialViewState?.iconTheme ?? defaultIconTheme,
   );
+  const nextIconTheme: IconTheme =
+    iconTheme === 'base' ? 'asset' : iconTheme === 'asset' ? 'tile' : 'base';
   const [siteMinUsage, setSiteMinUsage] = useState(1);
   const [pendingSiteMinUsage, setPendingSiteMinUsage] = useState<number | null>(
     null,
@@ -1211,23 +1214,44 @@ export default function MapWorkspace({
               {inspectorVisible ? tr('Focus', 'Фокус') : tr('Panel', 'Панель')}
             </button>
             <button
-              className={`toggle map-appearance-toggle ${iconTheme === 'asset' ? 'active' : ''}`}
+              className={`toggle map-appearance-toggle ${iconTheme !== 'base' ? 'active' : ''}`}
               type="button"
-              aria-pressed={iconTheme === 'asset'}
-              onClick={() =>
-                setIconTheme((theme) => (theme === 'base' ? 'asset' : 'base'))
+              aria-pressed={iconTheme !== 'base'}
+              onClick={() => setIconTheme(nextIconTheme)}
+              data-tip={
+                iconTheme === 'base'
+                  ? tr('Marker style: outline', 'Значки: контур')
+                  : iconTheme === 'asset'
+                    ? tr('Marker style: silhouettes', 'Значки: силуэты')
+                    : tr('Marker style: plates', 'Значки: плашки')
               }
-              data-tip={tr(
-                'Toggle grenade point icons',
-                'Переключить значки точек',
-              )}
-              aria-label={tr(
-                'Toggle grenade point icons',
-                'Переключить значки точек',
-              )}
+              aria-label={
+                iconTheme === 'base'
+                  ? tr(
+                      'Marker style: outline. Switch to silhouettes',
+                      'Значки: контур. Переключить на силуэты',
+                    )
+                  : iconTheme === 'asset'
+                    ? tr(
+                        'Marker style: silhouettes. Switch to plates',
+                        'Значки: силуэты. Переключить на плашки',
+                      )
+                    : tr(
+                        'Marker style: plates. Switch to outline',
+                        'Значки: плашки. Переключить на контур',
+                      )
+              }
             >
-              <Shapes size={15} />
-              {tr('Icons', 'Значки')}
+              {iconTheme === 'tile' ? (
+                <Square size={15} fill="currentColor" strokeWidth={0} />
+              ) : (
+                <Shapes size={15} />
+              )}
+              {iconTheme === 'base'
+                ? tr('Outline', 'Контур')
+                : iconTheme === 'asset'
+                  ? tr('Silhouette', 'Силуэт')
+                  : tr('Plates', 'Плашки')}
             </button>
             <button
               aria-pressed={filters.is_insta}

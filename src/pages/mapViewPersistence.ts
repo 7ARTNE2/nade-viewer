@@ -76,7 +76,9 @@ function normalizeStoredIconTheme(
   value: unknown,
   fallback: IconTheme,
 ): IconTheme {
-  return value === 'asset' || value === 'base' ? value : fallback;
+  return value === 'asset' || value === 'base' || value === 'tile'
+    ? value
+    : fallback;
 }
 
 export function readStoredMapViewState(

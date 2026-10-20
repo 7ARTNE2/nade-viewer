@@ -485,7 +485,8 @@ try {
   assert.equal(await pointIcons.getAttribute('aria-pressed'), 'true');
   await page.locator('.map-canvas.icon-theme-asset').waitFor();
   await pointIcons.click();
-  assert.equal(await pointIcons.getAttribute('aria-pressed'), 'false');
+  assert.equal(await pointIcons.getAttribute('aria-pressed'), 'true');
+  await page.locator('.map-canvas.icon-theme-tile').waitFor();
   const exportTrigger = () =>
     page.getByRole('button', {
       name: /^(Экспорт избранного|Export favorites)$/,
@@ -525,6 +526,9 @@ try {
   assert.equal(await mapTab('Nuke').getAttribute('aria-pressed'), 'true');
   assert.equal(await mapTab('Ancient').count(), 0);
   assert.equal(await pointIcons.getAttribute('aria-pressed'), 'true');
+  await pointIcons.click();
+  assert.equal(await pointIcons.getAttribute('aria-pressed'), 'false');
+  await page.locator('.map-canvas.icon-theme-base').waitFor();
   await exportTrigger().click();
   assert.equal(
     await exportMenu()
