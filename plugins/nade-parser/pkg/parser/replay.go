@@ -55,6 +55,7 @@ func ParseReplayFile(path string, options ReplayOptions) (*models.ReplayFile, er
 
 	demoParser := demoinfocs.NewParser(file)
 	defer demoParser.Close()
+	airtime := registerAirtimeTracker(demoParser)
 
 	startedAt := time.Now().UTC()
 	mapName := ""
@@ -75,7 +76,6 @@ func ParseReplayFile(path string, options ReplayOptions) (*models.ReplayFile, er
 	playerAttackHistory := make(map[int]*historyRing[uint64])
 	playerPositionHistory := make(map[int]*historyRing[PositionSnapshot])
 	nadeTrajectories := make(map[int64]*models.NadeTrajectory)
-	airTrackers := make(map[int64]*AirTrack)
 	projectileTags := make(map[int64][]string)
 	fireGrenadeTypeByThrower := make(map[string]string)
 
@@ -422,11 +422,6 @@ func ParseReplayFile(path string, options ReplayOptions) (*models.ReplayFile, er
 		nadeTrajectories[trajectory.UniqueID] = trajectory
 		projectileTags[projectile.UniqueID()] = tags
 
-		airTrackers[projectile.UniqueID()] = &AirTrack{
-			LastPos:   r3.Vector{},
-			ThrowTick: tick,
-		}
-
 		pos := replayProjectilePosition(projectile)
 		x, y, z := replayOptionalCoords(pos)
 
@@ -501,18 +496,7 @@ func ParseReplayFile(path string, options ReplayOptions) (*models.ReplayFile, er
 		pos := replayProjectilePosition(projectile)
 		x, y, z := replayOptionalCoords(pos)
 
-		airtime := 0.0
-		if trajectory.AirtimeOverride > 0 {
-			airtime = trajectory.AirtimeOverride
-		} else {
-			ticks := trajectory.EndTick - trajectory.StartTick
-			if tickRate > 0 {
-				airtime = float64(ticks) / tickRate
-			}
-		}
-		if trajectory.WeaponType == "HE" || trajectory.WeaponType == "flash" {
-			airtime = 1.6
-		}
+		airtimeSeconds := airtime.seconds(id)
 
 		throwDescription := ""
 		coordinates := ""
@@ -527,14 +511,14 @@ func ParseReplayFile(path string, options ReplayOptions) (*models.ReplayFile, er
 			"projectile_id":     id,
 			"grenade_type":      trajectory.WeaponType,
 			"end_tick":          trajectory.EndTick,
-			"airtime":           airtime,
+			"airtime":           airtimeSeconds,
 			"throw_keys":        throwDescription,
 			"coordinates":       coordinates,
 			"trajectory_points": len(trajectory.Trajectory),
 		}
+		airtime.deferUntilFrameDone(func() { data["airtime"] = airtime.seconds(id) })
 		addEvent("grenade_destroy", trajectory.WeaponType+" destroyed", thrower, nil, x, y, z, data)
 
-		delete(airTrackers, id)
 		delete(nadeTrajectories, id)
 	})
 
@@ -709,55 +693,6 @@ func ParseReplayFile(path string, options ReplayOptions) (*models.ReplayFile, er
 					trajectory.Trajectory = append(trajectory.Trajectory, point)
 				}
 			}
-
-			at := airTrackers[id]
-			if at == nil || at.Done {
-				continue
-			}
-
-			weapon := projectile.WeaponInstance
-			if weapon == nil {
-				continue
-			}
-			grenadeType := utils.GetDjangoGrenadeType(weapon.Type.String())
-			if grenadeType == "flash" || grenadeType == "HE" {
-				continue
-			}
-
-			pp := projectile.Position()
-			pos := r3.Vector{X: pp.X, Y: pp.Y, Z: pp.Z}
-
-			dist := 0.0
-			if at.LastPos != (r3.Vector{}) {
-				dx := pos.X - at.LastPos.X
-				dy := pos.Y - at.LastPos.Y
-				dz := pos.Z - at.LastPos.Z
-				dist = math.Sqrt(dx*dx + dy*dy + dz*dz)
-			}
-
-			if dist > epsDist {
-				at.HasMoved = true
-				at.StableTicks = 0
-			} else {
-				if at.HasMoved {
-					at.StableTicks++
-				}
-			}
-			at.LastPos = pos
-
-			age := tick - at.ThrowTick
-			if at.HasMoved && age >= minAgeTicks && at.StableTicks >= stableNeed {
-				at.Done = true
-				stopTick := tick - at.StableTicks
-
-				if trajectory, exists := nadeTrajectories[id]; exists {
-					tr := tickRate
-					if tr <= 0 {
-						tr = 64.0
-					}
-					trajectory.AirtimeOverride = float64(stopTick-at.ThrowTick) / tr
-				}
-			}
 		}
 		sort.Slice(projectiles, func(i, j int) bool { return projectiles[i].ID < projectiles[j].ID })
 
@@ -788,6 +723,8 @@ func ParseReplayFile(path string, options ReplayOptions) (*models.ReplayFile, er
 	if err := demoParser.ParseToEnd(); err != nil {
 		return nil, fmt.Errorf("failed to parse replay demo %s: %w", path, err)
 	}
+
+	airtime.flush()
 
 	if startTick == replayMaxTick {
 		startTick = 0
@@ -859,6 +796,7 @@ func ParseReplayFileStreaming(path string, options ReplayOptions, out io.Writer)
 
 	demoParser := demoinfocs.NewParser(file)
 	defer demoParser.Close()
+	airtime := registerAirtimeTracker(demoParser)
 
 	startedAt := time.Now().UTC()
 	mapName := ""
@@ -878,7 +816,6 @@ func ParseReplayFileStreaming(path string, options ReplayOptions, out io.Writer)
 	playerAttackHistory := make(map[int]*historyRing[uint64])
 	playerPositionHistory := make(map[int]*historyRing[PositionSnapshot])
 	nadeTrajectories := make(map[int64]*models.NadeTrajectory)
-	airTrackers := make(map[int64]*AirTrack)
 	projectileTags := make(map[int64][]string)
 	fireGrenadeTypeByThrower := make(map[string]string)
 	flushedRounds := 0
@@ -1290,11 +1227,6 @@ func ParseReplayFileStreaming(path string, options ReplayOptions, out io.Writer)
 		nadeTrajectories[trajectory.UniqueID] = trajectory
 		projectileTags[projectile.UniqueID()] = tags
 
-		airTrackers[projectile.UniqueID()] = &AirTrack{
-			LastPos:   r3.Vector{},
-			ThrowTick: tick,
-		}
-
 		pos := replayProjectilePosition(projectile)
 		x, y, z := replayOptionalCoords(pos)
 
@@ -1369,18 +1301,7 @@ func ParseReplayFileStreaming(path string, options ReplayOptions, out io.Writer)
 		pos := replayProjectilePosition(projectile)
 		x, y, z := replayOptionalCoords(pos)
 
-		airtime := 0.0
-		if trajectory.AirtimeOverride > 0 {
-			airtime = trajectory.AirtimeOverride
-		} else {
-			ticks := trajectory.EndTick - trajectory.StartTick
-			if tickRate > 0 {
-				airtime = float64(ticks) / tickRate
-			}
-		}
-		if trajectory.WeaponType == "HE" || trajectory.WeaponType == "flash" {
-			airtime = 1.6
-		}
+		airtimeSeconds := airtime.seconds(id)
 
 		throwDescription := ""
 		coordinates := ""
@@ -1395,14 +1316,14 @@ func ParseReplayFileStreaming(path string, options ReplayOptions, out io.Writer)
 			"projectile_id":     id,
 			"grenade_type":      trajectory.WeaponType,
 			"end_tick":          trajectory.EndTick,
-			"airtime":           airtime,
+			"airtime":           airtimeSeconds,
 			"throw_keys":        throwDescription,
 			"coordinates":       coordinates,
 			"trajectory_points": len(trajectory.Trajectory),
 		}
+		airtime.deferUntilFrameDone(func() { data["airtime"] = airtime.seconds(id) })
 		addEvent("grenade_destroy", trajectory.WeaponType+" destroyed", thrower, nil, x, y, z, data)
 
-		delete(airTrackers, id)
 		delete(nadeTrajectories, id)
 	})
 
@@ -1577,55 +1498,6 @@ func ParseReplayFileStreaming(path string, options ReplayOptions, out io.Writer)
 					trajectory.Trajectory = append(trajectory.Trajectory, point)
 				}
 			}
-
-			at := airTrackers[id]
-			if at == nil || at.Done {
-				continue
-			}
-
-			weapon := projectile.WeaponInstance
-			if weapon == nil {
-				continue
-			}
-			grenadeType := utils.GetDjangoGrenadeType(weapon.Type.String())
-			if grenadeType == "flash" || grenadeType == "HE" {
-				continue
-			}
-
-			pp := projectile.Position()
-			pos := r3.Vector{X: pp.X, Y: pp.Y, Z: pp.Z}
-
-			dist := 0.0
-			if at.LastPos != (r3.Vector{}) {
-				dx := pos.X - at.LastPos.X
-				dy := pos.Y - at.LastPos.Y
-				dz := pos.Z - at.LastPos.Z
-				dist = math.Sqrt(dx*dx + dy*dy + dz*dz)
-			}
-
-			if dist > epsDist {
-				at.HasMoved = true
-				at.StableTicks = 0
-			} else {
-				if at.HasMoved {
-					at.StableTicks++
-				}
-			}
-			at.LastPos = pos
-
-			age := tick - at.ThrowTick
-			if at.HasMoved && age >= minAgeTicks && at.StableTicks >= stableNeed {
-				at.Done = true
-				stopTick := tick - at.StableTicks
-
-				if trajectory, exists := nadeTrajectories[id]; exists {
-					tr := tickRate
-					if tr <= 0 {
-						tr = 64.0
-					}
-					trajectory.AirtimeOverride = float64(stopTick-at.ThrowTick) / tr
-				}
-			}
 		}
 		sort.Slice(projectiles, func(i, j int) bool { return projectiles[i].ID < projectiles[j].ID })
 
@@ -1657,6 +1529,7 @@ func ParseReplayFileStreaming(path string, options ReplayOptions, out io.Writer)
 		return fmt.Errorf("failed to parse replay demo %s: %w", path, err)
 	}
 
+	airtime.flush()
 	if err := flushCurrentRound(); err != nil {
 		return err
 	}

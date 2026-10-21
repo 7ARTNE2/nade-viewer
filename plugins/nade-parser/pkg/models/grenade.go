@@ -83,8 +83,8 @@ type NadeTrajectory struct {
 	// Состояние игрока в момент броска
 	PlayerState *PlayerState
 
-	// Airtime override (из FrameDone tracker)
-	AirtimeOverride float64
+	// Seconds from projectile creation to activation; zero if not observed.
+	Airtime float64
 
 	// Tags for problematic grenades (e.g. "fail")
 	Tags []string

@@ -16,8 +16,7 @@ package parser
 //     для всех типов (как в legacy). Explode-события движка для позиции НЕ
 //     используются: их GrenadeEntityID ненадёжно сопоставляется со снарядом и
 //     путает близкие по времени броски (double-flash, повторные молотовы).
-//   - airtime считается как в legacy: трекер остановки смока/молотова через
-//     FrameDone даёт реальное время полёта; HE/flash = 1.6.
+//   - airtime: projectile creation to activation, or actual entity deletion for fire grenades.
 //
 // throw_keys, координаты и часть lineup-логики переиспользуют общие
 // helper-ы из parser.go (getThrowKeys, resolveLineupStart, getPlayerState).
@@ -35,7 +34,6 @@ import (
 	"nadesoulpars/pkg/models"
 	"nadesoulpars/pkg/utils"
 
-	"github.com/golang/geo/r3"
 	demoinfocs "github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs"
 	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/common"
 	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/events"
@@ -110,6 +108,7 @@ func (p *DemoParser) Parse() ([]*models.ParsedGrenade, error) {
 
 	parser := demoinfocs.NewParser(file)
 	defer parser.Close()
+	airtime := registerAirtimeTracker(parser)
 
 	parser.RegisterNetMessageHandler(func(m *msg.CSVCMsg_ServerInfo) {
 		p.mapName = utils.GetDjangoMapName(m.GetMapName())
@@ -219,13 +218,6 @@ func (p *DemoParser) Parse() ([]*models.ParsedGrenade, error) {
 			grenadeType:        grenadeType,
 			projectileEntityID: projectileEntityID,
 		}
-
-		// Трекер остановки смока/молотова (как в legacy) — для расчёта реального
-		// airtime до приземления (EndTick смока = рассеивание дыма, а не падение).
-		p.airTrackers[e.Projectile.UniqueID()] = &AirTrack{
-			LastPos:   r3.Vector{},
-			ThrowTick: currentTick,
-		}
 	})
 
 	// --- Официальные explode-события движка: точная точка взрыва ---
@@ -267,11 +259,13 @@ func (p *DemoParser) Parse() ([]*models.ParsedGrenade, error) {
 		}
 		pn.traj.EndTick = parser.GameState().IngameTick()
 
-		if g := p.finalizeNadeV2(pn, tickRate); g != nil {
-			p.grenades = append(p.grenades, g)
-		}
-		delete(pending, id)
-		delete(p.airTrackers, id)
+		airtime.deferUntilFrameDone(func() {
+			pn.traj.Airtime = airtime.seconds(id)
+			if g := p.finalizeNadeV2(pn, tickRate); g != nil {
+				p.grenades = append(p.grenades, g)
+			}
+			delete(pending, id)
+		})
 	})
 
 	// --- Запись истории позиций/кнопок игроков для lineup/throw-desc ---
@@ -290,60 +284,6 @@ func (p *DemoParser) Parse() ([]*models.ParsedGrenade, error) {
 				Pitch:    pitch,
 				Yaw:      yaw,
 			})
-		}
-
-		// Трекер остановки смока/молотова (как в legacy): когда снаряд перестаёт
-		// двигаться, вычисляем реальный airtime (от броска до остановки) и
-		// сохраняем в AirtimeOverride. Для смока это даёт время ПОЛЁТА, а не
-		// время жизни дыма (EndTick).
-		for _, proj := range parser.GameState().GrenadeProjectiles() {
-			if proj == nil {
-				continue
-			}
-			id := proj.UniqueID()
-			at := p.airTrackers[id]
-			if at == nil || at.Done {
-				continue
-			}
-			pn, ok := pending[id]
-			if !ok {
-				continue
-			}
-			weapon := proj.WeaponInstance
-			if weapon == nil {
-				continue
-			}
-			if utils.GetDjangoGrenadeType(weapon.Type.String()) == "flash" {
-				continue // флешки взрываются в воздухе, остановку не отслеживаем
-			}
-
-			pp := proj.Position()
-			pos := r3.Vector{X: pp.X, Y: pp.Y, Z: pp.Z}
-			dist := 0.0
-			if at.LastPos != (r3.Vector{}) {
-				dx := pos.X - at.LastPos.X
-				dy := pos.Y - at.LastPos.Y
-				dz := pos.Z - at.LastPos.Z
-				dist = math.Sqrt(dx*dx + dy*dy + dz*dz)
-			}
-			if dist > epsDist {
-				at.HasMoved = true
-				at.StableTicks = 0
-			} else if at.HasMoved {
-				at.StableTicks++
-			}
-			at.LastPos = pos
-
-			age := tick - at.ThrowTick
-			if at.HasMoved && age >= minAgeTicks && at.StableTicks >= stableNeed {
-				at.Done = true
-				stopTick := tick - at.StableTicks
-				tr := tickRate
-				if tr <= 0 {
-					tr = 64.0
-				}
-				pn.traj.AirtimeOverride = float64(stopTick-at.ThrowTick) / tr
-			}
 		}
 	})
 
@@ -367,6 +307,8 @@ func (p *DemoParser) Parse() ([]*models.ParsedGrenade, error) {
 		return nil, fmt.Errorf("ошибка парсинга демо: %w", err)
 	}
 
+	airtime.flush()
+
 	// Финализируем гранаты, для которых не пришёл Destroy (конец демки и т.п.).
 	// Порядок обхода map в Go случаен и раньше делал последние записи
 	// недетерминированными, особенно при параллельном запуске нескольких demo.
@@ -381,6 +323,7 @@ func (p *DemoParser) Parse() ([]*models.ParsedGrenade, error) {
 		return remaining[i].traj.UniqueID < remaining[j].traj.UniqueID
 	})
 	for _, pn := range remaining {
+		pn.traj.Airtime = airtime.seconds(pn.traj.UniqueID)
 		if g := p.finalizeNadeV2(pn, tickRate); g != nil {
 			p.grenades = append(p.grenades, g)
 		}
@@ -478,22 +421,7 @@ func (p *DemoParser) finalizeNadeV2(pn *pendingNade, tickRate float64) *models.P
 		endPos = *pn.explodePos
 	}
 
-	// airtime: как в старом (legacy) алгоритме.
-	// Если трекер остановки смока/молотова дал AirtimeOverride (реальное время
-	// полёта до приземления) — используем его. Иначе (EndTick - StartTick).
-	// Для HE/flash — константа 1.6, т.к. их EndTick это уничтожение entity.
-	airtime := 0.0
-	if traj.AirtimeOverride > 0 {
-		airtime = traj.AirtimeOverride
-	} else {
-		ticks := traj.EndTick - traj.StartTick
-		if tickRate > 0 {
-			airtime = float64(ticks) / tickRate
-		}
-	}
-	if traj.WeaponType == "HE" || traj.WeaponType == "flash" {
-		airtime = 1.6
-	}
+	airtime := traj.Airtime
 
 	throwDescription := ""
 	coordinates := ""

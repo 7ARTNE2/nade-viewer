@@ -187,7 +187,10 @@ export default function GrenadeList({
               {typeof g.airtime === 'number' ? (
                 <span className="nade-stat air">
                   <small>{tr('Air', 'Полёт')}</small>
-                  <b>{g.airtime.toFixed(2)}s</b>
+                  <b>
+                    {g.airtime.toFixed(2)}
+                    {'\u00a0s'}
+                  </b>
                 </span>
               ) : null}
               {typeof g.round_time_seconds === 'number' ? (

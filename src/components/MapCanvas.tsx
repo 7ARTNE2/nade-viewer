@@ -1221,9 +1221,9 @@ export default function MapCanvas({
               ) : null}
               <span>
                 {tr('Airtime', 'Время полета')}:{' '}
-                <strong>
+                <strong style={{ textTransform: 'none' }}>
                   {typeof preview.grenade.airtime === 'number'
-                    ? `${preview.grenade.airtime.toFixed(2)}s`
+                    ? `${preview.grenade.airtime.toFixed(2)}\u00a0s`
                     : '-'}
                 </strong>
               </span>

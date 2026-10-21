@@ -54,6 +54,8 @@ func GetDjangoGrenadeType(weaponType string) string {
 
 	// Проверяем по ключевым словам
 	switch {
+	case strings.Contains(weaponTypeLower, "decoy"):
+		return "decoy"
 	case strings.Contains(weaponTypeLower, "flash"):
 		return "flash"
 	case strings.Contains(weaponTypeLower, "smoke"):

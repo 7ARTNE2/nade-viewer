@@ -493,7 +493,7 @@ export default function GrenadePage({ saved = false }: { saved?: boolean }) {
             <span>{tr('Airtime', 'Время полета')}</span>
             <strong>
               {typeof grenade.airtime === 'number'
-                ? `${grenade.airtime.toFixed(2)}s`
+                ? `${grenade.airtime.toFixed(2)}\u00a0s`
                 : '-'}
             </strong>
           </div>

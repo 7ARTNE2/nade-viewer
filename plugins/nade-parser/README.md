@@ -21,6 +21,14 @@ The output contains version 1 canonical_grenades with the trajectory data used b
 Each parsed throw also carries a `usage_events` entry with its demo, tick, player,
 SteamID64, and team. Viewer combines these events when it deduplicates lineups;
 reparse older exports to populate the full usage snapshot.
+
+`airtime` measures demo time from projectile creation to activation (HE, flash,
+smoke or decoy), or actual projectile entity deletion for molotov/incendiary,
+matching MatchZy's event choices. Jump lineup corrections do not affect airtime.
+Unobserved activations have no airtime value; entity cleanup and smoke lifetime
+are not used as fallbacks. Decoys are excluded from canonical grenade exports.
+Existing exports must be reparsed to update airtime.
+
 The CLI sorts parsed throws deterministically by throw tick and projectile entity
 ID, with a serialized-record fallback for exact ties. The CLI does not
 deduplicate throws. Tools optionally applies Viewer Rust deduplication to the

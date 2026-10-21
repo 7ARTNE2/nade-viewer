@@ -27,9 +27,6 @@ type DemoParser struct {
 	roundActionStartTick int
 	roundDurationSeconds float64
 
-	// Для отслеживания остановки смоков
-	airTrackers map[int64]*AirTrack
-
 	// Для отслеживания кнопок и позиций игроков. Кольцевой буфер исключает
 	// копирование полной 700-тиковой истории на каждом кадре.
 	playerAttackHistory   map[int]*historyRing[uint64]
@@ -52,15 +49,6 @@ func DefaultOutputOptions() OutputOptions {
 
 // История кнопок за 700 тиков (~11 секунд), чтобы захватывать длинное движение до броска.
 const attackHistorySize = 700
-
-// AirTrack отслеживает движение гранаты для определения остановки
-type AirTrack struct {
-	LastPos     r3.Vector
-	StableTicks int
-	Done        bool
-	HasMoved    bool
-	ThrowTick   int
-}
 
 type PositionSnapshot struct {
 	Tick     int
@@ -139,14 +127,7 @@ type LineupOrigin struct {
 	Position models.TrajectoryPoint
 }
 
-// Константы для определения остановки
-const (
-	minAgeTicks = 32
-	stableNeed  = 32
-	epsDist     = 0.5
-
-	duckRecentWindowTicks = 5
-)
+const duckRecentWindowTicks = 5
 
 // NewDemoParser создаёт новый парсер для демофайла
 func NewDemoParser(filePath string) *DemoParser {
@@ -159,7 +140,6 @@ func NewDemoParserWithOptions(filePath string, options OutputOptions) *DemoParse
 		fileName:              filepath.Base(filePath),
 		options:               options,
 		grenades:              make([]*models.ParsedGrenade, 0),
-		airTrackers:           make(map[int64]*AirTrack),
 		playerAttackHistory:   make(map[int]*historyRing[uint64]),
 		playerPositionHistory: make(map[int]*historyRing[PositionSnapshot]),
 		roundActionStartTick:  -1,
