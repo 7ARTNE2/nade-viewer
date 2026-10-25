@@ -70,6 +70,8 @@ export type ReplayGrenade = {
     grenade_type: string;
     thrower: string;
     thrower_steamid64?: string;
+    thrower_team?: string;
+    round_time_seconds?: number | null;
     side: string;
     throw_tick: number;
     throw_keys?: string;

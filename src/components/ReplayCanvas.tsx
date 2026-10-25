@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Crosshair, Minus, Plus } from 'lucide-react';
+import { Minus, Plus, RotateCcw } from 'lucide-react';
 import { assetUrl } from '../lib/tauri';
 import {
   activeSmokes,
@@ -21,11 +21,11 @@ type Props = {
   onSelect: (g: ReplayGrenade) => void;
 };
 const colors: Record<string, string> = {
-  smoke: '#79dce7',
-  flash: '#ffe084',
-  HE: '#75e2a8',
-  molotov: '#ff9166',
-  'incendiary grenade': '#ff9166',
+  smoke: '#67e8f9',
+  flash: '#fbbf24',
+  HE: '#34d399',
+  molotov: '#fb7185',
+  'incendiary grenade': '#f97316',
 };
 export default function ReplayCanvas({
   detail,
@@ -368,9 +368,8 @@ export default function ReplayCanvas({
           {tr('Radar unavailable for this map', 'Радар этой карты недоступен')}
         </div>
       )}
-      <div className="replay-map-tools">
+      <div className="map-toolbar-floating replay-map-tools">
         <button
-          className="icon-btn"
           aria-label={tr('Zoom in', 'Приблизить')}
           data-tip={tr('Zoom in', 'Приблизить')}
           onClick={() => zoomAt(1.18)}
@@ -378,7 +377,6 @@ export default function ReplayCanvas({
           <Plus size={16} />
         </button>
         <button
-          className="icon-btn"
           aria-label={tr('Zoom out', 'Отдалить')}
           data-tip={tr('Zoom out', 'Отдалить')}
           onClick={() => zoomAt(1 / 1.18)}
@@ -386,12 +384,12 @@ export default function ReplayCanvas({
           <Minus size={16} />
         </button>
         <button
-          className="icon-btn"
+          className="reset"
           aria-label={tr('Reset view', 'Сбросить вид')}
           data-tip={tr('Reset view', 'Сбросить вид')}
           onClick={() => setView({ s: 1, x: 0, y: 0 })}
         >
-          <Crosshair size={16} />
+          <RotateCcw size={14} />
         </button>
       </div>
     </div>

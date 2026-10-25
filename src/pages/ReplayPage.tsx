@@ -3,17 +3,29 @@ import { invoke } from '@tauri-apps/api/core';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowLeft,
+  Activity,
+  Check,
+  ChevronDown,
+  Clock,
   Copy,
+  Crosshair,
+  Film,
   FolderOpen,
   Pause,
   Play,
   SkipBack,
   SkipForward,
   Trash2,
+  Timer,
   X,
 } from 'lucide-react';
 import ReplayCanvas from '../components/ReplayCanvas';
+import ReplayTimeline from '../components/ReplayTimeline';
 import DestructiveConfirmDialog from '../components/DestructiveConfirmDialog';
+import GrenadeMapIcon from '../components/GrenadeMapIcon';
+import ThrowKeyIcon from '../components/ThrowKeyIcon';
+import { splitThrowKeys, throwKeyVisual } from '../lib/throwKeys';
+import { formatClock } from '../lib/format';
 import { useI18n } from '../i18n';
 import { useToast } from '../components/Toast';
 import {
@@ -29,8 +41,8 @@ import {
   clamp,
   framePair,
   roundBounds,
+  roundPhaseTime,
   playersAt,
-  timeLabel,
 } from '../lib/replayPlayback';
 import { isWindowActive, onWindowActiveChange } from '../lib/windowActive';
 import type {
@@ -109,6 +121,17 @@ export default function ReplayPage() {
   const [tick, setTick] = useState(0);
   const [lower, setLower] = useState(false);
   const [selected, setSelected] = useState<ReplayGrenade | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const copyButton = useRef<HTMLButtonElement>(null);
+  const copyTimer = useRef<number>();
+  const copyRequest = useRef(0);
+  useEffect(() => {
+    setCopiedId(null);
+    return () => {
+      copyRequest.current++;
+      window.clearTimeout(copyTimer.current);
+    };
+  }, [selected?.id]);
   const [deleting, setDeleting] = useState<ReplayEntry | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const clock = useRef(0),
@@ -376,13 +399,22 @@ export default function ReplayPage() {
     }
   };
   const copy = async () => {
+    if (!selected?.data.coordinates) return;
+    const request = ++copyRequest.current;
     try {
-      await navigator.clipboard.writeText(selected?.data.coordinates ?? '');
+      await navigator.clipboard.writeText(selected.data.coordinates);
+      if (request !== copyRequest.current) return;
+      setCopiedId(selected.id);
+      copyButton.current?.getAnimations().forEach((animation) => {
+        animation.currentTime = 0;
+      });
+      window.clearTimeout(copyTimer.current);
+      copyTimer.current = window.setTimeout(() => setCopiedId(null), 1600);
       showToast(tr('Coordinates copied', 'Координаты скопированы'), {
         tone: 'success',
       });
     } catch (e) {
-      fail(e);
+      if (request === copyRequest.current) fail(e);
     }
   };
   const changeRound = (next: number) => {
@@ -403,28 +435,36 @@ export default function ReplayPage() {
         e.type,
       ),
     ) ?? [];
+  const eventTime = (value: number) => {
+    if (!round || !detail) return '';
+    const phase = roundPhaseTime(round.round, value, detail.metadata.tickrate);
+    return `${phase.freezing ? '-' : ''}${phase.label}`;
+  };
   return (
     <div className="replay-page">
       <header className="replay-header">
         <div className="replay-heading">
           {id !== null && (
-            <Link
+            <button
+              type="button"
               className="icon-btn"
-              to="/replays"
               onClick={() => {
                 const p = position.current;
                 if (p)
                   void saveReplayPosition(p.id, p.number, clock.current).catch(
                     () => undefined,
                   );
+                navigate('/replays');
               }}
               aria-label={tr('Replay history', 'История матчей')}
+              data-tip={tr('Replay history', 'История матчей')}
             >
-              <ArrowLeft size={18} />
-            </Link>
+              <ArrowLeft size={16} />
+            </button>
           )}
           <div>
             <span className="replay-eyebrow">
+              <Film size={11} aria-hidden="true" />
               {detail ? detail.metadata.map : 'NADE VIEWER'}
             </span>
             <h1>{detail ? tr('Match replay', 'Повтор матча') : '2D Replay'}</h1>
@@ -497,7 +537,7 @@ export default function ReplayPage() {
         <div className="replay-history">
           <div className="replay-section-title">
             <h2>{tr('Matches', 'Матчи')}</h2>
-            <span>{entries.length}</span>
+            <span className="replay-count">{entries.length}</span>
           </div>
           {!entries.length ? (
             <div className="replay-empty">
@@ -564,21 +604,22 @@ export default function ReplayPage() {
       ) : detail ? (
         <div className="replay-workspace">
           <div className="replay-round-bar">
-            <label>
-              {tr('Round', 'Раунд')}{' '}
+            <div className="replay-round-select">
               <select
                 aria-label={tr('Round', 'Раунд')}
                 value={number ?? ''}
-                onChange={(e) => changeRound(Number(e.target.value))}
+                onChange={(event) => changeRound(Number(event.target.value))}
               >
                 {detail.rounds.map((r) => (
                   <option key={r.number} value={r.number}>
-                    {r.number === 0 ? tr('Warmup', 'Разминка') : r.number}{' '}
-                    {r.winner_side ? ' · ' + r.winner_side : ''}
+                    {r.number === 0
+                      ? tr('Warmup', 'Разминка')
+                      : `${tr('Round', 'Раунд')} ${r.number}`}
                   </option>
                 ))}
               </select>
-            </label>
+              <ChevronDown size={13} aria-hidden="true" />
+            </div>
             <span
               className="replay-demo-name"
               title={detail.metadata.demo_filename}
@@ -592,20 +633,24 @@ export default function ReplayPage() {
             )}
             {detail.map.has_lower_radar && (
               <div
-                className="replay-segment"
+                className="radar-switch replay-segment"
                 role="group"
                 aria-label={tr('Radar level', 'Этаж')}
               >
                 <button
                   className={!lower ? 'active' : ''}
+                  aria-pressed={!lower}
                   onClick={() => setLower(false)}
                 >
+                  <span className="radar-switch-indicator" />
                   {tr('Upper', 'Верх')}
                 </button>
                 <button
                   className={lower ? 'active' : ''}
+                  aria-pressed={lower}
                   onClick={() => setLower(true)}
                 >
+                  <span className="radar-switch-indicator" />
                   {tr('Lower', 'Низ')}
                 </button>
               </div>
@@ -636,25 +681,136 @@ export default function ReplayPage() {
                   {selected ? (
                     <section className="replay-grenade-detail">
                       <header>
-                        <h2>
+                        <h2 className="replay-detail-type">
+                          <span
+                            className={`replay-nade-icon type-${selected.data.grenade_type.toLowerCase().replace(/ /g, '-')}`}
+                          >
+                            <GrenadeMapIcon
+                              grenadeType={selected.data.grenade_type}
+                            />
+                          </span>
                           {grenadeLabel(selected.data.grenade_type, locale)}
                         </h2>
                         <button
                           className="icon-btn"
                           aria-label={tr('Close grenade', 'Закрыть гранату')}
+                          data-tip={tr('Close grenade', 'Закрыть гранату')}
                           onClick={() => setSelected(null)}
                         >
                           <X size={14} />
                         </button>
                       </header>
-                      <strong>{selected.data.thrower}</strong>
-                      <dl>
-                        <dt>{tr('Throw', 'Бросок')}</dt>
-                        <dd>{selected.data.throw_keys || '—'}</dd>
-                        <dt>{tr('Airtime', 'Время полёта')}</dt>
-                        <dd>{selected.data.airtime?.toFixed(3) ?? '—'} s</dd>
-                      </dl>
-                      <code>{selected.data.coordinates || '—'}</code>
+                      <div className="detail-title-row replay-detail-player">
+                        <span
+                          className={`side-mini side-${selected.data.side.toLowerCase()}`}
+                        >
+                          {selected.data.side}
+                        </span>
+                        <strong>{selected.data.thrower}</strong>
+                        {selected.data.thrower_team && (
+                          <span
+                            className={`detail-thrower-team side-accent-${selected.data.side.toLowerCase()}`}
+                            title={selected.data.thrower_team}
+                          >
+                            {selected.data.thrower_team}
+                          </span>
+                        )}
+                      </div>
+                      <div className="metric-grid replay-detail-metrics">
+                        <div>
+                          <Timer size={13} aria-hidden="true" />
+                          <span title={tr('Airtime', 'Время полёта')}>
+                            {tr('Airtime', 'Полёт')}
+                          </span>
+                          <strong>
+                            {selected.data.airtime?.toFixed(3) ?? '—'} s
+                          </strong>
+                        </div>
+                        <div>
+                          <Clock size={13} aria-hidden="true" />
+                          <span title={tr('Round time', 'Время раунда')}>
+                            {tr('Round', 'Раунд')}
+                          </span>
+                          <strong>
+                            {formatClock(selected.data.round_time_seconds)}
+                          </strong>
+                        </div>
+                      </div>
+                      <div className="info-block replay-detail-keys">
+                        <div className="block-title">
+                          {tr('Throw keys', 'Клавиши броска')}
+                        </div>
+                        {selected.data.throw_keys ? (
+                          <div className="throw-preview-keys detail-throw-keys">
+                            {splitThrowKeys(selected.data.throw_keys).map(
+                              (key, keyIndex) => {
+                                const visual = throwKeyVisual(key);
+                                return (
+                                  <span
+                                    className="throw-preview-key-part"
+                                    key={`${key}-${keyIndex}`}
+                                  >
+                                    <span
+                                      className={`throw-preview-key-icon ${visual.kind} ${visual.iconOnly ? 'icon-only' : ''}`}
+                                      data-tip={visual.title}
+                                    >
+                                      {visual.iconOnly ? (
+                                        visual.kind === 'mouse' ? (
+                                          <>
+                                            <span>{visual.label}</span>
+                                            <ThrowKeyIcon
+                                              glyph={visual.glyph}
+                                            />
+                                          </>
+                                        ) : (
+                                          <ThrowKeyIcon glyph={visual.glyph} />
+                                        )
+                                      ) : (
+                                        <span>{visual.label}</span>
+                                      )}
+                                    </span>
+                                  </span>
+                                );
+                              },
+                            )}
+                          </div>
+                        ) : (
+                          <span className="muted">—</span>
+                        )}
+                      </div>
+                      <div className="info-block replay-detail-coordinates">
+                        <div className="block-title">
+                          {tr('Coordinates', 'Координаты')}
+                          <button
+                            ref={copyButton}
+                            type="button"
+                            className={`micro-btn detail-copy-button ${copiedId === selected.id ? 'copied' : ''}`}
+                            disabled={!selected.data.coordinates}
+                            onClick={() => void copy()}
+                            aria-label={tr(
+                              'Copy coordinates',
+                              'Копировать координаты',
+                            )}
+                            data-tip={
+                              copiedId === selected.id
+                                ? tr('Copied', 'Скопировано')
+                                : tr(
+                                    'Copy coordinates',
+                                    'Копировать координаты',
+                                  )
+                            }
+                          >
+                            {copiedId === selected.id ? (
+                              <Check className="copy-action-icon" size={13} />
+                            ) : (
+                              <Copy className="copy-action-icon" size={13} />
+                            )}
+                          </button>
+                        </div>
+                        <div className="coordinate-command-panel">
+                          <code>{selected.data.coordinates || '—'}</code>
+                        </div>
+                      </div>
                       <div className="replay-detail-actions">
                         <button
                           className="btn"
@@ -666,24 +822,18 @@ export default function ReplayPage() {
                           <SkipBack size={14} />
                           {tr('Go to throw', 'К броску')}
                         </button>
-                        <button
-                          className="icon-btn"
-                          disabled={!selected.data.coordinates}
-                          onClick={() => void copy()}
-                          aria-label={tr(
-                            'Copy coordinates',
-                            'Копировать координаты',
-                          )}
-                        >
-                          <Copy size={15} />
-                        </button>
                       </div>
                     </section>
                   ) : null}
                   <section className="replay-throws">
                     <h2>
-                      {tr('Grenades', 'Гранаты')}{' '}
-                      <small>{round.grenades.length}</small>
+                      <span>
+                        <Crosshair size={13} />
+                        {tr('Grenades', 'Гранаты')}
+                      </span>
+                      <small className="replay-count">
+                        {round.grenades.length}
+                      </small>
                     </h2>
                     {round.grenades.map((g) => (
                       <button
@@ -696,25 +846,33 @@ export default function ReplayPage() {
                         }}
                       >
                         <span
-                          className={`replay-nade-dot type-${g.data.grenade_type.toLowerCase().replace(/ /g, '-')}`}
-                        />
+                          className={`replay-nade-icon type-${g.data.grenade_type.toLowerCase().replace(/ /g, '-')}`}
+                        >
+                          <GrenadeMapIcon grenadeType={g.data.grenade_type} />
+                        </span>
                         <span>
                           <strong>{g.data.thrower}</strong>
                           <small>
                             {grenadeLabel(g.data.grenade_type, locale)}
                           </small>
                         </span>
-                        <time>
-                          {timeLabel(
-                            (g.release_tick - bounds[0]) /
-                              detail.metadata.tickrate,
-                          )}
-                        </time>
+                        <time>{eventTime(g.release_tick)}</time>
                       </button>
                     ))}
                   </section>
                   <section className="replay-events">
-                    <h2>{tr('Events', 'События')}</h2>
+                    <h2>
+                      <span>
+                        <Activity size={13} />
+                        {tr('Events', 'События')}
+                      </span>
+                      <small className="replay-count">{events.length}</small>
+                    </h2>
+                    {!events.length && (
+                      <p className="replay-list-empty">
+                        {tr('No events', 'Нет событий')}
+                      </p>
+                    )}
                     {events.map((e, i) => (
                       <button
                         key={i}
@@ -724,11 +882,7 @@ export default function ReplayPage() {
                           setPlaying(false);
                         }}
                       >
-                        <time>
-                          {timeLabel(
-                            (e.tick - bounds[0]) / detail.metadata.tickrate,
-                          )}
-                        </time>
+                        <time>{eventTime(e.tick)}</time>
                         <span>
                           {e.type === 'kill'
                             ? e.message
@@ -755,16 +909,22 @@ export default function ReplayPage() {
                     disabled={index <= 0}
                     onClick={() => changeRound(detail.rounds[index - 1].number)}
                     aria-label={tr('Previous round', 'Предыдущий раунд')}
+                    data-tip={tr('Previous round', 'Предыдущий раунд')}
                   >
                     <SkipBack size={18} />
                   </button>
                   <button
-                    className="replay-play"
+                    className="btn primary replay-play"
                     onClick={() => {
                       if (tick >= bounds[1]) seek(bounds[0]);
                       setPlaying((v) => !v);
                     }}
                     aria-label={
+                      playing
+                        ? tr('Pause', 'Пауза')
+                        : tr('Play', 'Воспроизвести')
+                    }
+                    data-tip={
                       playing
                         ? tr('Pause', 'Пауза')
                         : tr('Play', 'Воспроизвести')
@@ -777,55 +937,40 @@ export default function ReplayPage() {
                     disabled={index < 0 || index >= detail.rounds.length - 1}
                     onClick={() => changeRound(detail.rounds[index + 1].number)}
                     aria-label={tr('Next round', 'Следующий раунд')}
+                    data-tip={tr('Next round', 'Следующий раунд')}
                   >
                     <SkipForward size={18} />
                   </button>
                 </div>
-                <div className="replay-timeline">
-                  <div>
-                    <time>
-                      {timeLabel((tick - bounds[0]) / detail.metadata.tickrate)}
-                    </time>
-                    <span>
-                      {tr('Round', 'Раунд')} {number}
-                    </span>
-                    <time>
-                      {timeLabel(
-                        (bounds[1] - bounds[0]) / detail.metadata.tickrate,
-                      )}
-                    </time>
-                  </div>
-                  <input
-                    type="range"
-                    min={bounds[0]}
-                    max={Math.max(bounds[0] + 1, bounds[1])}
-                    step={1}
-                    value={tick}
-                    aria-label={tr('Replay timeline', 'Таймлайн повтора')}
-                    onChange={(e) => seek(Number(e.target.value))}
-                  />
-                  <div className="replay-event-ticks" aria-hidden="true">
-                    {events.map((e, i) => (
-                      <i
-                        key={i}
-                        style={{
-                          left: `${clamp(((e.tick - bounds[0]) / (bounds[1] - bounds[0] || 1)) * 100, 0, 100)}%`,
-                        }}
-                      />
-                    ))}
-                  </div>
-                </div>
-                <select
+                <ReplayTimeline
+                  round={round}
+                  clock={clock}
+                  tick={tick}
+                  tickrate={detail.metadata.tickrate}
+                  playing={playing}
+                  events={events}
+                  onSeek={seek}
+                />
+                <div
+                  className="replay-speeds"
+                  role="group"
                   aria-label={tr('Playback speed', 'Скорость воспроизведения')}
-                  value={speed}
-                  onChange={(e) => setSpeed(Number(e.target.value))}
                 >
-                  {[0.25, 0.5, 1, 2, 4].map((s) => (
-                    <option key={s} value={s}>
-                      {s}×
-                    </option>
+                  {[0.25, 0.5, 1, 2, 4].map((value) => (
+                    <button
+                      key={value}
+                      type="button"
+                      aria-label={`${value}×`}
+                      aria-pressed={speed === value}
+                      onClick={() => setSpeed(value)}
+                    >
+                      <span>
+                        {value}
+                        <small>×</small>
+                      </span>
+                    </button>
                   ))}
-                </select>
+                </div>
               </footer>
             </>
           ) : (

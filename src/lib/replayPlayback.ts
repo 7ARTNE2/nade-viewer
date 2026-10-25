@@ -1,4 +1,9 @@
-import type { ReplayFrame, ReplayPlayer, ReplayRound } from '../types/replay';
+import type {
+  ReplayFrame,
+  ReplayPlayer,
+  ReplayRound,
+  ReplayRoundSummary,
+} from '../types/replay';
 
 export const clamp = (n: number, a: number, b: number) =>
   Math.max(a, Math.min(b, n));
@@ -64,6 +69,18 @@ export function roundBounds(round: ReplayRound): [number, number] {
 export function timeLabel(seconds: number): string {
   const n = Math.max(0, Math.floor(seconds));
   return `${Math.floor(n / 60)}:${String(n % 60).padStart(2, '0')}`;
+}
+export function roundPhaseTime(
+  round: ReplayRoundSummary,
+  tick: number,
+  tickrate: number,
+) {
+  const start = round.freeze_end_tick ?? round.start_tick;
+  const freezing = round.freeze_end_tick !== null && tick < start;
+  const seconds = freezing
+    ? Math.ceil((start - tick) / tickrate)
+    : (tick - start) / tickrate;
+  return { freezing, label: timeLabel(seconds) };
 }
 export function activeSmokes(round: ReplayRound, tick: number) {
   const active = new Map<string, { x: number; y: number; z: number }>();
