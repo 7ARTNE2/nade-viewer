@@ -15,7 +15,38 @@ Protocol:
 ```text
 nade-parser.exe --plugin-info
 nade-parser.exe --parse --demo match.dem --output result.json
+nade-parser.exe --replay --demo match.dem --output replay.ndjson
 ```
+
+Nade Parser 0.3.0 advertises the `replay_v1` capability. Replay is collected in
+one demoinfocs pass with the same grenade collector as `--parse`; grenade
+selection, throw keys, lineup coordinates, complete trajectories and airtime
+are shared. `--sample-fps` defaults to 16 (one sample every four ticks at 64 Hz)
+and affects only replay frames, not grenade detection. Playback interpolates
+between samples.
+
+Replay output is NDJSON, format `nadeviewer_replay`, version 1. Records are
+`metadata`, `round` (frames and events), `grenade` (a finalized canonical throw
+with its round, projectile ID and actual release tick), and `complete`.
+Grenades can finalize after their round record; consumers must attach them by
+`round_number`. Round 0 represents pre-round footage. The existing canonical
+`throw_tick` retains its lineup preparation semantics; `release_tick` identifies
+the actual projectile creation. All 64-bit IDs in replay are decimal strings.
+Unexpected end-of-demo follows the canonical parser's recovery policy and marks
+the completed replay `incomplete`; other failures exit nonzero. `--output -`
+streams records on stdout, with diagnostics on stderr.
+
+Optional local integration checks:
+
+```powershell
+$env:NADE_REPLAY_DEMO = 'F:\Dev\newdemos\match.dem'
+go test ./pkg/parser -run TestReplayGrenadesMatchCanonical -count=1
+```
+
+`NADE_REPLAY_BASELINE` can additionally point to a pre-refactor canonical JSON
+export. The check compares every grenade field and trajectory point at 1 and
+16 FPS and checks the four-tick cadence for 64-tick demos. Demo files and
+generated outputs are not committed.
 
 The output contains version 1 canonical_grenades with the trajectory data used by Nade Viewer.
 Each parsed throw also carries a `usage_events` entry with its demo, tick, player,

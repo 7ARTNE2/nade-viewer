@@ -27,6 +27,24 @@ Current application version: **0.6.0**.
   available after switching or deleting libraries, including the last library.
 - Provides English and Russian interfaces.
 
+### 2D Replay
+
+The **2D Replay** section opens local CS2 demos through the separately installed
+Nade Parser 0.3.0 or newer. The player includes rounds, a seekable timeline,
+0.25x to 4x playback, player positions and equipment, kills, bomb state, smoke
+and fire effects, and selectable grenade trajectories with copyable lineup
+coordinates. Upper and lower radars are supported where bundled assets exist.
+
+Replay samples default to **16 frames per second**, every four ticks for a
+64-tick demo, with interpolated rendering. Grenade detection runs on every demo
+tick through the same collector as the existing grenade export.
+
+Parsed matches are stored locally in a separate `replays.sqlite` database, with
+compressed round data loaded as needed. Saved matches remain playable without
+the original demo or the parser plugin. The history supports deletion and resumes
+the last viewed round and position. Removing a match does not delete its demo.
+Replay does not automatically import grenades into a library or Favorites.
+
 ### Favorites and collections
 
 Click a grenade's star in a lineup list or its detail page to save it. The

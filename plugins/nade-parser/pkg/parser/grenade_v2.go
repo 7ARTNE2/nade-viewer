@@ -109,6 +109,16 @@ func (p *DemoParser) Parse() ([]*models.ParsedGrenade, error) {
 	parser := demoinfocs.NewParser(file)
 	defer parser.Close()
 	airtime := registerAirtimeTracker(parser)
+	finish := p.registerGrenades(parser, airtime, nil, nil)
+	if err := parser.ParseToEnd(); err != nil && !errors.Is(err, demoinfocs.ErrUnexpectedEndOfDemo) {
+		return nil, fmt.Errorf("failed to parse demo: %w", err)
+	}
+	finish()
+	return p.grenades, nil
+}
+
+// Both export and replay attach the same per-tick collector to their parser.
+func (p *DemoParser) registerGrenades(parser demoinfocs.Parser, airtime *airtimeTracker, onThrow func(*common.GrenadeProjectile, int), onGrenade func(*models.ParsedGrenade, int64, int)) func() {
 
 	parser.RegisterNetMessageHandler(func(m *msg.CSVCMsg_ServerInfo) {
 		p.mapName = utils.GetDjangoMapName(m.GetMapName())
@@ -218,6 +228,9 @@ func (p *DemoParser) Parse() ([]*models.ParsedGrenade, error) {
 			grenadeType:        grenadeType,
 			projectileEntityID: projectileEntityID,
 		}
+		if onThrow != nil {
+			onThrow(e.Projectile, currentTick)
+		}
 	})
 
 	// --- Официальные explode-события движка: точная точка взрыва ---
@@ -262,7 +275,11 @@ func (p *DemoParser) Parse() ([]*models.ParsedGrenade, error) {
 		airtime.deferUntilFrameDone(func() {
 			pn.traj.Airtime = airtime.seconds(id)
 			if g := p.finalizeNadeV2(pn, tickRate); g != nil {
-				p.grenades = append(p.grenades, g)
+				if onGrenade != nil {
+					onGrenade(g, id, pn.throwTick)
+				} else {
+					p.grenades = append(p.grenades, g)
+				}
 			}
 			delete(pending, id)
 		})
@@ -303,60 +320,61 @@ func (p *DemoParser) Parse() ([]*models.ParsedGrenade, error) {
 		p.roundActionStartTick = parser.GameState().IngameTick()
 	})
 
-	if err := parser.ParseToEnd(); err != nil && !errors.Is(err, demoinfocs.ErrUnexpectedEndOfDemo) {
-		return nil, fmt.Errorf("ошибка парсинга демо: %w", err)
-	}
+	return func() {
+		airtime.flush()
 
-	airtime.flush()
+		// Финализируем гранаты, для которых не пришёл Destroy (конец демки и т.п.).
+		// Порядок обхода map в Go случаен и раньше делал последние записи
+		// недетерминированными, особенно при параллельном запуске нескольких demo.
+		remaining := make([]*pendingNade, 0, len(pending))
+		for _, pn := range pending {
+			remaining = append(remaining, pn)
+		}
+		sort.Slice(remaining, func(i, j int) bool {
+			if remaining[i].throwTick != remaining[j].throwTick {
+				return remaining[i].throwTick < remaining[j].throwTick
+			}
+			return remaining[i].traj.UniqueID < remaining[j].traj.UniqueID
+		})
+		for _, pn := range remaining {
+			pn.traj.Airtime = airtime.seconds(pn.traj.UniqueID)
+			if g := p.finalizeNadeV2(pn, tickRate); g != nil {
+				if onGrenade != nil {
+					onGrenade(g, pn.traj.UniqueID, pn.throwTick)
+				} else {
+					p.grenades = append(p.grenades, g)
+				}
+			}
+			delete(pending, pn.traj.UniqueID)
+		}
 
-	// Финализируем гранаты, для которых не пришёл Destroy (конец демки и т.п.).
-	// Порядок обхода map в Go случаен и раньше делал последние записи
-	// недетерминированными, особенно при параллельном запуске нескольких demo.
-	remaining := make([]*pendingNade, 0, len(pending))
-	for _, pn := range pending {
-		remaining = append(remaining, pn)
-	}
-	sort.Slice(remaining, func(i, j int) bool {
-		if remaining[i].throwTick != remaining[j].throwTick {
-			return remaining[i].throwTick < remaining[j].throwTick
+		// demoinfocs may emit same-frame projectile destroy callbacks in varying
+		// order. A stable domain sort makes the serialized plugin contract
+		// deterministic without changing the parsed grenade set. The serialized
+		// fallback fully orders rare collisions and missing entity IDs.
+		sortKeys := make(map[*models.ParsedGrenade][]byte, len(p.grenades))
+		for _, grenade := range p.grenades {
+			sortKeys[grenade], _ = json.Marshal(grenade)
 		}
-		return remaining[i].traj.UniqueID < remaining[j].traj.UniqueID
-	})
-	for _, pn := range remaining {
-		pn.traj.Airtime = airtime.seconds(pn.traj.UniqueID)
-		if g := p.finalizeNadeV2(pn, tickRate); g != nil {
-			p.grenades = append(p.grenades, g)
-		}
-		delete(pending, pn.traj.UniqueID)
-	}
+		sort.SliceStable(p.grenades, func(i, j int) bool {
+			if p.grenades[i].ThrowTick != p.grenades[j].ThrowTick {
+				return p.grenades[i].ThrowTick < p.grenades[j].ThrowTick
+			}
+			left, right := 0, 0
+			if p.grenades[i].ProjectileEntityID != nil {
+				left = *p.grenades[i].ProjectileEntityID
+			}
+			if p.grenades[j].ProjectileEntityID != nil {
+				right = *p.grenades[j].ProjectileEntityID
+			}
+			if left != right {
+				return left < right
+			}
+			return bytes.Compare(sortKeys[p.grenades[i]], sortKeys[p.grenades[j]]) < 0
+		})
 
-	// demoinfocs may emit same-frame projectile destroy callbacks in varying
-	// order. A stable domain sort makes the serialized plugin contract
-	// deterministic without changing the parsed grenade set. The serialized
-	// fallback fully orders rare collisions and missing entity IDs.
-	sortKeys := make(map[*models.ParsedGrenade][]byte, len(p.grenades))
-	for _, grenade := range p.grenades {
-		sortKeys[grenade], _ = json.Marshal(grenade)
+		ensureTickRate()
 	}
-	sort.SliceStable(p.grenades, func(i, j int) bool {
-		if p.grenades[i].ThrowTick != p.grenades[j].ThrowTick {
-			return p.grenades[i].ThrowTick < p.grenades[j].ThrowTick
-		}
-		left, right := 0, 0
-		if p.grenades[i].ProjectileEntityID != nil {
-			left = *p.grenades[i].ProjectileEntityID
-		}
-		if p.grenades[j].ProjectileEntityID != nil {
-			right = *p.grenades[j].ProjectileEntityID
-		}
-		if left != right {
-			return left < right
-		}
-		return bytes.Compare(sortKeys[p.grenades[i]], sortKeys[p.grenades[j]]) < 0
-	})
-
-	ensureTickRate()
-	return p.grenades, nil
 }
 
 // matchPendingByEntity ищет активную гранату по entity ID explode-события.

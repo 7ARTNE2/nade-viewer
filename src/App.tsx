@@ -15,6 +15,7 @@ import {
   Ellipsis,
   FolderOpen,
   Map,
+  Film,
   Pencil,
   RotateCw,
   Trash2,
@@ -60,6 +61,7 @@ import MapPage from './pages/MapPage';
 import GrenadePage from './pages/GrenadePage';
 import ToolsPage from './pages/ToolsPage';
 import FavoritesPage from './pages/FavoritesPage';
+import ReplayPage from './pages/ReplayPage';
 import ClearFavoritesDialog from './components/ClearFavoritesDialog';
 import { FavoritesProvider, useFavorites } from './lib/favorites';
 import Tooltip from './components/Tooltip';
@@ -453,7 +455,10 @@ function Shell() {
       setLibraryActionsOpen(false);
       await refreshImports();
       await refreshFavorites();
-      if (!location.pathname.startsWith('/favorites'))
+      if (
+        !location.pathname.startsWith('/favorites') &&
+        !location.pathname.startsWith('/replays')
+      )
         navigate(next ? '/maps' : '/import', { replace: true });
       showToast(
         tr(
@@ -560,6 +565,15 @@ function Shell() {
                 >
                   <Wrench size={16} />
                   <span>{tr('Tools', 'Инструменты')}</span>
+                </button>
+                <button
+                  className={`topbar-nav-link ${location.pathname.startsWith('/replays') ? 'active' : ''}`}
+                  aria-label="2D Replay"
+                  data-tip="2D Replay"
+                  onClick={() => navigate('/replays')}
+                >
+                  <Film size={16} />
+                  <span>2D Replay</span>
                 </button>
                 <div
                   className="language-switch"
@@ -847,6 +861,8 @@ function Shell() {
 
             <div className="view-frame viewer-frame">
               <Routes>
+                <Route path="/replays" element={<ReplayPage />} />
+                <Route path="/replays/:id" element={<ReplayPage />} />
                 <Route
                   path="/favorites"
                   element={<FavoritesPage hasLibrary={Boolean(activeImport)} />}

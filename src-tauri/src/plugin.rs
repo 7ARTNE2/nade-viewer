@@ -19,7 +19,7 @@ use std::os::windows::process::CommandExt;
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
-fn hide_console(command: &mut Command) -> &mut Command {
+pub(crate) fn hide_console(command: &mut Command) -> &mut Command {
     #[cfg(windows)]
     command.creation_flags(CREATE_NO_WINDOW);
     command
@@ -113,7 +113,7 @@ pub(crate) struct ParserStatus {
 }
 
 impl ParserStatus {
-    fn start(&mut self, stage: &str) {
+    pub(crate) fn start(&mut self, stage: &str) {
         self.running = true;
         self.stage = stage.into();
         self.output = None;
@@ -158,7 +158,7 @@ impl ParserStatus {
         self.last_io_sample = Some((now, read_bytes, write_bytes));
     }
 
-    fn finish(&mut self, result: Result<Option<PathBuf>, String>) {
+    pub(crate) fn finish(&mut self, result: Result<Option<PathBuf>, String>) {
         self.update_elapsed();
         self.started_at = None;
         self.running = false;
@@ -211,7 +211,7 @@ impl SessionProgress {
     }
 }
 
-fn exe(app: &AppHandle) -> PathBuf {
+pub(crate) fn exe(app: &AppHandle) -> PathBuf {
     app.path()
         .app_local_data_dir()
         .unwrap_or_default()
@@ -222,7 +222,7 @@ fn exe(app: &AppHandle) -> PathBuf {
             "nade-parser"
         })
 }
-fn state(app: &AppHandle) -> Arc<Mutex<ParserStatus>> {
+pub(crate) fn state(app: &AppHandle) -> Arc<Mutex<ParserStatus>> {
     app.state::<Arc<Mutex<ParserStatus>>>().inner().clone()
 }
 
@@ -232,7 +232,7 @@ pub(crate) struct ParserControl {
     children: Mutex<Vec<u32>>,
 }
 
-fn control(app: &AppHandle) -> Arc<ParserControl> {
+pub(crate) fn control(app: &AppHandle) -> Arc<ParserControl> {
     app.state::<Arc<ParserControl>>().inner().clone()
 }
 
@@ -284,12 +284,12 @@ fn process_io_bytes(_: &[u32]) -> (u64, u64) {
 }
 
 impl ParserControl {
-    fn reset(&self) {
+    pub(crate) fn reset(&self) {
         self.cancel.store(false, Ordering::Release);
         self.children.lock().unwrap().clear();
     }
 
-    fn cancel(&self) {
+    pub(crate) fn cancel(&self) {
         self.cancel.store(true, Ordering::Release);
         let children = self.children.lock().unwrap().clone();
         for pid in children {
@@ -297,15 +297,15 @@ impl ParserControl {
         }
     }
 
-    fn is_cancelled(&self) -> bool {
+    pub(crate) fn is_cancelled(&self) -> bool {
         self.cancel.load(Ordering::Acquire)
     }
 
-    fn register(&self, pid: u32) {
+    pub(crate) fn register(&self, pid: u32) {
         self.children.lock().unwrap().push(pid);
     }
 
-    fn unregister(&self, pid: u32) {
+    pub(crate) fn unregister(&self, pid: u32) {
         self.children.lock().unwrap().retain(|child| *child != pid);
     }
 }
@@ -313,7 +313,7 @@ impl ParserControl {
 fn terminate_process(pid: u32) {
     #[cfg(windows)]
     {
-        let _ = Command::new("taskkill")
+        let _ = hide_console(&mut Command::new("taskkill"))
             .args(["/PID", &pid.to_string(), "/T", "/F"])
             .stdout(Stdio::null())
             .stderr(Stdio::null())

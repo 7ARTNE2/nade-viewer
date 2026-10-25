@@ -26,6 +26,7 @@ mod dedup;
 mod favorites;
 mod parser_store;
 mod plugin;
+mod replay;
 
 const WORLD: f64 = 1024.0;
 const SUPPORTED_IMPORT_VERSION: i64 = 1;
@@ -754,6 +755,13 @@ pub fn run() {
             plugin::get_parser_workspace_counts,
             plugin::clear_parser_workspace,
             plugin::prepare_parser_import,
+            replay::get_replay_capability,
+            replay::start_replay,
+            replay::list_replays,
+            replay::get_replay,
+            replay::get_replay_round,
+            replay::delete_replay,
+            replay::save_replay_position,
             check_library_update,
             import_library_update,
             cancel_library_download,
