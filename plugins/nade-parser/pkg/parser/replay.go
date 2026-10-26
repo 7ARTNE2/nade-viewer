@@ -124,7 +124,13 @@ func collectReplay(path string, options ReplayOptions, emit func(models.ReplaySt
 	startTick, endTick, frameCount, eventCount, roundCount := -1, 0, 0, 0, 0
 	bombState, bombSite := "unknown", ""
 	var plantedBomb sendtables.Entity
+	var plantedBombPos replayPosition
 	var bombTimerData map[string]interface{}
+	type flashAssistEntry struct {
+		attackerID string
+		tick       int
+	}
+	flashAssistByVictim := map[string]flashAssistEntry{}
 	p.RegisterEventHandler(func(events.DataTablesParsed) {
 		if class := p.ServerClasses().FindByName("CPlantedC4"); class != nil {
 			class.OnEntityCreated(func(entity sendtables.Entity) {
@@ -189,6 +195,7 @@ func collectReplay(path string, options ReplayOptions, emit func(models.ReplaySt
 		current.ScoreT = replaySafe(0, func() int { return p.GameState().TeamTerrorists().Score() })
 		current.ScoreCT = replaySafe(0, func() int { return p.GameState().TeamCounterTerrorists().Score() })
 		bombState, bombSite = "unknown", ""
+		plantedBombPos = replayPosition{}
 		bombTimerData = nil
 		event("round_start", "", nil, nil, replayPosition{}, nil)
 	})
@@ -204,12 +211,53 @@ func collectReplay(path string, options ReplayOptions, emit func(models.ReplaySt
 		event("round_end", e.Message, nil, nil, replayPosition{}, nil)
 	})
 	p.RegisterEventHandler(func(e events.Kill) {
+		data := map[string]interface{}{
+			"weapon":             replayEquipmentName(e.Weapon),
+			"assister_id":        replayPlayerID(e.Assister),
+			"headshot":           e.IsHeadshot,
+			"wallbang":           e.IsWallBang(),
+			"penetrated_objects": e.PenetratedObjects,
+			"assisted_flash":     e.AssistedFlash,
+			"attacker_blind":     e.AttackerBlind,
+			"noscope":            e.NoScope,
+			"through_smoke":      e.ThroughSmoke,
+			"distance":           e.Distance,
+			"teamkill":           replayIsTeamKill(e.Killer, e.Victim),
+		}
+		if e.AssistedFlash {
+			if entry, ok := flashAssistByVictim[replayPlayerID(e.Victim)]; ok {
+				data["flash_assister_id"] = entry.attackerID
+				data["flash_assist_tick"] = entry.tick
+			}
+		}
 		event("kill", replayKillMessage(e), e.Killer, e.Victim, replayPlayerPosition(e.Victim),
-			map[string]interface{}{"weapon": replayEquipmentName(e.Weapon), "headshot": e.IsHeadshot})
+			data)
+		delete(flashAssistByVictim, replayPlayerID(e.Victim))
 	})
 	p.RegisterEventHandler(func(e events.PlayerHurt) {
 		event("damage", replayDamageMessage(e), e.Attacker, e.Player, replayPlayerPosition(e.Player),
 			map[string]interface{}{"damage": e.HealthDamageTaken})
+	})
+	p.RegisterEventHandler(func(e events.WeaponFire) {
+		shooter := e.Shooter
+		if shooter == nil {
+			return
+		}
+		activeWeapon := replaySafe((*common.Equipment)(nil), func() *common.Equipment { return shooter.ActiveWeapon() })
+		data := map[string]interface{}{
+			"weapon": replayEquipmentName(activeWeapon),
+			"yaw":    float64(replaySafe(float32(0), func() float32 { return shooter.ViewDirectionX() })),
+		}
+		event("weapon_fire", "Weapon fired", shooter, nil, replayPlayerPosition(shooter), data)
+	})
+	p.RegisterEventHandler(func(e events.PlayerFlashed) {
+		victimID := replayPlayerID(e.Player)
+		attackerID := replayPlayerID(e.Attacker)
+		event("player_flashed", "Player flashed", e.Attacker, e.Player, replayPlayerPosition(e.Player),
+			map[string]interface{}{"flash_ms": int(replaySafe(time.Duration(0), func() time.Duration { return e.FlashDuration() }).Milliseconds())})
+		if victimID != "" && attackerID != "" {
+			flashAssistByVictim[victimID] = flashAssistEntry{attackerID: attackerID, tick: tick()}
+		}
 	})
 	grenadeEvent := func(kind string, e events.GrenadeEvent) {
 		event(kind, "", e.Thrower, nil, replayPosition{e.Position, true},
@@ -228,6 +276,7 @@ func collectReplay(path string, options ReplayOptions, emit func(models.ReplaySt
 	p.RegisterEventHandler(func(e events.BombPlanted) {
 		bombState = "planted"
 		bombSite = replayBombsite(e.Site)
+		plantedBombPos = replayPlayerPosition(e.Player)
 		data := map[string]interface{}{}
 		bombTimerData = data
 		if rules := p.GameState().Rules(); rules != nil {
@@ -246,7 +295,7 @@ func collectReplay(path string, options ReplayOptions, emit func(models.ReplaySt
 	})
 	p.RegisterEventHandler(func(e events.BombExplode) {
 		bombState = "exploded"
-		event("bomb_exploded", "", e.Player, nil, replayPlayerPosition(e.Player), nil)
+		event("bomb_exploded", "", e.Player, nil, plantedBombPos, nil)
 	})
 	p.RegisterEventHandler(func(e events.BombDropped) { bombState = "dropped" })
 	p.RegisterEventHandler(func(e events.BombPickup) { bombState = "carried" })

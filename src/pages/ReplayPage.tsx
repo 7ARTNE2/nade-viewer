@@ -22,6 +22,10 @@ import {
   Timer,
   X,
 } from 'lucide-react';
+import c4Icon from '../assets/equipment_icons/c4.svg';
+import defuserIcon from '../assets/equipment_icons/defuser.svg';
+import armorIcon from '../assets/equipment_icons/armor.svg';
+import armorHelmetIcon from '../assets/equipment_icons/armor_helmet.svg';
 import ReplayCanvas from '../components/ReplayCanvas';
 import ReplayTimeline from '../components/ReplayTimeline';
 import ReplayClock from '../components/ReplayClock';
@@ -50,12 +54,15 @@ import {
   playersAt,
 } from '../lib/replayPlayback';
 import { isWindowActive, onWindowActiveChange } from '../lib/windowActive';
+import { weaponIcon } from '../lib/weaponIcons';
+import { deathNoticeIcon } from '../lib/deathNoticeIcons';
 import type {
   ReplayDetail,
   ReplayEntry,
   ReplayGrenade,
   ReplayPlayer,
   ReplayRound,
+  ReplayWeapon,
 } from '../types/replay';
 import './ReplayPage.css';
 
@@ -76,21 +83,108 @@ function grenadeLabel(type: string, locale: string) {
   };
   return labels[type]?.[locale === 'ru' ? 1 : 0] ?? type;
 }
-function Team({ side, players }: { side: string; players: ReplayPlayer[] }) {
+function normalizeWeapon(name?: string) {
+  return String(name ?? '').toLowerCase().replace(/[_-]/g, ' ');
+}
+function weaponMatchesActive(name: string, active?: string) {
+  const weapon = normalizeWeapon(name);
+  const current = normalizeWeapon(active);
+  if (!weapon || !current) return false;
+  return weapon === current || weapon.replace(/\s+/g, '') === current.replace(/\s+/g, '') ||
+    (weapon.includes('m4a1') && current.includes('m4a1'));
+}
+function isFirearmWeapon(weapon: ReplayWeapon) {
+  const name = normalizeWeapon(weapon.name);
+  // Replay frames store the concrete equipment name in `type` (for example
+  // "AK-47"), so classify from the name rather than expecting a class label.
+  return /glock|usp|p2000|p250|deagle|desert eagle|five seven|tec 9|cz75|dual beretta|revolver|mp7|mp9|bizon|mac 10|ump|p90|mp5|sawed off|nova|mag 7|xm1014|m249|negev|galil|famas|ak 47|m4a4|m4a1|ssg 08|sg 553|aug|awp|scar 20|g3sg1/.test(name);
+}
+function weaponAmmoText(weapon: ReplayWeapon) {
+  if (!isFirearmWeapon(weapon)) return '';
+  const magazine = Number(weapon.ammo_in_magazine);
+  const reserve = Number(weapon.ammo_reserve);
+  if (!Number.isFinite(magazine) || !Number.isFinite(reserve) || magazine < 0 || reserve < 0) return '';
+  if (magazine === 0 && reserve === 0) return '';
+  return `${magazine}/${reserve}`;
+}
+function isC4Weapon(weapon: ReplayWeapon) {
+  const value = `${normalizeWeapon(weapon.name)} ${normalizeWeapon(weapon.type)}`;
+  return value.includes('c4') || value.includes('bomb');
+}
+function isGrenadeWeapon(weapon: ReplayWeapon) {
+  const value = `${normalizeWeapon(weapon.name)} ${normalizeWeapon(weapon.type)}`;
+  return /grenade|flashbang|smoke|molotov|incendiary|decoy/.test(value);
+}
+type WeaponSlot = 'primary' | 'pistol' | 'knife' | 'zeus';
+
+function weaponSlot(weapon: ReplayWeapon): WeaponSlot | null {
+  const name = `${normalizeWeapon(weapon.name)} ${normalizeWeapon(weapon.type)}`;
+  if (isC4Weapon(weapon) || isGrenadeWeapon(weapon)) return null;
+  if (/zeus|taser/.test(name)) return 'zeus';
+  if (/knife|bayonet|karambit|kukri|talon|butterfly|flip|gut|huntsman|falchion|shadow daggers|navaja|stiletto|ursus|nomad|paracord|survival/.test(name)) return 'knife';
+  if (/glock|usp|p2000|p250|deagle|desert eagle|five seven|fiveseven|tec 9|cz75|dual beretta|elite|revolver|r8/.test(name)) return 'pistol';
+  if (isFirearmWeapon(weapon)) return 'primary';
+  return null;
+}
+
+function weaponSlots(weapons: ReplayWeapon[]) {
+  const slots = new Map<WeaponSlot, ReplayWeapon>();
+  for (const weapon of weapons) {
+    const slot = weaponSlot(weapon);
+    if (slot && !slots.has(slot)) slots.set(slot, weapon);
+  }
+  return (['primary', 'pistol', 'knife', 'zeus'] as WeaponSlot[])
+    .flatMap((slot) => {
+      const weapon = slots.get(slot);
+      return weapon ? [{ slot, weapon }] : [];
+    });
+}
+function groupedGrenades(weapons: ReplayWeapon[]) {
+  const groups = new Map<string, { weapon: ReplayWeapon; count: number }>();
+  for (const weapon of weapons) {
+    if (!isGrenadeWeapon(weapon)) continue;
+    const key = normalizeWeapon(weapon.name) || normalizeWeapon(weapon.type);
+    if (!key) continue;
+    const current = groups.get(key);
+    if (current) current.count += 1;
+    else groups.set(key, { weapon, count: 1 });
+  }
+  return [...groups.values()].slice(0, 5);
+}
+function killNotices(event: ReplayRound['events'][number]) {
+  const data = event.data ?? {};
+  const result: string[] = [];
+  if (data.headshot === true) result.push('headshot');
+  if (data.attacker_blind === true) result.push('blind');
+  if (data.wallbang === true || Number(data.penetrated_objects ?? 0) > 0)
+    result.push('penetrate');
+  if (data.through_smoke === true) result.push('smoke');
+  if (event.player_id && event.player_id === event.target_id)
+    result.push('suicide');
+  return result;
+}
+function Team({ side, players, bombCarrier }: { side: string; players: ReplayPlayer[]; bombCarrier?: string }) {
   const { tr } = useI18n();
+  const economy = players.reduce((sum, player) => sum + (player.equipment_value ?? 0), 0);
+  const money = players.reduce((sum, player) => sum + player.money, 0);
   return (
     <section className={`replay-team is-${side.toLowerCase()}`}>
       <header>
         <strong>{players[0]?.team_name || side}</strong>
-        <span>
-          {players.filter((p) => p.alive).length} / {players.length}
-        </span>
+        <span className="replay-team-economy">${money.toLocaleString()} · ${economy.toLocaleString()}</span>
       </header>
       {players.map((p) => (
         <div className={`replay-player ${p.alive ? '' : 'is-dead'}`} key={p.id}>
-          <div>
+          <div className="replay-player-head">
             <strong title={p.name}>{p.name}</strong>
-            <span>{p.health} HP</span>
+            <span className="replay-player-stats">
+              <b>{p.health} HP</b>
+              <span className="replay-player-armor-inline" title={p.has_helmet ? 'Kevlar + helmet' : 'Kevlar'}>
+                {p.armor > 0 && <img src={p.has_helmet ? armorHelmetIcon : armorIcon} alt="" />}
+                {p.armor} AP
+              </span>
+              <span>${p.money.toLocaleString()}</span>
+            </span>
           </div>
           <meter
             min={0}
@@ -98,9 +192,36 @@ function Team({ side, players }: { side: string; players: ReplayPlayer[] }) {
             value={p.alive ? p.health : 0}
             aria-label={`${p.name} ${tr('health', 'здоровье')}`}
           />
-          <div>
-            <small title={p.active_weapon}>{p.active_weapon || '—'}</small>
-            <small>{p.armor} AP</small>
+          <div className="replay-player-loadout">
+            <div className="replay-player-icons">
+              <div className="replay-player-group replay-player-weapons">
+              {weaponSlots(p.weapons ?? []).map(({ weapon: w }) => {
+                const active = weaponMatchesActive(w.name, p.active_weapon);
+                const ammo = weaponAmmoText(w);
+                return (
+                  <span className={`replay-player-item replay-player-weapon-item ${active ? 'active' : ''}`} key={w.name} title={ammo ? `${w.name} · ${ammo}` : w.name}>
+                    <img src={weaponIcon(w.name)} alt="" />
+                    {ammo && <small className="replay-player-ammo">{ammo}</small>}
+                  </span>
+                );
+              })}
+              </div>
+              <div className="replay-player-group replay-player-grenades">
+              {groupedGrenades(p.weapons ?? []).map(({ weapon, count }) => {
+                const active = weaponMatchesActive(weapon.name, p.active_weapon);
+                return (
+                  <span className={`replay-player-item ${active ? 'active' : ''}`} key={normalizeWeapon(weapon.name)} title={`${weapon.name}${count > 1 ? ` ×${count}` : ''}`}>
+                    <img src={weaponIcon(weapon.name)} alt="" />
+                    {count > 1 && <small className="replay-player-count">×{count}</small>}
+                  </span>
+                );
+              })}
+              </div>
+              <div className="replay-player-group replay-player-specials">
+                {p.has_defuse_kit && <span className="replay-player-item" title={tr('Defuse kit', 'Дефьюз-кит')}><img src={defuserIcon} alt={tr('Defuse kit', 'Дефьюз-кит')} /></span>}
+                {(p.id === bombCarrier || (p.weapons ?? []).some(isC4Weapon)) && <span className={`replay-player-item ${p.id === bombCarrier ? 'active' : ''}`} title={tr('Bomb', 'Бомба')}><img className="replay-player-c4" src={c4Icon} alt={tr('Bomb', 'Бомба')} /></span>}
+              </div>
+            </div>
           </div>
         </div>
       ))}
@@ -514,6 +635,7 @@ export default function ReplayPage() {
   };
   const frame = round ? framePair(round, tick)[0] : undefined;
   const players = round ? playersAt(round, tick, round.events, killTicks) : [];
+  const bombCarrier = frame?.bomb?.state === 'carried' ? frame.bomb.carrier_id : '';
   const index = detail?.rounds.findIndex((r) => r.number === number) ?? -1;
   const bounds = round ? roundBounds(round) : [0, 1];
   const roundFinished = Boolean(round && tick >= bounds[1]);
@@ -845,15 +967,64 @@ export default function ReplayPage() {
           </div>
           {round ? (
             <>
+              <div className="replay-killfeed" aria-label={tr('Kill feed', 'Киллчат')}>
+                {round.events
+                  .filter((event) => event.type === 'kill' && event.tick <= tick)
+                  .slice(-2)
+                  .map((event) => {
+                    const weapon = String(event.data?.weapon ?? '');
+                    const playersAtEvent = playersAt(round, event.tick, round.events, killTicks);
+                    const killer = playersAtEvent.find((player) => player.id === event.player_id);
+                    const victim = playersAtEvent.find((player) => player.id === event.target_id);
+                    const assisterValue = event.data?.assister_id;
+                    const assisterId = typeof assisterValue === 'string' || typeof assisterValue === 'number'
+                      ? String(assisterValue)
+                      : '';
+                    const assister = playersAtEvent.find((player) => player.id === assisterId);
+                    const storedFlashAssisterValue = event.data?.flash_assister_id;
+                    const storedFlashAssisterId = typeof storedFlashAssisterValue === 'string' || typeof storedFlashAssisterValue === 'number'
+                      ? String(storedFlashAssisterValue)
+                      : '';
+                    const flashAssister = playersAtEvent.find((player) => player.id === storedFlashAssisterId);
+                    const damageAssistEvent = round.events
+                      .filter((candidate) =>
+                        candidate.type === 'damage' &&
+                        candidate.target_id === event.target_id &&
+                        candidate.player_id &&
+                        candidate.player_id !== event.player_id &&
+                        candidate.player_id !== storedFlashAssisterId &&
+                        candidate.tick <= event.tick &&
+                        candidate.tick >= event.tick - detail.metadata.tickrate * 5,
+                      )
+                      .sort((a, b) => b.tick - a.tick)[0];
+                    const damageAssister = damageAssistEvent
+                      ? playersAtEvent.find((player) => player.id === damageAssistEvent.player_id)
+                      : undefined;
+                    const notices = killNotices(event).map((id) => ({ id, icon: deathNoticeIcon(id) })).filter((item) => item.icon);
+                    return (
+                      <div className="replay-killfeed-row" key={`${event.tick}-${event.target_id}`}>
+                        <span className={`replay-killfeed-name ${String(killer?.side ?? 'world').toLowerCase()}`}>{killer?.name ?? event.player_id ?? 'World'}</span>
+                        {assister && <span className={`replay-killfeed-assist damage ${String(assister.side).toLowerCase()}`}>+{assister.name}</span>}
+                        {damageAssister && damageAssister.id !== assister?.id && <span className={`replay-killfeed-assist damage ${String(damageAssister.side).toLowerCase()}`}>+{damageAssister.name}</span>}
+                        {flashAssister && <span className={`replay-killfeed-assist flash ${String(flashAssister.side).toLowerCase()}`}><span className="replay-killfeed-flash-mark">✦</span>+{flashAssister.name}</span>}
+                        {weapon && <img src={weaponIcon(weapon)} alt={weapon} title={weapon} />}
+                        {notices.map((item) => <img key={item.id} src={item.id === 'headshot' ? item.icon : item.icon} alt={item.id} title={item.id} />)}
+                        <span className={`replay-killfeed-name ${String(victim?.side ?? 'world').toLowerCase()}`}>{victim?.name ?? event.target_id ?? '—'}</span>
+                      </div>
+                    );
+                  })}
+              </div>
               <div className="replay-stage">
                 <aside className="replay-rosters">
                   <Team
                     side="T"
                     players={players.filter((p) => p.side === 'T')}
+                    bombCarrier={bombCarrier}
                   />
                   <Team
                     side="CT"
                     players={players.filter((p) => p.side === 'CT')}
+                    bombCarrier={bombCarrier}
                   />
                 </aside>
                 <ReplayCanvas

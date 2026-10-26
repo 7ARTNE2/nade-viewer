@@ -16,12 +16,24 @@ export type ReplayPlayer = {
   armor: number;
   money: number;
   active_weapon: string;
+  weapons?: ReplayWeapon[];
+  equipment_value?: number;
   has_helmet: boolean;
   has_defuse_kit: boolean;
   flashed: boolean;
+  flash_ms?: number;
   kills: number;
   assists: number;
   deaths: number;
+  defusing?: boolean;
+  planting?: boolean;
+  reloading?: boolean;
+};
+export type ReplayWeapon = {
+  name: string;
+  type: string;
+  ammo_in_magazine: number;
+  ammo_reserve: number;
 };
 export type ReplayProjectile = {
   id: string;

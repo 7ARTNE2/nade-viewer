@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Minus, Plus, RotateCcw } from 'lucide-react';
+import c4Icon from '../assets/equipment_icons/c4.svg';
 import { assetUrl } from '../lib/tauri';
 import {
   activeSmokes,
@@ -10,8 +11,9 @@ import {
   playersAt,
 } from '../lib/replayPlayback';
 import { isWindowActive, onWindowActiveChange } from '../lib/windowActive';
+import { weaponIcon } from '../lib/weaponIcons';
 import { useI18n } from '../i18n';
-import type { ReplayDetail, ReplayGrenade, ReplayRound } from '../types/replay';
+import type { ReplayDetail, ReplayFrame, ReplayGrenade, ReplayRound } from '../types/replay';
 
 type Props = {
   detail: ReplayDetail;
@@ -151,6 +153,16 @@ export default function ReplayCanvas({
       ),
     [round],
   );
+  const bombEvents = useMemo(
+    () =>
+      round.events.filter(
+        (event) =>
+          event.type === 'bomb_exploded' &&
+          event.x !== null &&
+          event.y !== null,
+      ),
+    [round],
+  );
   const grenadeById = useMemo(
     () => new Map(round.grenades.map((grenade) => [grenade.id, grenade])),
     [round],
@@ -224,6 +236,10 @@ export default function ReplayCanvas({
     const ctx = element.getContext('2d');
     if (!ctx) return;
     const image = new Image();
+    const bombImage = new Image();
+    const weaponImages = new Map<string, HTMLImageElement>();
+    bombImage.onload = draw;
+    bombImage.src = c4Icon;
     let imageReady = false,
       disposed = false,
       animation = 0;
@@ -232,6 +248,19 @@ export default function ReplayCanvas({
       draw();
     };
     if (imagePath) image.src = assetUrl(imagePath);
+    const activeWeaponImage = (name: string) => {
+      const key = name.trim();
+      if (!key) return null;
+      const cached = weaponImages.get(key);
+      if (cached) return cached;
+      const src = weaponIcon(key);
+      if (!src) return null;
+      const weaponImage = new Image();
+      weaponImage.onload = draw;
+      weaponImage.src = src;
+      weaponImages.set(key, weaponImage);
+      return weaponImage;
+    };
     let width = 0,
       height = 0,
       dpr = 1;
@@ -317,6 +346,27 @@ export default function ReplayCanvas({
         ctx.stroke();
         ctx.setLineDash([]);
         ctx.restore();
+      }
+      if (frame.bomb && visible(frame.bomb.z)) {
+        const [bx, by] = point(frame.bomb.x, frame.bomb.y);
+        const planted = frame.bomb.state === 'planted';
+        const pulse = 0.5 + 0.5 * Math.sin(now / 180);
+        if (planted) {
+          const bombRadius = Math.max(10, (72 / radar.scale) * unit);
+          ctx.save();
+          ctx.globalAlpha = 0.2 + pulse * 0.18;
+          ctx.strokeStyle = '#ff5e68';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(bx, by, bombRadius * (0.9 + pulse * 0.2), 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.globalAlpha = 0.9;
+          ctx.fillStyle = '#ff5e68';
+          ctx.beginPath();
+          ctx.arc(bx, by, 7, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        }
       }
       for (const inferno of frame.infernos ?? []) {
         if (!inferno.hull?.length || !inferno.fires.some((f) => visible(f.z)))
@@ -575,6 +625,26 @@ export default function ReplayCanvas({
           }
           ctx.restore();
         }
+        for (const event of bombEvents) {
+          const age = (tick - event.tick) / tickrate;
+          if (age < 0 || age > 1.5) continue;
+          const [x, y] = point(event.x!, event.y!);
+          const progress = clamp(age / 1.5, 0, 1);
+          const radius = Math.max(16, (210 / radar!.scale) * unit) * (0.35 + progress * 0.65);
+          ctx.save();
+          ctx.globalAlpha = (1 - progress) * 0.7;
+          ctx.fillStyle = '#ffb36b';
+          ctx.beginPath();
+          ctx.arc(x, y, radius * 0.45, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.globalAlpha = (1 - progress) * 0.9;
+          ctx.strokeStyle = '#ff5e68';
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.arc(x, y, radius, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.restore();
+        }
       };
       drawExplosionEffects();
       hits.current = [];
@@ -677,13 +747,91 @@ export default function ReplayCanvas({
       if (
         frame.bomb &&
         !['unknown', 'exploded', 'defused'].includes(frame.bomb.state) &&
+        frame.bomb.state !== 'carried' &&
         visible(frame.bomb.z)
       ) {
         const [x, y] = point(frame.bomb.x, frame.bomb.y);
         ctx.fillStyle = frame.bomb.state === 'planted' ? '#ff5e68' : '#e6eea6';
-        ctx.fillRect(x - 5, y - 5, 10, 10);
-        ctx.strokeStyle = '#111';
-        ctx.strokeRect(x - 5, y - 5, 10, 10);
+        if (bombImage.complete && bombImage.naturalWidth > 0) {
+          ctx.drawImage(bombImage, x - 9, y - 9, 18, 18);
+        } else {
+          ctx.fillRect(x - 5, y - 5, 10, 10);
+        }
+      }
+      // Short-lived shot tracers and hit markers, matching the compact visual
+      // treatment used by Nadegrid. Weapon-fire events use the shooter's view
+      // direction; damage/kill events terminate at the victim position.
+      const playerById = new Map(frame.players.map((player) => [player.id, player]));
+      const tracerAge = (event: ReplayRound['events'][number]) => tick - event.tick;
+      const drawTracer = (
+        event: ReplayRound['events'][number],
+        shooter: ReplayFrame['players'][number],
+        target: { x: number; y: number } | null,
+        hit: boolean,
+        windowTicks: number,
+      ) => {
+        const age = tracerAge(event);
+        if (age < 0 || age > windowTicks || !visible(shooter.z)) return;
+        const start = point(shooter.x, shooter.y);
+        let end: [number, number];
+        if (target) {
+          end = point(target.x, target.y);
+        } else {
+          const rawYaw = Number(event.data?.yaw ?? shooter.yaw);
+          const angle = (-rawYaw * Math.PI) / 180;
+          // Nadegrid uses a short, screen-sized shot segment that starts just
+          // outside the player marker instead of a long world-space ray.
+          const directionX = Math.cos(angle);
+          const directionY = Math.sin(angle);
+          const fromOffset = 9;
+          const toOffset = 46;
+          end = [
+            start[0] + directionX * toOffset,
+            start[1] + directionY * toOffset,
+          ];
+          start[0] += directionX * fromOffset;
+          start[1] += directionY * fromOffset;
+        }
+        const color = shooter.side === 'CT' ? '#8dbdff' : '#ff986b';
+        const opacity = Math.max(0.12, 1 - age / Math.max(1, windowTicks));
+        ctx.save();
+        ctx.globalAlpha = opacity;
+        ctx.strokeStyle = color;
+        ctx.lineWidth = hit && ['damage', 'bullet_damage', 'kill'].includes(event.type) ? 4 : 1.5;
+        ctx.lineCap = 'round';
+        ctx.shadowColor = color;
+        ctx.shadowBlur = hit ? 12 : 8;
+        ctx.beginPath();
+        ctx.moveTo(start[0], start[1]);
+        ctx.lineTo(end[0], end[1]);
+        ctx.stroke();
+        if (hit) {
+          ctx.fillStyle = color;
+          ctx.shadowBlur = 10;
+          ctx.beginPath();
+          ctx.arc(end[0], end[1], 6, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.restore();
+      };
+      const fireWindow = Math.max(3, Math.round(tickrate * 0.14));
+      for (const event of round.events) {
+        if (event.tick > tick || tracerAge(event) > fireWindow || event.type !== 'weapon_fire') continue;
+        const shooter = event.player_id ? playerById.get(event.player_id) : undefined;
+        if (shooter) drawTracer(event, shooter, null, false, fireWindow);
+      }
+      const hitWindow = Math.max(3, Math.round(tickrate * 0.28));
+      for (const event of round.events) {
+        if (event.tick > tick || tracerAge(event) > hitWindow || !['damage', 'bullet_damage', 'kill'].includes(event.type)) continue;
+        const shooter = event.player_id ? playerById.get(event.player_id) : undefined;
+        if (!shooter) continue;
+        const victim = event.target_id ? playerById.get(event.target_id) : undefined;
+        const target = victim
+          ? { x: victim.x, y: victim.y }
+          : typeof event.x === 'number' && typeof event.y === 'number'
+            ? { x: event.x, y: event.y }
+            : null;
+        drawTracer(event, shooter, target, true, hitWindow);
       }
       playersAt(round, tick, killEvents, killTicks, frame).forEach((raw) => {
         const player = interpolatePlayer(
@@ -734,6 +882,93 @@ export default function ReplayCanvas({
           ctx.arc(x, y, 8, 0, Math.PI * 2);
           ctx.fill();
           ctx.stroke();
+          // Show the item currently held by the player, matching the compact
+          // weapon badge used by Nadegrid. Keep it outside the player circle
+          // so it remains readable without changing the player marker size.
+          const activeName = String(player.active_weapon ?? '').trim();
+          const activeImage = activeWeaponImage(activeName);
+          if (activeImage?.complete && activeImage.naturalWidth > 0) {
+            const activeLower = activeName.toLowerCase();
+            const utility = activeLower.includes('grenade') ||
+              activeLower.includes('flashbang') ||
+              activeLower.includes('smoke') ||
+              activeLower.includes('molotov') ||
+              activeLower.includes('incendiary') ||
+              activeLower.includes('decoy') ||
+              activeLower.includes('knife') ||
+              activeLower === 'c4' || activeLower.includes('bomb');
+            const maxWidth = utility ? 16 : 25;
+            const maxHeight = utility ? 16 : 13;
+            const scale = Math.min(maxWidth / Math.max(1, activeImage.naturalWidth), maxHeight / Math.max(1, activeImage.naturalHeight));
+            const iconWidth = activeImage.naturalWidth * scale;
+            const iconHeight = activeImage.naturalHeight * scale;
+            ctx.save();
+            ctx.globalAlpha = player.alive ? 0.94 : 0.45;
+            ctx.shadowColor = '#05070a';
+            ctx.shadowBlur = 3;
+            ctx.shadowOffsetY = 1;
+            ctx.drawImage(activeImage, x + 11, y - iconHeight / 2, iconWidth, iconHeight);
+            ctx.restore();
+          }
+          // Keep the carried C4 on the player's left side. The badge sits
+          // outside the marker, leaving the HP value in the centre and the
+          // active weapon icon on the right unobstructed.
+          if (frame.bomb?.state === 'carried' && frame.bomb.carrier_id === player.id) {
+            ctx.save();
+            ctx.globalAlpha = 0.98;
+            ctx.fillStyle = 'rgba(9, 12, 16, 0.9)';
+            ctx.strokeStyle = '#ff5e68';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.roundRect(x - 24, y - 7, 14, 14, 4);
+            ctx.fill();
+            ctx.stroke();
+            if (bombImage.complete && bombImage.naturalWidth > 0) {
+              ctx.drawImage(bombImage, x - 22.5, y - 5.5, 11, 11);
+            }
+            ctx.restore();
+          }
+          if (player.flashed) {
+            const flashProgress = clamp((player.flash_ms ?? 0) / 2000, 0, 1);
+            ctx.save();
+            ctx.globalAlpha = 0.2 + flashProgress * 0.35;
+            ctx.strokeStyle = '#fff7c2';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(x, y, 13 + flashProgress * 4, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.fillStyle = 'rgba(255,255,255,0.16)';
+            ctx.beginPath();
+            ctx.arc(x, y, 11, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+          }
+          const action = player.planting || player.defusing ? player : null;
+          if (action) {
+            const actionType = player.defusing ? 'bomb_defuse_start' : 'bomb_plant_begin';
+            const actionEvents = round.events.filter(
+              (event) =>
+                event.type === actionType &&
+                event.player_id === player.id &&
+                event.tick <= tick,
+            );
+            const startEvent = actionEvents[actionEvents.length - 1];
+            const duration = player.defusing ? (player.has_defuse_kit ? 5 : 10) : 3.2;
+            const progress = startEvent ? clamp((tick - startEvent.tick) / (tickrate * duration), 0, 1) : 0;
+            ctx.fillStyle = 'rgba(8,12,16,.82)';
+            ctx.fillRect(x - 22, y - 28, 44, 5);
+            ctx.fillStyle = player.defusing ? '#8fd8ff' : '#ffbd70';
+            ctx.fillRect(x - 21, y - 27, 42 * progress, 3);
+            ctx.fillStyle = '#f8fafc';
+            ctx.font = '700 8px Segoe UI';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'bottom';
+            ctx.fillText(
+              `${player.defusing ? 'DEFUSE' : 'PLANT'} ${Math.max(0, duration - (tick - (startEvent?.tick ?? tick)) / tickrate).toFixed(1)}s`,
+              x,
+              y - 30,
+            );
+          }
           const damage = damageState.current.get(player.id);
           const popupAge = damage ? now - damage.started : Infinity;
           const showDamage = Boolean(damage?.damage && popupAge < 800);
@@ -807,6 +1042,7 @@ export default function ReplayCanvas({
     killEvents,
     killTicks,
     explosionEvents,
+    bombEvents,
     grenadeById,
     fireGrenades,
   ]);
