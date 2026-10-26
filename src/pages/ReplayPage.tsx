@@ -23,6 +23,7 @@ import {
   X,
 } from 'lucide-react';
 import c4Icon from '../assets/equipment_icons/c4.svg';
+import flashbangAssistIcon from '../assets/equipment_icons/flashbang_assist.svg';
 import defuserIcon from '../assets/equipment_icons/defuser.svg';
 import armorIcon from '../assets/equipment_icons/armor.svg';
 import armorHelmetIcon from '../assets/equipment_icons/armor_helmet.svg';
@@ -986,6 +987,7 @@ export default function ReplayPage() {
                       ? String(storedFlashAssisterValue)
                       : '';
                     const flashAssister = playersAtEvent.find((player) => player.id === storedFlashAssisterId);
+                    const isFlashAssist = event.data?.assisted_flash === true;
                     const damageAssistEvent = round.events
                       .filter((candidate) =>
                         candidate.type === 'damage' &&
@@ -1006,7 +1008,10 @@ export default function ReplayPage() {
                         <span className={`replay-killfeed-name ${String(killer?.side ?? 'world').toLowerCase()}`}>{killer?.name ?? event.player_id ?? 'World'}</span>
                         {assister && <span className={`replay-killfeed-assist damage ${String(assister.side).toLowerCase()}`}>+{assister.name}</span>}
                         {damageAssister && damageAssister.id !== assister?.id && <span className={`replay-killfeed-assist damage ${String(damageAssister.side).toLowerCase()}`}>+{damageAssister.name}</span>}
-                        {flashAssister && <span className={`replay-killfeed-assist flash ${String(flashAssister.side).toLowerCase()}`}><span className="replay-killfeed-flash-mark">✦</span>+{flashAssister.name}</span>}
+                        {isFlashAssist && <span className={`replay-killfeed-assist flash ${String(flashAssister?.side ?? 'world').toLowerCase()}`} title={tr('Flash assist', 'Ассист флешкой')}>
+                          <img className="replay-killfeed-assist-icon" src={flashbangAssistIcon} alt="" />
+                          {flashAssister ? `+${flashAssister.name}` : ''}
+                        </span>}
                         {weapon && <img src={weaponIcon(weapon)} alt={weapon} title={weapon} />}
                         {notices.map((item) => <img key={item.id} src={item.id === 'headshot' ? item.icon : item.icon} alt={item.id} title={item.id} />)}
                         <span className={`replay-killfeed-name ${String(victim?.side ?? 'world').toLowerCase()}`}>{victim?.name ?? event.target_id ?? '—'}</span>

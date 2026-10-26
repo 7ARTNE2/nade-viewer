@@ -648,6 +648,13 @@
 .replay-killfeed-assist.t { color: #ff986b; }
 .replay-killfeed-assist.ct { color: #8dbdff; }
 .replay-killfeed-assist.flash { color: #fbbf24; }
+.replay-killfeed-assist-icon {
+  width: 18px !important;
+  height: 17px !important;
+  margin-right: 2px;
+  object-fit: contain;
+  vertical-align: middle;
+}
 .replay-killfeed-flash-mark {
   color: #fff7c2;
   font-size: 11px;
