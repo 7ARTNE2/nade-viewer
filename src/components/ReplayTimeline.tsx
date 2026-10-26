@@ -18,6 +18,7 @@ type Props = {
   playing: boolean;
   events: ReplayEvent[];
   onSeek: (tick: number) => void;
+  showFreezeTime: boolean;
 };
 
 export default function ReplayTimeline({
@@ -28,6 +29,7 @@ export default function ReplayTimeline({
   playing,
   events,
   onSeek,
+  showFreezeTime,
 }: Props) {
   const { tr } = useI18n();
   const slider = useRef<HTMLInputElement>(null);
@@ -40,10 +42,11 @@ export default function ReplayTimeline({
   const bombLabel = tr('Bomb', 'Бомба');
   const defusedLabel = tr('Defused', 'Обезврежена');
   const explodedLabel = tr('Exploded', 'Взорвалась');
+  // When freeze time is hidden, compress it out of the visible timeline.
+  const timelineStart = showFreezeTime ? start : actionStart;
   const progress = (value: number) =>
-    clamp(((value - start) / (end - start || 1)) * 100, 0, 100);
-  const current = clamp(clock.current, start, end);
-  const freezeProgress = progress(actionStart);
+    clamp(((value - timelineStart) / (end - timelineStart || 1)) * 100, 0, 100);
+  const current = clamp(clock.current, timelineStart, end);
   const plant = round.events.find((event) => event.type === 'bomb_planted');
   const resolution = round.events.find(
     (event) =>
@@ -57,6 +60,30 @@ export default function ReplayTimeline({
         ? plant.tick + plant.data.duration_seconds * tickrate
         : end))
     : end;
+  const phaseSegments: Array<[number, number, string]> = [];
+  const addPhase = (from: number, to: number, color: string) => {
+    const left = Math.max(from, timelineStart);
+    const right = Math.min(to, end);
+    if (right > left) phaseSegments.push([left, right, color]);
+  };
+  if (showFreezeTime) addPhase(start, actionStart, '#8fd8ff');
+  const roundStart = Math.max(timelineStart, actionStart);
+  addPhase(roundStart, plant?.tick ?? end, '#c7ff3d');
+  if (plant) {
+    addPhase(plant.tick, bombEnd, '#ff8e96');
+    addPhase(bombEnd, end, '#c7ff3d');
+  }
+  const visibleSegments = phaseSegments.flatMap(([from, to, color]) => {
+    const visibleTo = Math.min(to, current);
+    if (visibleTo <= from) return [];
+    return [
+      {
+        left: progress(from),
+        width: progress(visibleTo) - progress(from),
+        color,
+      },
+    ];
+  });
   const labelAt = useCallback(
     (value: number) => {
       const bomb = replayTimers(round, value, tickrate).bomb;
@@ -79,16 +106,22 @@ export default function ReplayTimeline({
     ],
   );
   const sync = useCallback(() => {
-    const value = clamp(clock.current, start, end);
+    const value = clamp(clock.current, timelineStart, end);
+    const timers = replayTimers(round, value, tickrate);
+    const phaseColor = timers.bomb
+      ? '#ff8e96'
+      : timers.freezing
+        ? '#8fd8ff'
+        : '#c7ff3d';
     if (slider.current) {
       slider.current.value = String(value);
+      slider.current.style.accentColor = phaseColor;
     }
-    if (track.current)
-      track.current.style.background = `linear-gradient(90deg, var(--acid) ${clamp(((value - start) / (end - start || 1)) * 100, 0, 100)}%, var(--surface-3) 0)`;
+    if (track.current) track.current.style.background = 'var(--surface-3)';
     if (elapsed.current) {
       elapsed.current.textContent = labelAt(value);
     }
-  }, [clock, start, end, labelAt]);
+  }, [clock, timelineStart, end, labelAt, round, tickrate]);
   // Keep the scrubber on the playback clock without rendering the match each frame.
   useEffect(() => {
     let animation = 0;
@@ -119,8 +152,8 @@ export default function ReplayTimeline({
       <input
         ref={slider}
         type="range"
-        min={start}
-        max={Math.max(start + 1, end)}
+        min={timelineStart}
+        max={Math.max(timelineStart + 1, end)}
         step="any"
         defaultValue={current}
         aria-label={tr('Replay timeline', 'Таймлайн повтора')}
@@ -130,32 +163,34 @@ export default function ReplayTimeline({
         ref={track}
         className="replay-timeline-track"
         style={{
-          background: `linear-gradient(90deg, var(--acid) ${progress(current)}%, var(--surface-3) 0)`,
+          background: 'var(--surface-3)',
         }}
       >
-        {freezeProgress > 0 && (
+        {phaseSegments.map(([from, to, color], index) => (
           <span
-            className="replay-freeze-segment"
-            style={{ width: `${freezeProgress}%` }}
-            title={freezeLabel}
-            aria-hidden="true"
-          />
-        )}
-        {plant && progress(bombEnd) > progress(plant.tick) && (
-          <span
-            className="replay-bomb-segment"
+            key={`marker-${index}`}
+            className="replay-phase-segment"
             style={{
-              left: `${progress(plant.tick)}%`,
-              width: `${progress(bombEnd) - progress(plant.tick)}%`,
+              left: `${progress(from)}%`,
+              width: `${progress(to) - progress(from)}%`,
+              background: color,
             }}
-            aria-label={tr('Bomb time', 'Время бомбы')}
           />
-        )}
+        ))}
+        {visibleSegments.map(({ left, width, color }, index) => (
+          <span
+            key={index}
+            className="replay-progress-segment"
+            style={{ left: `${left}%`, width: `${width}%`, background: color }}
+          />
+        ))}
       </div>
       <div className="replay-event-ticks" aria-hidden="true">
-        {events.map((event, index) => (
-          <i key={index} style={{ left: `${progress(event.tick)}%` }} />
-        ))}
+        {events
+          .filter((event) => showFreezeTime || event.tick >= actionStart)
+          .map((event, index) => (
+            <i key={index} style={{ left: `${progress(event.tick)}%` }} />
+          ))}
       </div>
     </div>
   );

@@ -9,7 +9,8 @@ import {
   Clock,
   Copy,
   Crosshair,
-  Film,
+  Eye,
+  EyeOff,
   FolderOpen,
   Pause,
   Play,
@@ -120,6 +121,7 @@ export default function ReplayPage() {
   const [starting, setStarting] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(1);
+  const [showFreezeTime, setShowFreezeTime] = useState(true);
   const [tick, setTick] = useState(0);
   const [lower, setLower] = useState(false);
   const [selected, setSelected] = useState<ReplayGrenade | null>(null);
@@ -475,7 +477,6 @@ export default function ReplayPage() {
           )}
           <div>
             <span className="replay-eyebrow">
-              <Film size={11} aria-hidden="true" />
               {detail ? detail.metadata.map : 'NADE VIEWER'}
             </span>
             <h1>{detail ? tr('Match replay', 'Повтор матча') : '2D Replay'}</h1>
@@ -973,7 +974,33 @@ export default function ReplayPage() {
                   playing={playing}
                   events={events}
                   onSeek={seek}
+                  showFreezeTime={showFreezeTime}
                 />
+                <button
+                  type="button"
+                  className={`replay-timeline-toggle ${showFreezeTime ? 'is-active' : ''}`}
+                  aria-pressed={showFreezeTime}
+                  onClick={() => {
+                    const next = !showFreezeTime;
+                    setShowFreezeTime(next);
+                    if (!next && round) {
+                      seek(
+                        round.round.freeze_end_tick ?? round.round.start_tick,
+                      );
+                    }
+                  }}
+                  aria-label={tr(
+                    'Show freeze time on timeline',
+                    'Показывать фризтайм на таймлайне',
+                  )}
+                  data-tip={tr(
+                    'Show freeze time on timeline',
+                    'Показывать фризтайм на таймлайне',
+                  )}
+                >
+                  {showFreezeTime ? <Eye size={14} /> : <EyeOff size={14} />}
+                  <span>{tr('Freeze', 'Фризтайм')}</span>
+                </button>
                 <div
                   className="replay-speeds"
                   role="group"

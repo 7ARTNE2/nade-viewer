@@ -136,6 +136,9 @@
 .replay-clocks.has-bomb {
   color: #ff8e96;
 }
+.replay-clocks.has-bomb time {
+  color: #ff8e96;
+}
 .replay-clocks.is-freezing time {
   color: #8fd8ff;
 }
@@ -830,6 +833,39 @@
   outline: 1px solid var(--muted);
   outline-offset: 1px;
 }
+.replay-timeline-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  flex: none;
+  min-width: 78px;
+  height: 34px;
+  padding: 0 8px;
+  border: 1px solid var(--line-soft);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 10px;
+  cursor: var(--cursor-pointer);
+  transition:
+    color 150ms ease,
+    border-color 150ms ease,
+    background 150ms ease;
+}
+.replay-timeline-toggle:hover,
+.replay-timeline-toggle.is-active {
+  border-color: rgba(var(--acid-rgb), 0.45);
+  color: var(--text);
+  background: rgba(var(--acid-rgb), 0.06);
+}
+.replay-timeline-toggle:not(.is-active) {
+  opacity: 0.72;
+}
+.replay-timeline-toggle:focus-visible {
+  outline: 1px solid var(--muted);
+  outline-offset: 1px;
+}
 .replay-timeline {
   position: relative;
   flex: 1;
@@ -895,8 +931,8 @@
   top: 0;
   left: 0;
   height: 5px;
-  border-right: 1px solid var(--text);
-  background: rgba(135, 143, 153, 0.65);
+  border-right: 1px solid #8fd8ff;
+  background: rgba(143, 216, 255, 0.72);
   pointer-events: none;
 }
 .replay-bomb-segment {
@@ -906,6 +942,27 @@
   border-inline: 1px solid #ff8e96;
   background: rgba(255, 94, 104, 0.65);
   pointer-events: none;
+}
+.replay-progress-segment {
+  position: absolute;
+  top: 0;
+  height: 5px;
+  border-radius: 0;
+  pointer-events: none;
+}
+.replay-phase-segment {
+  position: absolute;
+  top: 0;
+  height: 5px;
+  border-right: 1px solid var(--surface-3);
+  opacity: 0.28;
+  pointer-events: none;
+}
+.replay-progress-segment:first-child {
+  border-radius: 3px 0 0 3px;
+}
+.replay-progress-segment:last-child {
+  border-radius: 0 3px 3px 0;
 }
 .replay-event-ticks {
   height: 5px;
@@ -988,6 +1045,14 @@
     gap: 10px;
     padding: 10px;
     min-height: 72px;
+  }
+  .replay-timeline-toggle {
+    min-width: 34px;
+    width: 34px;
+    padding: 0;
+  }
+  .replay-timeline-toggle span {
+    display: none;
   }
   .replay-inspector h2 {
     font-size: 11px;
