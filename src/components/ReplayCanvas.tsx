@@ -39,6 +39,24 @@ const FLASH_EFFECT_SECONDS = 0.6;
 const HE_RADIUS_GAME = 400;
 // Keep the HE burst close to Nadegrid's fast fire-core animation.
 const HE_EFFECT_SECONDS = 0.82;
+// Keep the replay blast diameter in sync with Nadegrid.  These values are
+// expressed in the same world units as the radar projection, so the effect
+// stays anchored to the actual planted C4 position at every zoom level.
+const BOMB_RADII_GAME: Record<string, number> = {
+  de_nuke: 2275,
+  de_dust2: 2450,
+  de_mirage: 2275,
+  de_inferno: 2100,
+  de_train: 1750,
+  de_ancient: 2275,
+  de_cache: 2100,
+  de_anubis: 1575,
+  de_overpass: 2275,
+  de_vertigo: 1750,
+};
+const BOMB_SHOCKWAVE_SECONDS = 0.9;
+const BOMB_CORE_SECONDS = 0.7;
+const BOMB_EFFECT_SECONDS = 1.5;
 const TRAJECTORY_FADE_SECONDS = 0.9;
 const SMOKE_RADIUS_GAME = 144;
 const INFERNO_RADIUS_GAME = 116;
@@ -154,13 +172,24 @@ export default function ReplayCanvas({
     [round],
   );
   const bombEvents = useMemo(
-    () =>
-      round.events.filter(
-        (event) =>
-          event.type === 'bomb_exploded' &&
-          event.x !== null &&
-          event.y !== null,
-      ),
+    () => {
+      const seen = new Set<string>();
+      return round.events.filter((event) => {
+        if (
+          event.type !== 'bomb_exploded' ||
+          event.x === null ||
+          event.y === null
+        )
+          return false;
+        // Some replay streams can contain the detonation callback twice at
+        // different ticks. There is only one C4 explosion per round, so the
+        // round itself is the identity of the visual effect.
+        const key = String(event.round_number);
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    },
     [round],
   );
   const grenadeById = useMemo(
@@ -627,22 +656,81 @@ export default function ReplayCanvas({
         }
         for (const event of bombEvents) {
           const age = (tick - event.tick) / tickrate;
-          if (age < 0 || age > 1.5) continue;
+          if (age < 0 || age > BOMB_EFFECT_SECONDS) continue;
           const [x, y] = point(event.x!, event.y!);
-          const progress = clamp(age / 1.5, 0, 1);
-          const radius = Math.max(16, (210 / radar!.scale) * unit) * (0.35 + progress * 0.65);
+          const mapKey = String(detail.map.name ?? '').toLowerCase().startsWith('de_')
+            ? String(detail.map.name).toLowerCase()
+            : `de_${String(detail.map.name ?? '').toLowerCase()}`;
+          const fullRadius = Math.max(
+            16,
+            ((BOMB_RADII_GAME[mapKey] ?? 2275) / radar!.scale) * unit,
+          );
+          const shockProgress = clamp(age / BOMB_SHOCKWAVE_SECONDS, 0, 1);
+          const coreProgress = clamp(age / BOMB_CORE_SECONDS, 0, 1);
+
+          // Nadegrid's shockwave keyframes: the ring expands almost
+          // immediately, holds at the blast radius, then fades away.
+          // Keep the ring on the same single pulse as the fireball.  A
+          // delayed opacity ramp makes the ring look like a second flash
+          // when the canvas is sampled at replay frame boundaries.
+          const shockScale = 0.05 +
+            (1 - Math.pow(1 - shockProgress, 3)) * 0.95;
+          const shockOpacity = 0.9 * (1 - shockProgress);
+
+          // Nadegrid's bright core grows faster than the outer ring and uses
+          // the same warm white/orange fireball gradient.
+          const coreScale = 0.05 +
+            (1 - Math.pow(1 - coreProgress, 2)) * 0.95;
+          const coreOpacity = 1 - coreProgress;
+
           ctx.save();
-          ctx.globalAlpha = (1 - progress) * 0.7;
-          ctx.fillStyle = '#ffb36b';
+          const ringRadius = fullRadius * shockScale;
+          ctx.globalAlpha = shockOpacity;
+          const ringGradient = ctx.createRadialGradient(
+            x,
+            y,
+            ringRadius * 0.58,
+            x,
+            y,
+            ringRadius,
+          );
+          ringGradient.addColorStop(0, 'rgba(255,150,50,0)');
+          ringGradient.addColorStop(0.72, 'rgba(255,150,50,0.22)');
+          ringGradient.addColorStop(0.85, 'rgba(200,70,20,0.12)');
+          ringGradient.addColorStop(1, 'rgba(255,150,50,0)');
+          ctx.fillStyle = ringGradient;
           ctx.beginPath();
-          ctx.arc(x, y, radius * 0.45, 0, Math.PI * 2);
+          ctx.arc(x, y, ringRadius, 0, Math.PI * 2);
           ctx.fill();
-          ctx.globalAlpha = (1 - progress) * 0.9;
-          ctx.strokeStyle = '#ff5e68';
+          ctx.strokeStyle = 'rgba(255,180,70,0.9)';
           ctx.lineWidth = 3;
+          ctx.shadowColor = 'rgba(255,130,30,0.7)';
+          ctx.shadowBlur = 16;
           ctx.beginPath();
-          ctx.arc(x, y, radius, 0, Math.PI * 2);
+          ctx.arc(x, y, ringRadius, 0, Math.PI * 2);
           ctx.stroke();
+
+          const coreRadius = fullRadius * coreScale;
+          const coreGradient = ctx.createRadialGradient(
+            x,
+            y,
+            0,
+            x,
+            y,
+            coreRadius,
+          );
+          coreGradient.addColorStop(0, `rgba(255,245,205,${0.98 * coreOpacity})`);
+          coreGradient.addColorStop(0.08, `rgba(255,190,80,${0.92 * coreOpacity})`);
+          coreGradient.addColorStop(0.2, `rgba(255,110,30,${0.75 * coreOpacity})`);
+          coreGradient.addColorStop(0.36, `rgba(170,45,15,${0.45 * coreOpacity})`);
+          coreGradient.addColorStop(0.62, 'rgba(170,45,15,0)');
+          ctx.globalAlpha = 1;
+          ctx.fillStyle = coreGradient;
+          ctx.shadowColor = 'rgba(255,120,20,0.8)';
+          ctx.shadowBlur = 18;
+          ctx.beginPath();
+          ctx.arc(x, y, coreRadius, 0, Math.PI * 2);
+          ctx.fill();
           ctx.restore();
         }
       };
@@ -783,8 +871,12 @@ export default function ReplayCanvas({
           // outside the player marker instead of a long world-space ray.
           const directionX = Math.cos(angle);
           const directionY = Math.sin(angle);
-          const fromOffset = 9;
-          const toOffset = 46;
+          // The SVG version in Nadegrid animates the 9..46px segment forward
+          // by 160px over 100ms. Reproduce that travel in canvas space.
+          const shotProgress = Math.min(1, age / Math.max(1, tickrate * 0.1));
+          const travel = 160 * shotProgress;
+          const fromOffset = 9 + travel;
+          const toOffset = 46 + travel;
           end = [
             start[0] + directionX * toOffset,
             start[1] + directionY * toOffset,
@@ -792,7 +884,7 @@ export default function ReplayCanvas({
           start[0] += directionX * fromOffset;
           start[1] += directionY * fromOffset;
         }
-        const color = shooter.side === 'CT' ? '#8dbdff' : '#ff986b';
+        const color = shooter.side === 'CT' ? '#38bdf8' : '#fb923c';
         const opacity = Math.max(0.12, 1 - age / Math.max(1, windowTicks));
         ctx.save();
         ctx.globalAlpha = opacity;
@@ -800,7 +892,7 @@ export default function ReplayCanvas({
         ctx.lineWidth = hit && ['damage', 'bullet_damage', 'kill'].includes(event.type) ? 4 : 1.5;
         ctx.lineCap = 'round';
         ctx.shadowColor = color;
-        ctx.shadowBlur = hit ? 12 : 8;
+        ctx.shadowBlur = hit ? 12 : 10;
         ctx.beginPath();
         ctx.moveTo(start[0], start[1]);
         ctx.lineTo(end[0], end[1]);
