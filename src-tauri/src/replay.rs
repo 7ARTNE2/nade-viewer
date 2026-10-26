@@ -240,6 +240,9 @@ fn run(app: &AppHandle, path: &str) -> Result<i64> {
         String::from_utf8_lossy(&tail).into_owned()
     });
     let stdout = child.stdout.take().ok_or("Missing parser stdout")?;
+    // Replay output is a large NDJSON stream. A larger BufReader reduces the
+    // number of pipe reads and JSON line boundary checks during ingestion.
+    let stdout = BufReader::with_capacity(1 << 20, stdout);
     let result = (|| {
         let mut conn = database(app)?;
         ingest(

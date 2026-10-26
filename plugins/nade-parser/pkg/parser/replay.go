@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"bufio"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -58,8 +59,17 @@ func ParseReplayFile(path string, options ReplayOptions) (*models.ReplayFile, er
 }
 
 func ParseReplayFileStreaming(path string, options ReplayOptions, out io.Writer) error {
-	encoder := json.NewEncoder(out)
-	return collectReplay(path, options, func(line models.ReplayStreamLine) error { return encoder.Encode(line) })
+	// Replay frames are large and numerous. Buffer the NDJSON stream so the
+	// parser does not perform a pipe write for every frame/round record.
+	buffered := bufio.NewWriterSize(out, 1<<20)
+	encoder := json.NewEncoder(buffered)
+	err := collectReplay(path, options, func(line models.ReplayStreamLine) error {
+		return encoder.Encode(line)
+	})
+	if flushErr := buffered.Flush(); err == nil {
+		err = flushErr
+	}
+	return err
 }
 
 func collectReplay(path string, options ReplayOptions, emit func(models.ReplayStreamLine) error) error {
@@ -575,7 +585,8 @@ func replayInfernoFrame(inferno *common.Inferno) (models.ReplayInfernoFrame, boo
 		return models.ReplayInfernoFrame{}, false
 	}
 	thrower := replaySafe((*common.Player)(nil), func() *common.Player { return inferno.Thrower() })
-	fires := replaySafe([]common.Fire(nil), func() []common.Fire { return inferno.Fires().Active().List() })
+	activeFires := replaySafe(common.Fires{}, func() common.Fires { return inferno.Fires().Active() })
+	fires := replaySafe([]common.Fire(nil), func() []common.Fire { return activeFires.List() })
 	fireFrames := make([]models.ReplayFire, 0, len(fires))
 	for _, fire := range fires {
 		fireFrames = append(fireFrames, models.ReplayFire{
@@ -586,7 +597,7 @@ func replayInfernoFrame(inferno *common.Inferno) (models.ReplayInfernoFrame, boo
 		})
 	}
 	hull := replaySafe([]models.ReplayPoint(nil), func() []models.ReplayPoint {
-		points := inferno.Fires().Active().ConvexHull2D()
+		points := activeFires.ConvexHull2D()
 		out := make([]models.ReplayPoint, 0, len(points))
 		for _, point := range points {
 			out = append(out, models.ReplayPoint{X: point.X, Y: point.Y})

@@ -14,13 +14,16 @@ export default function ReplayClock({
   const { tr } = useI18n();
   const timers = replayTimers(round, tick, tickrate);
   const bombActive = Boolean(timers.bomb);
+  const bombTerminal =
+    timers.bomb?.state === 'bomb_defused' ||
+    timers.bomb?.state === 'bomb_exploded';
   const label = timers.freezing
     ? tr('Freeze time', 'Фризтайм')
     : tr('Round time', 'Время раунда');
   const clockLabel = bombActive ? tr('Bomb timer', 'Таймер бомбы') : label;
   return (
     <div
-      className={`replay-clocks ${bombActive ? 'has-bomb' : ''} ${timers.freezing ? 'is-freezing' : ''}`}
+      className={`replay-clocks ${bombActive ? 'has-bomb' : ''} ${bombTerminal ? 'is-terminal' : ''} ${timers.freezing ? 'is-freezing' : ''}`}
     >
       <span
         className="replay-round-clock"

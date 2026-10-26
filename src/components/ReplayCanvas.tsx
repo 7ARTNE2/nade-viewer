@@ -3,6 +3,7 @@ import { Minus, Plus, RotateCcw } from 'lucide-react';
 import { assetUrl } from '../lib/tauri';
 import {
   activeSmokes,
+  buildSmokeTimeline,
   clamp,
   framePair,
   interpolatePlayer,
@@ -125,8 +126,56 @@ export default function ReplayCanvas({
   const imagePath = lower
     ? detail.map.lower_map_image_path
     : detail.map.map_image_path;
+  const smokeTimeline = useMemo(() => buildSmokeTimeline(round), [round]);
+  const killEvents = useMemo(
+    () => round.events.filter((event) => event.type === 'kill'),
+    [round],
+  );
+  const killTicks = useMemo(() => {
+    const ticks = new Map<string, number>();
+    for (const event of killEvents) {
+      if (!event.target_id) continue;
+      const previous = ticks.get(event.target_id);
+      if (previous === undefined || event.tick < previous)
+        ticks.set(event.target_id, event.tick);
+    }
+    return ticks;
+  }, [killEvents]);
+  const explosionEvents = useMemo(
+    () =>
+      round.events.filter(
+        (event) =>
+          (event.type === 'flash_explode' || event.type === 'he_explode') &&
+          event.x !== null &&
+          event.y !== null,
+      ),
+    [round],
+  );
+  const grenadeById = useMemo(
+    () => new Map(round.grenades.map((grenade) => [grenade.id, grenade])),
+    [round],
+  );
+  const fireGrenades = useMemo(
+    () =>
+      round.grenades.filter(
+        (grenade) =>
+          (grenade.data.grenade_type === 'molotov' ||
+            grenade.data.grenade_type === 'incendiary grenade') &&
+          typeof grenade.data.explode_pos_x === 'number' &&
+          typeof grenade.data.explode_pos_y === 'number',
+      ),
+    [round],
+  );
   const trajectoryMovementTicks = useMemo(() => {
-    const tracks = new Map<string, { x: number; y: number; ticks: number[] }>();
+    const tracks = new Map<
+      string,
+      {
+        x: number;
+        y: number;
+        ticks: number[];
+        points: [number, number, number][];
+      }
+    >();
     const radar = detail.radar;
     if (!radar) return tracks;
     for (const frame of round.frames) {
@@ -155,9 +204,17 @@ export default function ReplayCanvas({
             x: projectile.x,
             y: projectile.y,
             ticks: [frame.tick],
+            points: [],
           });
         }
       }
+    }
+    for (const grenade of round.grenades) {
+      const track = tracks.get(grenade.id);
+      if (!track || !grenade.data.trajectory?.length) continue;
+      track.points = grenade.data.trajectory.map(
+        (point) => [point[0], point[1], point[2] ?? 0] as [number, number, number],
+      );
     }
     return tracks;
   }, [round, detail.radar, detail.map.has_lower_radar, lower]);
@@ -213,10 +270,22 @@ export default function ReplayCanvas({
       const tick = clock.current,
         [frame, next, t] = framePair(round, tick);
       if (!frame) return;
-      const now = performance.now();
-      const visibleSmokes = activeSmokes(round, tick, tickrate).filter(
-        (smoke) => visible(smoke.z),
+      const nextProjectiles = new Map(
+        (next?.projectiles ?? []).map((projectile) => [
+          projectile.id,
+          projectile,
+        ]),
       );
+      const nextPlayers = new Map(
+        (next?.players ?? []).map((player) => [player.id, player]),
+      );
+      const now = performance.now();
+      const visibleSmokes = activeSmokes(
+        round,
+        tick,
+        tickrate,
+        smokeTimeline,
+      ).filter((smoke) => visible(smoke.z));
       for (const smoke of visibleSmokes) {
         const [x, y] = point(smoke.x, smoke.y);
         const radius = (SMOKE_RADIUS_GAME / radar.scale) * unit;
@@ -258,14 +327,7 @@ export default function ReplayCanvas({
         );
         center.x /= inferno.hull.length;
         center.y /= inferno.hull.length;
-        const source = round.grenades
-          .filter(
-            (g) =>
-              (g.data.grenade_type === 'molotov' ||
-                g.data.grenade_type === 'incendiary grenade') &&
-              typeof g.data.explode_pos_x === 'number' &&
-              typeof g.data.explode_pos_y === 'number',
-          )
+        const source = fireGrenades
           .map((g) => ({
             grenade: g,
             distance: Math.hypot(
@@ -419,13 +481,7 @@ export default function ReplayCanvas({
         ctx.restore();
       }
       const drawExplosionEffects = () => {
-        const events = round.events.filter(
-          (event) =>
-            (event.type === 'flash_explode' || event.type === 'he_explode') &&
-            event.x !== null &&
-            event.y !== null &&
-            visible(event.z ?? 0),
-        );
+        const events = explosionEvents.filter((event) => visible(event.z ?? 0));
         for (const event of events) {
           const age = (tick - event.tick) / tickrate;
           const isFlash = event.type === 'flash_explode';
@@ -526,8 +582,9 @@ export default function ReplayCanvas({
       for (const grenade of round.grenades) {
         if (grenade.release_tick > tick || !grenade.data.trajectory?.length)
           continue;
-        const movementTicks = trajectoryMovementTicks.get(grenade.id)?.ticks;
-        if (!movementTicks) continue;
+        const trajectory = trajectoryMovementTicks.get(grenade.id);
+        const movementTicks = trajectory?.ticks;
+        if (!movementTicks || !trajectory?.points.length) continue;
         let lo = 0,
           hi = movementTicks.length;
         while (lo < hi) {
@@ -555,8 +612,8 @@ export default function ReplayCanvas({
         ctx.shadowBlur = copied ? 10 : active ? 7 : 3;
         ctx.beginPath();
         let previous: [number, number] | null = null;
-        for (const p of grenade.data.trajectory) {
-          if (!visible(p[2] ?? 0)) {
+        for (const p of trajectory.points) {
+          if (!visible(p[2])) {
             previous = null;
             continue;
           }
@@ -578,11 +635,11 @@ export default function ReplayCanvas({
       }
       for (const projectile of frame.projectiles ?? []) {
         if (!visible(projectile.z)) continue;
-        const other = next?.projectiles?.find((p) => p.id === projectile.id);
+        const other = nextProjectiles.get(projectile.id);
         const px = projectile.x + (other ? other.x - projectile.x : 0) * t,
           py = projectile.y + (other ? other.y - projectile.y : 0) * t;
         const [x, y] = point(px, py);
-        const grenade = round.grenades.find((g) => g.id === projectile.id);
+        const grenade = grenadeById.get(projectile.id);
         // Once a smoke has bloomed, its timer replaces the grenade marker at
         // the center of the cloud. Keep the marker visible while it is flying,
         // then remove it as soon as it reaches the active smoke.
@@ -628,10 +685,10 @@ export default function ReplayCanvas({
         ctx.strokeStyle = '#111';
         ctx.strokeRect(x - 5, y - 5, 10, 10);
       }
-      playersAt(round, tick).forEach((raw) => {
+      playersAt(round, tick, killEvents, killTicks, frame).forEach((raw) => {
         const player = interpolatePlayer(
           raw,
-          next?.players.find((p) => p.id === raw.id),
+          nextPlayers.get(raw.id),
           t,
         );
         const previous = damageState.current.get(player.id);
@@ -746,6 +803,12 @@ export default function ReplayCanvas({
     copiedGrenadeId,
     imagePath,
     trajectoryMovementTicks,
+    smokeTimeline,
+    killEvents,
+    killTicks,
+    explosionEvents,
+    grenadeById,
+    fireGrenades,
   ]);
   return (
     <div className={`replay-map ${view.s > 1 ? 'is-draggable' : ''}`}>

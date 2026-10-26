@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
@@ -148,6 +148,17 @@ export default function ReplayPage() {
   const autoPlayNextRound = useRef(false);
   const autoNextTimer = useRef<number>();
   const showFreezeTimeRef = useRef(true);
+  const killTicks = useMemo(() => {
+    const ticks = new Map<string, number>();
+    if (!round) return ticks;
+    for (const event of round.events) {
+      if (event.type !== 'kill' || !event.target_id) continue;
+      const previous = ticks.get(event.target_id);
+      if (previous === undefined || event.tick < previous)
+        ticks.set(event.target_id, event.tick);
+    }
+    return ticks;
+  }, [round]);
   useEffect(() => {
     autoNextRoundRef.current = autoNextRound;
   }, [autoNextRound]);
@@ -155,6 +166,7 @@ export default function ReplayPage() {
     showFreezeTimeRef.current = showFreezeTime;
   }, [showFreezeTime]);
   const cache = useRef(new Map<number, Promise<ReplayRound>>());
+  const loadedRounds = useRef(new Map<number, ReplayRound>());
   const jobOwned = useRef(false),
     lastCompleted = useRef<string | null>(null);
   const position = useRef<{ id: number; number: number; tick: number } | null>(
@@ -231,6 +243,7 @@ export default function ReplayPage() {
     setSelected(null);
     setError('');
     cache.current = new Map();
+    loadedRounds.current = new Map();
     resume.current = null;
     const previous = position.current;
     if (previous)
@@ -263,7 +276,8 @@ export default function ReplayPage() {
   useEffect(() => {
     if (!detail || number === null) return;
     let alive = true;
-    setRound(null);
+    const cachedRound = loadedRounds.current.get(number);
+    if (!cachedRound) setRound(null);
     setSelected(null);
     setPlaying(false);
     const load = (n: number) => {
@@ -272,8 +286,16 @@ export default function ReplayPage() {
         request = getReplayRound(detail.id, n);
         cache.current.set(n, request);
       }
-      return request;
+      return request.then((value) => {
+        loadedRounds.current.set(n, value);
+        return value;
+      });
     };
+    if (cachedRound) {
+      // The next round is commonly prefetched. Put it on screen immediately
+      // while the promise below still refreshes the normal loading path.
+      setRound(cachedRound);
+    }
     void load(number).then(
       (v) => {
         if (!alive) return;
@@ -301,7 +323,10 @@ export default function ReplayPage() {
             .map((r) => r.number),
         );
         for (const n of cache.current.keys())
-          if (!keep.has(n)) cache.current.delete(n);
+          if (!keep.has(n)) {
+            cache.current.delete(n);
+            loadedRounds.current.delete(n);
+          }
         for (const n of keep)
           if (n !== number) void load(n).catch(() => cache.current.delete(n));
       },
@@ -474,10 +499,21 @@ export default function ReplayPage() {
       void saveReplayPosition(p.id, p.number, clock.current).catch(
         () => undefined,
       );
+    const cached = loadedRounds.current.get(next);
+    if (cached) {
+      const [a, b] = roundBounds(cached);
+      const start = showFreezeTimeRef.current
+        ? a
+        : (cached.round.freeze_end_tick ?? a);
+      clock.current = clamp(start, a, b);
+      setTick(clock.current);
+      setRound(cached);
+    }
+    setPlaying(false);
     setNumber(next);
   };
   const frame = round ? framePair(round, tick)[0] : undefined;
-  const players = round ? playersAt(round, tick) : [];
+  const players = round ? playersAt(round, tick, round.events, killTicks) : [];
   const index = detail?.rounds.findIndex((r) => r.number === number) ?? -1;
   const bounds = round ? roundBounds(round) : [0, 1];
   const roundFinished = Boolean(round && tick >= bounds[1]);

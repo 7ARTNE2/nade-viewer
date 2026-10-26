@@ -29,16 +29,31 @@ export function framePair(
       : 0,
   ];
 }
-export function playersAt(round: ReplayRound, tick: number): ReplayPlayer[] {
-  const [frame] = framePair(round, tick);
+export function playersAt(
+  round: ReplayRound,
+  tick: number,
+  killEvents = round.events,
+  killTicks?: ReadonlyMap<string, number>,
+  currentFrame?: ReplayFrame,
+): ReplayPlayer[] {
+  const frame = currentFrame ?? framePair(round, tick)[0];
   if (!frame) return [];
-  const killed = new Set(
-    round.events
-      .filter((e) => e.type === 'kill' && e.tick > frame.tick && e.tick <= tick)
-      .map((e) => e.target_id),
-  );
+  const killed = killTicks
+    ? null
+    : new Set(
+        killEvents
+          .filter(
+            (e) => e.type === 'kill' && e.tick > frame.tick && e.tick <= tick,
+          )
+          .map((e) => e.target_id),
+      );
   return frame.players.map((player) =>
-    killed.has(player.id) ? { ...player, alive: false, health: 0 } : player,
+    (killTicks
+      ? (killTicks.get(player.id) ?? Infinity) > frame.tick &&
+        (killTicks.get(player.id) ?? Infinity) <= tick
+      : killed!.has(player.id))
+      ? { ...player, alive: false, health: 0 }
+      : player,
   );
 }
 
@@ -128,13 +143,31 @@ export function replayTimers(
         : null,
   };
 }
-export function activeSmokes(round: ReplayRound, tick: number, tickrate = 64) {
+export type SmokeTimeline = {
+  events: ReplayRound['events'];
+  expirations: Map<string, number[]>;
+};
+
+export function buildSmokeTimeline(round: ReplayRound): SmokeTimeline {
   const expirations = new Map<string, number[]>();
-  round.events.forEach((event) => {
+  const events = round.events.filter(
+    (event) => event.type === 'smoke_start' || event.type === 'smoke_expired',
+  );
+  events.forEach((event) => {
     if (event.type !== 'smoke_expired') return;
     const id = String(event.data?.grenade_entity_id ?? '');
     expirations.set(id, [...(expirations.get(id) ?? []), event.tick]);
   });
+  return { events, expirations };
+}
+
+export function activeSmokes(
+  round: ReplayRound,
+  tick: number,
+  tickrate = 64,
+  timeline = buildSmokeTimeline(round),
+) {
+  const { events, expirations } = timeline;
   const active = new Map<
     string,
     {
@@ -146,7 +179,7 @@ export function activeSmokes(round: ReplayRound, tick: number, tickrate = 64) {
       expireTick: number;
     }
   >();
-  for (const event of round.events) {
+  for (const event of events) {
     if (event.tick > tick) break;
     const id = String(event.data?.grenade_entity_id ?? '');
     if (event.type === 'smoke_start' && event.x !== null && event.y !== null) {
