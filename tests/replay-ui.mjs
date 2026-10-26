@@ -198,12 +198,44 @@ try {
       slider.dispatchEvent(new window.Event('input', { bubbles: true }));
     }, value);
   };
+  const checkSliderLayers = async () => {
+    const layers = await timeline.evaluate((slider) => {
+      const track = document.querySelector('.replay-timeline-track');
+      const inputBox = slider.getBoundingClientRect();
+      const trackBox = track.getBoundingClientRect();
+      return {
+        sliderZ: Number(window.getComputedStyle(slider).zIndex),
+        trackZ: Number(window.getComputedStyle(track).zIndex) || 0,
+        inset: trackBox.left - inputBox.left,
+        width: inputBox.width - trackBox.width,
+        dy: trackBox.top - inputBox.top,
+      };
+    });
+    assert.ok(layers.sliderZ > layers.trackZ, JSON.stringify(layers));
+    assert.equal(layers.inset, 6.5);
+    assert.equal(layers.width, 13);
+    assert.equal(layers.dy, 0);
+  };
+  await seekTimeline((first.frames[0].tick + first.round.freeze_end_tick) / 2);
+  await checkSliderLayers();
+  await page.screenshot({ path: 'dist/replay-checks/freeze-thumb.png' });
   await seekTimeline(first.round.freeze_end_tick - 1);
   assert.equal(await phaseTime.textContent(), 'Фризтайм 0:01');
   await seekTimeline(first.round.freeze_end_tick);
   assert.equal(await phaseTime.textContent(), 'Раунд 0:00');
+  const roundClock = page.locator('.replay-round-clock');
+  const clockLabel = (seconds) =>
+    `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+  assert.equal(
+    await roundClock.locator('time').textContent(),
+    clockLabel(first.round.duration_seconds),
+  );
   await seekTimeline(first.round.freeze_end_tick + 5 * metadata.tickrate);
   assert.equal(await phaseTime.textContent(), 'Раунд 0:05');
+  assert.equal(
+    await roundClock.locator('time').textContent(),
+    clockLabel(first.round.duration_seconds - 5),
+  );
   await seekTimeline(first.frames[0].tick);
   assert.match(await phaseTime.textContent(), /Фризтайм/);
   const pixels = await page.locator('canvas').evaluate((c) => {
@@ -347,10 +379,12 @@ try {
     (grenade.release_tick - first.round.freeze_end_tick) / metadata.tickrate,
   );
   const expectedThrowTime = `${Math.floor(throwSeconds / 60)}:${String(throwSeconds % 60).padStart(2, '0')}`;
+  const roundSeconds = Math.max(0, Math.round(grenade.data.round_time_seconds));
+  const expectedRoundTime = `${Math.floor(roundSeconds / 60)}:${String(roundSeconds % 60).padStart(2, '0')}`;
   assert.equal(await phaseTime.textContent(), `Раунд ${expectedThrowTime}`);
   assert.equal(
     await page.locator('.replay-throw').first().locator('time').textContent(),
-    expectedThrowTime,
+    expectedRoundTime,
   );
   const grenadeInfo = page.locator('.replay-grenade-detail');
   assert.equal(
@@ -361,8 +395,10 @@ try {
     await grenadeInfo.locator('.detail-thrower-team').textContent(),
     grenade.data.thrower_team,
   );
-  const roundSeconds = Math.max(0, Math.round(grenade.data.round_time_seconds));
-  const expectedRoundTime = `${Math.floor(roundSeconds / 60)}:${String(roundSeconds % 60).padStart(2, '0')}`;
+  assert.equal(
+    await page.locator('.replay-throw').first().locator('time').textContent(),
+    expectedRoundTime,
+  );
   const roundTime = grenadeInfo
     .locator('.replay-detail-metrics > div')
     .filter({ hasText: 'Раунд' })
@@ -474,6 +510,89 @@ try {
   await page.screenshot({ path: 'dist/replay-checks/copy-confirmation.png' });
   await page.locator('.detail-copy-button:not(.copied) .lucide-copy').waitFor();
   await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await roundSelect.selectOption('3');
+  await timeline.waitFor();
+  const bombRound = rounds.find((r) => r.round_number === 3);
+  const plant = bombRound.events.find((e) => e.type === 'bomb_planted');
+  const defused = bombRound.events.find((e) => e.type === 'bomb_defused');
+  assert.ok(plant && defused);
+  await seekTimeline(plant.tick - 1);
+  assert.equal(await page.locator('.replay-clocks.has-bomb').count(), 0);
+  await seekTimeline(plant.tick);
+  assert.equal(
+    await phaseTime.textContent(),
+    `Бомба ${clockLabel(plant.data.duration_seconds)}`,
+  );
+  const bombSegment = await page
+    .locator('.replay-bomb-segment')
+    .evaluate((segment) => ({
+      left: Number.parseFloat(segment.style.left),
+      width: Number.parseFloat(segment.style.width),
+    }));
+  const bombStart = bombRound.frames[0].tick;
+  const bombLength = bombRound.frames.at(-1).tick - bombStart;
+  assert.ok(
+    Math.abs(bombSegment.left - ((plant.tick - bombStart) / bombLength) * 100) <
+      0.01,
+  );
+  assert.ok(
+    Math.abs(
+      bombSegment.width - ((defused.tick - plant.tick) / bombLength) * 100,
+    ) < 0.01,
+  );
+  const bombClock = page.locator('.replay-clocks.has-bomb');
+  assert.equal(
+    await bombClock.locator('time').textContent(),
+    clockLabel(plant.data.duration_seconds),
+  );
+  await seekTimeline(plant.tick + 5 * metadata.tickrate);
+  await checkSliderLayers();
+  assert.equal(
+    await phaseTime.textContent(),
+    `Бомба ${clockLabel(plant.data.duration_seconds - 5)}`,
+  );
+  assert.equal(
+    await bombClock.locator('time').textContent(),
+    clockLabel(plant.data.duration_seconds - 5),
+  );
+  assert.equal(
+    await roundClock.locator('time').textContent(),
+    clockLabel(plant.data.duration_seconds - 5),
+  );
+  await page.screenshot({ path: 'dist/replay-checks/bomb-compact.png' });
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.screenshot({ path: 'dist/replay-checks/bomb-desktop.png' });
+  await seekTimeline(defused.tick);
+  assert.equal(await phaseTime.textContent(), 'Обезврежена');
+  assert.match(await bombClock.textContent(), /Обезврежена/);
+  await seekTimeline(plant.tick + metadata.tickrate);
+  assert.equal(
+    await phaseTime.textContent(),
+    `Бомба ${clockLabel(plant.data.duration_seconds - 1)}`,
+  );
+  assert.equal(
+    await bombClock.locator('time').textContent(),
+    clockLabel(plant.data.duration_seconds - 1),
+  );
+  const postPlantGrenade = bombRound.grenades.find(
+    (grenade) => grenade.release_tick >= plant.tick,
+  );
+  if (postPlantGrenade) {
+    const postPlantSeconds = Math.max(
+      0,
+      Math.ceil(
+        plant.data.duration_seconds -
+          (postPlantGrenade.release_tick - plant.tick) / metadata.tickrate,
+      ),
+    );
+    const postPlantIndex = bombRound.grenades.indexOf(postPlantGrenade);
+    const postPlantTime = await page
+      .locator('.replay-throw')
+      .nth(postPlantIndex)
+      .locator('time')
+      .textContent();
+    assert.equal(postPlantTime, clockLabel(postPlantSeconds));
+  }
   await page.getByRole('button', { name: 'История матчей' }).click();
   await page
     .getByRole('link')

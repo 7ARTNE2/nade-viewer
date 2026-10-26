@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import ReplayCanvas from '../components/ReplayCanvas';
 import ReplayTimeline from '../components/ReplayTimeline';
+import ReplayClock from '../components/ReplayClock';
 import DestructiveConfirmDialog from '../components/DestructiveConfirmDialog';
 import GrenadeMapIcon from '../components/GrenadeMapIcon';
 import ThrowKeyIcon from '../components/ThrowKeyIcon';
@@ -42,6 +43,7 @@ import {
   framePair,
   roundBounds,
   roundPhaseTime,
+  replayTimers,
   playersAt,
 } from '../lib/replayPlayback';
 import { isWindowActive, onWindowActiveChange } from '../lib/windowActive';
@@ -440,6 +442,15 @@ export default function ReplayPage() {
     const phase = roundPhaseTime(round.round, value, detail.metadata.tickrate);
     return `${phase.freezing ? '-' : ''}${phase.label}`;
   };
+  const grenadeTime = (grenade: ReplayGrenade) => {
+    if (!round || !detail) return '-';
+    const timers = replayTimers(
+      round,
+      grenade.release_tick,
+      detail.metadata.tickrate,
+    );
+    return timers.bomb?.time ?? formatClock(grenade.data.round_time_seconds);
+  };
   return (
     <div className="replay-page">
       <header className="replay-header">
@@ -477,8 +488,18 @@ export default function ReplayPage() {
                 detail.metadata.team_t ||
                 'T'}
             </span>
-            <strong>
-              {round?.round.score_t ?? 0} : {round?.round.score_ct ?? 0}
+            <strong className="replay-score-value">
+              {round?.round.score_t ?? 0}
+            </strong>
+            {round && (
+              <ReplayClock
+                round={round}
+                tick={tick}
+                tickrate={detail.metadata.tickrate}
+              />
+            )}
+            <strong className="replay-score-value">
+              {round?.round.score_ct ?? 0}
             </strong>
             <span className="replay-side-ct">
               {frame?.players.find((p) => p.side === 'CT')?.team_name ||
@@ -493,14 +514,16 @@ export default function ReplayPage() {
               {tr('Update Nade Parser', 'Обновить Nade Parser')}
             </Link>
           )}
-          <button
-            className="btn primary"
-            disabled={!capability || starting || job?.running}
-            onClick={() => void open()}
-          >
-            <FolderOpen size={16} />
-            {tr('Open demo', 'Открыть демо')}
-          </button>
+          {id === null && (
+            <button
+              className="btn primary"
+              disabled={!capability || starting || job?.running}
+              onClick={() => void open()}
+            >
+              <FolderOpen size={16} />
+              {tr('Open demo', 'Открыть демо')}
+            </button>
+          )}
         </div>
       </header>
       {error && (
@@ -856,7 +879,7 @@ export default function ReplayPage() {
                             {grenadeLabel(g.data.grenade_type, locale)}
                           </small>
                         </span>
-                        <time>{eventTime(g.release_tick)}</time>
+                        <time>{grenadeTime(g)}</time>
                       </button>
                     ))}
                   </section>

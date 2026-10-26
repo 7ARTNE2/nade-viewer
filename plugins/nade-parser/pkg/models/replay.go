@@ -46,14 +46,15 @@ type ReplayPlayerRoster struct {
 }
 
 type ReplayRound struct {
-	Number        int    `json:"number"`
-	StartTick     int    `json:"start_tick"`
-	FreezeEndTick *int   `json:"freeze_end_tick"`
-	EndTick       *int   `json:"end_tick"`
-	WinnerSide    string `json:"winner_side"`
-	Reason        string `json:"reason"`
-	ScoreT        int    `json:"score_t"`
-	ScoreCT       int    `json:"score_ct"`
+	Number          int     `json:"number"`
+	StartTick       int     `json:"start_tick"`
+	FreezeEndTick   *int    `json:"freeze_end_tick"`
+	DurationSeconds float64 `json:"duration_seconds,omitempty"`
+	EndTick         *int    `json:"end_tick"`
+	WinnerSide      string  `json:"winner_side"`
+	Reason          string  `json:"reason"`
+	ScoreT          int     `json:"score_t"`
+	ScoreCT         int     `json:"score_ct"`
 }
 
 type ReplayFrame struct {

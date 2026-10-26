@@ -55,7 +55,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 14px;
+  gap: 12px;
   min-width: 0;
   font-size: 12px;
 }
@@ -72,11 +72,72 @@
     sans-serif;
   font-variant-numeric: tabular-nums;
 }
+.replay-match-score .replay-score-value {
+  font-size: 24px;
+}
 .replay-side-t {
   color: #ff986b;
 }
 .replay-side-ct {
   color: #8dbdff;
+}
+.replay-clocks {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 132px;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.replay-match-score .replay-clocks {
+  margin: 0 2px;
+}
+.replay-clocks > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+.replay-round-clock {
+  flex-direction: column;
+  align-items: center !important;
+  gap: 1px !important;
+  width: 100%;
+}
+.replay-round-clock small {
+  color: var(--muted);
+  font-size: 8px;
+  line-height: 1;
+  min-width: 92px;
+  text-align: center;
+}
+.replay-round-time {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 92px;
+}
+.replay-round-clock svg {
+  color: var(--muted);
+}
+.replay-clocks time {
+  width: 72px;
+  text-align: center;
+  white-space: nowrap;
+  font:
+    700 18px/1 Orbitron,
+    sans-serif;
+  letter-spacing: -0.04em;
+  color: #c7ff3d;
+}
+.replay-clocks.has-bomb {
+  color: #ff8e96;
+}
+.replay-clocks.is-freezing time {
+  color: #8fd8ff;
 }
 .replay-error,
 .replay-progress {
@@ -783,6 +844,9 @@
   margin-bottom: 8px;
 }
 .replay-timeline input {
+  position: relative;
+  z-index: 1;
+  background: transparent;
   width: 100%;
   height: 5px;
   appearance: none;
@@ -818,18 +882,34 @@
   min-width: 95px;
   white-space: nowrap;
 }
-.replay-freeze-segment {
+.replay-timeline-track {
   position: absolute;
   bottom: 9px;
+  inset-inline: 6.5px;
+  height: 5px;
+  border-radius: 3px;
+  pointer-events: none;
+}
+.replay-freeze-segment {
+  position: absolute;
+  top: 0;
   left: 0;
   height: 5px;
   border-right: 1px solid var(--text);
   background: rgba(135, 143, 153, 0.65);
   pointer-events: none;
 }
+.replay-bomb-segment {
+  position: absolute;
+  top: 0;
+  height: 5px;
+  border-inline: 1px solid #ff8e96;
+  background: rgba(255, 94, 104, 0.65);
+  pointer-events: none;
+}
 .replay-event-ticks {
   height: 5px;
-  margin: 4px 2px 0;
+  margin: 4px 6.5px 0;
   position: relative;
 }
 .replay-event-ticks i {
@@ -873,7 +953,26 @@
     font-size: 9px;
   }
   .replay-match-score {
+    gap: 7px;
+    font-size: 9px;
+  }
+  .replay-match-score > span:not(.replay-clocks) {
     display: none;
+  }
+  .replay-match-score strong {
+    font-size: 14px;
+  }
+  .replay-match-score .replay-score-value {
+    font-size: 19px;
+  }
+  .replay-match-score .replay-clocks {
+    margin-left: 0;
+    gap: 7px;
+    width: 122px;
+    font-size: 10px;
+  }
+  .replay-clocks time {
+    font-size: 15px;
   }
   .replay-header {
     min-height: 68px;

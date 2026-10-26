@@ -82,6 +82,52 @@ export function roundPhaseTime(
     : (tick - start) / tickrate;
   return { freezing, label: timeLabel(seconds) };
 }
+export function replayTimers(
+  round: ReplayRound,
+  tick: number,
+  tickrate: number,
+) {
+  const start = round.round.freeze_end_tick ?? round.round.start_tick;
+  const freeze = roundPhaseTime(round.round, tick, tickrate);
+  const planted = round.events.find((event) => event.type === 'bomb_planted');
+  const resolved = round.events.find((event) =>
+    ['bomb_defused', 'bomb_exploded'].includes(event.type),
+  );
+  const duration = round.round.duration_seconds;
+  const stopped = Math.min(
+    tick,
+    planted?.tick ?? Infinity,
+    round.round.end_tick ?? Infinity,
+  );
+  const remaining =
+    typeof duration === 'number' && duration > 0
+      ? timeLabel(Math.ceil(duration - Math.max(0, stopped - start) / tickrate))
+      : '-';
+  const bombDuration = planted?.data?.duration_seconds;
+  return {
+    freezing: freeze.freezing,
+    round: freeze.freezing ? freeze.label : remaining,
+    bomb:
+      planted && tick >= planted.tick
+        ? {
+            site: planted.message,
+            state:
+              resolved && tick >= resolved.tick ? resolved.type : 'planted',
+            time:
+              typeof bombDuration === 'number' && bombDuration > 0
+                ? timeLabel(
+                    Math.ceil(
+                      bombDuration -
+                        (Math.min(tick, resolved?.tick ?? Infinity) -
+                          planted.tick) /
+                          tickrate,
+                    ),
+                  )
+                : '-',
+          }
+        : null,
+  };
+}
 export function activeSmokes(round: ReplayRound, tick: number) {
   const active = new Map<string, { x: number; y: number; z: number }>();
   for (const event of round.events) {

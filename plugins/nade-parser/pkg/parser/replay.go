@@ -17,6 +17,7 @@ import (
 	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs"
 	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/common"
 	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/events"
+	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/sendtables"
 	"nadesoulpars/pkg/models"
 	"nadesoulpars/pkg/utils"
 )
@@ -112,6 +113,20 @@ func collectReplay(path string, options ReplayOptions, emit func(models.ReplaySt
 	nextSampleTick := 0.0
 	startTick, endTick, frameCount, eventCount, roundCount := -1, 0, 0, 0, 0
 	bombState, bombSite := "unknown", ""
+	var plantedBomb sendtables.Entity
+	var bombTimerData map[string]interface{}
+	p.RegisterEventHandler(func(events.DataTablesParsed) {
+		if class := p.ServerClasses().FindByName("CPlantedC4"); class != nil {
+			class.OnEntityCreated(func(entity sendtables.Entity) {
+				plantedBomb = entity
+				entity.OnDestroy(func() {
+					if plantedBomb == entity {
+						plantedBomb = nil
+					}
+				})
+			})
+		}
+	})
 	metadataWritten := false
 	parsedAt := time.Now().UTC().Format(time.RFC3339)
 	event := func(kind, message string, actor, target *common.Player, pos replayPosition, data map[string]interface{}) {
@@ -160,13 +175,16 @@ func collectReplay(path string, options ReplayOptions, emit func(models.ReplaySt
 	p.RegisterEventHandler(func(e events.RoundStart) {
 		flush()
 		current = models.ReplayRound{Number: current.Number + 1, StartTick: tick()}
+		current.DurationSeconds = nades.roundDurationSeconds
 		current.ScoreT = replaySafe(0, func() int { return p.GameState().TeamTerrorists().Score() })
 		current.ScoreCT = replaySafe(0, func() int { return p.GameState().TeamCounterTerrorists().Score() })
 		bombState, bombSite = "unknown", ""
+		bombTimerData = nil
 		event("round_start", "", nil, nil, replayPosition{}, nil)
 	})
 	p.RegisterEventHandler(func(e events.RoundFreezetimeEnd) {
 		current.FreezeEndTick = replayIntPtr(tick())
+		current.DurationSeconds = nades.roundDurationSeconds
 		event("freezetime_end", "", nil, nil, replayPosition{}, nil)
 	})
 	p.RegisterEventHandler(func(e events.RoundEnd) {
@@ -200,7 +218,14 @@ func collectReplay(path string, options ReplayOptions, emit func(models.ReplaySt
 	p.RegisterEventHandler(func(e events.BombPlanted) {
 		bombState = "planted"
 		bombSite = replayBombsite(e.Site)
-		event("bomb_planted", bombSite, e.Player, nil, replayPlayerPosition(e.Player), nil)
+		data := map[string]interface{}{}
+		bombTimerData = data
+		if rules := p.GameState().Rules(); rules != nil {
+			if duration, err := rules.BombTime(); err == nil && duration > 0 {
+				data["duration_seconds"] = duration.Seconds()
+			}
+		}
+		event("bomb_planted", bombSite, e.Player, nil, replayPlayerPosition(e.Player), data)
 	})
 	p.RegisterEventHandler(func(e events.BombDefuseStart) {
 		event("bomb_defuse_start", "", e.Player, nil, replayPlayerPosition(e.Player), nil)
@@ -217,6 +242,13 @@ func collectReplay(path string, options ReplayOptions, emit func(models.ReplaySt
 	p.RegisterEventHandler(func(e events.BombPickup) { bombState = "carried" })
 	p.RegisterEventHandler(func(e events.FrameDone) {
 		t := tick()
+		if plantedBomb != nil && bombTimerData != nil {
+			if value, ok := plantedBomb.PropertyValue("m_flTimerLength"); ok {
+				if duration := float64(value.Float()); duration > 0 {
+					bombTimerData["duration_seconds"] = duration
+				}
+			}
+		}
 		if t < 0 {
 			return
 		}

@@ -90,6 +90,7 @@ export type ReplayRoundSummary = {
   number: number;
   start_tick: number;
   freeze_end_tick: number | null;
+  duration_seconds?: number;
   end_tick: number | null;
   winner_side: string;
   reason: string;

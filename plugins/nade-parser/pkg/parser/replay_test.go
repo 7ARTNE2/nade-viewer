@@ -103,3 +103,36 @@ func TestReplayRejectsInvalidSamplingBeforeOpeningDemo(t *testing.T) {
 		t.Fatal("invalid sample FPS accepted")
 	}
 }
+
+func TestReplayTimersFromDemo(t *testing.T) {
+	path := os.Getenv("NADE_REPLAY_DEMO")
+	if path == "" {
+		t.Skip("NADE_REPLAY_DEMO is not set")
+	}
+	rounds, plants := 0, 0
+	err := collectReplay(path, ReplayOptions{SampleFPS: 1}, func(line models.ReplayStreamLine) error {
+		if line.Type != "round" || line.Round.Number == 0 || line.Round.FreezeEndTick == nil {
+			return nil
+		}
+		if line.Round.DurationSeconds <= 0 {
+			t.Errorf("round %d has no duration", line.Round.Number)
+		}
+		rounds++
+		for _, event := range line.Events {
+			if event.Type == "bomb_planted" {
+				duration, ok := event.Data["duration_seconds"].(float64)
+				if !ok || duration <= 0 {
+					t.Errorf("round %d has no bomb duration", line.Round.Number)
+				}
+				plants++
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rounds == 0 || plants == 0 {
+		t.Fatalf("timer check needs rounds and bomb plants: %d / %d", rounds, plants)
+	}
+}
