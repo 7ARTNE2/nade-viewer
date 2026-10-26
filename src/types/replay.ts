@@ -55,6 +55,7 @@ export type ReplayEvent = {
   round_number: number;
   type: string;
   message: string;
+  side?: string;
   player_id?: string;
   target_id?: string;
   x: number | null;

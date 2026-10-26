@@ -15,6 +15,7 @@ import {
   FolderOpen,
   Pause,
   Play,
+  Repeat2,
   SkipBack,
   SkipForward,
   Trash2,
@@ -123,6 +124,7 @@ export default function ReplayPage() {
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(1);
   const [showFreezeTime, setShowFreezeTime] = useState(true);
+  const [autoNextRound, setAutoNextRound] = useState(false);
   const [replayOptionsOpen, setReplayOptionsOpen] = useState(false);
   const [tick, setTick] = useState(0);
   const [lower, setLower] = useState(false);
@@ -142,6 +144,16 @@ export default function ReplayPage() {
   const [deleteBusy, setDeleteBusy] = useState(false);
   const clock = useRef(0),
     resume = useRef<number | null>(null);
+  const autoNextRoundRef = useRef(false);
+  const autoPlayNextRound = useRef(false);
+  const autoNextTimer = useRef<number>();
+  const showFreezeTimeRef = useRef(true);
+  useEffect(() => {
+    autoNextRoundRef.current = autoNextRound;
+  }, [autoNextRound]);
+  useEffect(() => {
+    showFreezeTimeRef.current = showFreezeTime;
+  }, [showFreezeTime]);
   const cache = useRef(new Map<number, Promise<ReplayRound>>());
   const jobOwned = useRef(false),
     lastCompleted = useRef<string | null>(null);
@@ -265,12 +277,23 @@ export default function ReplayPage() {
     void load(number).then(
       (v) => {
         if (!alive) return;
-        const [a, b] = roundBounds(v),
-          next = clamp(resume.current ?? a, a, b);
+        const [a, b] = roundBounds(v);
+        const playbackStart = showFreezeTimeRef.current
+          ? a
+          : (v.round.freeze_end_tick ?? a);
+        const next = clamp(
+          Math.max(resume.current ?? playbackStart, playbackStart),
+          a,
+          b,
+        );
+        const continuePlaying =
+          autoPlayNextRound.current && autoNextRoundRef.current;
+        autoPlayNextRound.current = false;
         resume.current = null;
         clock.current = next;
         setTick(next);
         setRound(v);
+        if (continuePlaying) setPlaying(true);
         const index = detail.rounds.findIndex((r) => r.number === number);
         const keep = new Set(
           detail.rounds
@@ -322,6 +345,23 @@ export default function ReplayPage() {
         lastUi = now;
       }
       if (clock.current >= end) {
+        const currentIndex = detail.rounds.findIndex(
+          (item) => item.number === round.round.number,
+        );
+        const nextRound = detail.rounds[currentIndex + 1];
+        if (autoNextRound && nextRound) {
+          setPlaying(false);
+          autoPlayNextRound.current = true;
+          autoNextTimer.current = window.setTimeout(() => {
+            autoNextTimer.current = undefined;
+            if (!autoNextRoundRef.current) {
+              autoPlayNextRound.current = false;
+              return;
+            }
+            changeRound(nextRound.number);
+          }, 650);
+          return;
+        }
         setPlaying(false);
         return;
       }
@@ -329,7 +369,7 @@ export default function ReplayPage() {
     };
     raf = requestAnimationFrame(run);
     return () => cancelAnimationFrame(raf);
-  }, [playing, round, detail, speed]);
+  }, [autoNextRound, playing, round, detail, speed]);
   useEffect(() => {
     if (id === null || !round) return;
     position.current = { id, number: round.round.number, tick };
@@ -404,13 +444,13 @@ export default function ReplayPage() {
       if (mounted.current) setStarting(false);
     }
   };
-  const copy = async () => {
-    if (!selected?.data.coordinates) return;
+  const copyGrenadeCoordinates = async (grenade: ReplayGrenade) => {
+    if (!grenade.data.coordinates) return;
     const request = ++copyRequest.current;
     try {
-      await navigator.clipboard.writeText(selected.data.coordinates);
+      await navigator.clipboard.writeText(grenade.data.coordinates);
       if (request !== copyRequest.current) return;
-      setCopiedId(selected.id);
+      setCopiedId(grenade.id);
       copyButton.current?.getAnimations().forEach((animation) => {
         animation.currentTime = 0;
       });
@@ -423,7 +463,12 @@ export default function ReplayPage() {
       if (request === copyRequest.current) fail(e);
     }
   };
+  const copy = () => {
+    if (selected) void copyGrenadeCoordinates(selected);
+  };
   const changeRound = (next: number) => {
+    window.clearTimeout(autoNextTimer.current);
+    autoNextTimer.current = undefined;
     const p = position.current;
     if (p)
       void saveReplayPosition(p.id, p.number, clock.current).catch(
@@ -435,6 +480,20 @@ export default function ReplayPage() {
   const players = round ? playersAt(round, tick) : [];
   const index = detail?.rounds.findIndex((r) => r.number === number) ?? -1;
   const bounds = round ? roundBounds(round) : [0, 1];
+  const roundFinished = Boolean(round && tick >= bounds[1]);
+  const score = (() => {
+    const current = {
+      t: round?.round.score_t ?? 0,
+      ct: round?.round.score_ct ?? 0,
+    };
+    if (!roundFinished || !round || !detail) return current;
+    const next = detail.rounds[index + 1];
+    if (next) return { t: next.score_t, ct: next.score_ct };
+    if (round.round.winner_side === 'T') current.t += 1;
+    if (round.round.winner_side === 'CT') current.ct += 1;
+    return current;
+  })();
+  const winnerSide = roundFinished ? round?.round.winner_side : '';
   const events =
     round?.events.filter((e) =>
       ['kill', 'bomb_planted', 'bomb_defused', 'bomb_exploded'].includes(
@@ -454,6 +513,23 @@ export default function ReplayPage() {
       detail.metadata.tickrate,
     );
     return timers.bomb?.time ?? formatClock(grenade.data.round_time_seconds);
+  };
+  const grenadeTrajectoryTick = (grenade: ReplayGrenade) => {
+    if (!round || !detail?.radar) return grenade.release_tick;
+    let previous: { x: number; y: number } | null = null;
+    for (const frame of round.frames) {
+      const projectile = frame.projectiles?.find((p) => p.id === grenade.id);
+      if (!projectile) continue;
+      if (
+        previous &&
+        Math.hypot(projectile.x - previous.x, projectile.y - previous.y) >=
+          1.5 * detail.radar.scale
+      ) {
+        return frame.tick;
+      }
+      previous = { x: projectile.x, y: projectile.y };
+    }
+    return grenade.release_tick;
   };
   return (
     <div className="replay-page">
@@ -482,18 +558,27 @@ export default function ReplayPage() {
               {detail ? detail.metadata.map : 'NADE VIEWER'}
             </span>
             <h1>{detail ? tr('Match replay', 'Повтор матча') : '2D Replay'}</h1>
+            {detail && (
+              <small
+                className="replay-source-name"
+                title={detail.metadata.demo_filename}
+              >
+                {detail.metadata.demo_filename}
+              </small>
+            )}
           </div>
         </div>
         {detail && (
           <div className="replay-match-score">
-            <span className="replay-side-t">
+            <span
+              className={`replay-side-t ${winnerSide === 'T' ? 'is-winner' : ''}`}
+            >
               {frame?.players.find((p) => p.side === 'T')?.team_name ||
                 detail.metadata.team_t ||
                 'T'}
+              {winnerSide === 'T' && <em>{tr('Winner', 'Победа')}</em>}
             </span>
-            <strong className="replay-score-value">
-              {round?.round.score_t ?? 0}
-            </strong>
+            <strong className="replay-score-value">{score.t}</strong>
             {round && (
               <ReplayClock
                 round={round}
@@ -501,13 +586,14 @@ export default function ReplayPage() {
                 tickrate={detail.metadata.tickrate}
               />
             )}
-            <strong className="replay-score-value">
-              {round?.round.score_ct ?? 0}
-            </strong>
-            <span className="replay-side-ct">
+            <strong className="replay-score-value">{score.ct}</strong>
+            <span
+              className={`replay-side-ct ${winnerSide === 'CT' ? 'is-winner' : ''}`}
+            >
               {frame?.players.find((p) => p.side === 'CT')?.team_name ||
                 detail.metadata.team_ct ||
                 'CT'}
+              {winnerSide === 'CT' && <em>{tr('Winner', 'Победа')}</em>}
             </span>
           </div>
         )}
@@ -646,12 +732,6 @@ export default function ReplayPage() {
               </select>
               <ChevronDown size={13} aria-hidden="true" />
             </div>
-            <span
-              className="replay-demo-name"
-              title={detail.metadata.demo_filename}
-            >
-              {detail.metadata.demo_filename}
-            </span>
             {detail.metadata.incomplete && (
               <span className="replay-incomplete">
                 {tr('Incomplete demo', 'Неполное демо')}
@@ -713,6 +793,16 @@ export default function ReplayPage() {
                     {showFreezeTime ? <Eye size={14} /> : <EyeOff size={14} />}
                     <span>{tr('Freeze time', 'Фризтайм')}</span>
                   </button>
+                  <button
+                    type="button"
+                    role="menuitemcheckbox"
+                    aria-checked={autoNextRound}
+                    className={`replay-timeline-toggle ${autoNextRound ? 'is-active' : ''}`}
+                    onClick={() => setAutoNextRound((value) => !value)}
+                  >
+                    <Repeat2 size={14} />
+                    <span>{tr('Auto next round', 'Автоследующий раунд')}</span>
+                  </button>
                 </div>
               )}
             </div>
@@ -734,9 +824,14 @@ export default function ReplayPage() {
                   detail={detail}
                   round={round}
                   clock={clock}
+                  tickrate={detail.metadata.tickrate}
                   lower={lower}
                   selected={selected}
+                  copiedGrenadeId={copiedId}
                   onSelect={setSelected}
+                  onCopyCoordinates={(grenade) => {
+                    void copyGrenadeCoordinates(grenade);
+                  }}
                 />
                 <aside className="replay-inspector">
                   {selected ? (
@@ -902,7 +997,7 @@ export default function ReplayPage() {
                         className={`replay-throw ${selected?.id === g.id ? 'active' : ''}`}
                         onClick={() => {
                           setSelected(g);
-                          seek(g.release_tick);
+                          seek(grenadeTrajectoryTick(g));
                           setPlaying(false);
                         }}
                       >

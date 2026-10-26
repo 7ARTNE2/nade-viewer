@@ -40,6 +40,17 @@
     sans-serif;
   letter-spacing: 0;
 }
+.replay-source-name {
+  display: block;
+  max-width: min(300px, 32vw);
+  margin-top: 4px;
+  overflow: hidden;
+  color: var(--dim);
+  font-size: 9px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .replay-header-actions {
   display: flex;
   align-items: center;
@@ -80,6 +91,20 @@
 }
 .replay-side-ct {
   color: #8dbdff;
+}
+.replay-match-score > span.is-winner {
+  font-weight: 800;
+}
+.replay-match-score > span.is-winner em {
+  display: block;
+  margin-top: 3px;
+  color: var(--acid);
+  font-size: 8px;
+  font-style: normal;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  text-align: center;
+  text-transform: uppercase;
 }
 .replay-clocks {
   display: flex;
@@ -1069,8 +1094,8 @@
     gap: 8px;
     padding-inline: 10px;
   }
-  .replay-demo-name {
-    display: none;
+  .replay-source-name {
+    max-width: 190px;
   }
   .replay-controls {
     gap: 10px;

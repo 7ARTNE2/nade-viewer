@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Minus, Plus, RotateCcw } from 'lucide-react';
 import { assetUrl } from '../lib/tauri';
 import {
@@ -16,9 +16,12 @@ type Props = {
   detail: ReplayDetail;
   round: ReplayRound;
   clock: { current: number };
+  tickrate: number;
   lower: boolean;
   selected: ReplayGrenade | null;
+  copiedGrenadeId: string | null;
   onSelect: (g: ReplayGrenade) => void;
+  onCopyCoordinates: (g: ReplayGrenade) => void;
 };
 const colors: Record<string, string> = {
   smoke: '#67e8f9',
@@ -27,13 +30,28 @@ const colors: Record<string, string> = {
   molotov: '#fb7185',
   'incendiary grenade': '#f97316',
 };
+const FLASH_FULL_RADIUS_GAME = 400;
+const FLASH_FADE_RADIUS_GAME = 1000;
+const FLASH_EFFECT_SECONDS = 0.6;
+const HE_RADIUS_GAME = 400;
+// Keep the HE burst close to Nadegrid's fast fire-core animation.
+const HE_EFFECT_SECONDS = 0.82;
+const TRAJECTORY_FADE_SECONDS = 0.9;
+const SMOKE_RADIUS_GAME = 144;
+const SMOKE_SIDE_COLORS: Record<string, string> = {
+  T: '#fb923c',
+  CT: '#38bdf8',
+};
 export default function ReplayCanvas({
   detail,
   round,
   clock,
+  tickrate,
   lower,
   selected,
+  copiedGrenadeId,
   onSelect,
+  onCopyCoordinates,
 }: Props) {
   const { tr } = useI18n();
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -71,9 +89,77 @@ export default function ReplayCanvas({
     new Map<string, { health: number; damage: number; started: number }>(),
   );
   const hits = useRef<{ x: number; y: number; g: ReplayGrenade }[]>([]);
+  const trajectoryHits = useRef<
+    { ax: number; ay: number; bx: number; by: number; g: ReplayGrenade }[]
+  >([]);
+  const findGrenadeAt = (x: number, y: number) => {
+    const pointHit = hits.current.find(
+      (h) => Math.hypot(h.x - x, h.y - y) < 14,
+    );
+    if (pointHit) return pointHit.g;
+    let lineHit: (typeof trajectoryHits.current)[number] | undefined;
+    let lineDistance = 11;
+    for (const candidate of trajectoryHits.current) {
+      const dx = candidate.bx - candidate.ax;
+      const dy = candidate.by - candidate.ay;
+      const lengthSquared = dx * dx + dy * dy || 1;
+      const projection = Math.max(
+        0,
+        Math.min(
+          1,
+          ((x - candidate.ax) * dx + (y - candidate.ay) * dy) / lengthSquared,
+        ),
+      );
+      const distance = Math.hypot(
+        x - (candidate.ax + projection * dx),
+        y - (candidate.ay + projection * dy),
+      );
+      if (distance < lineDistance) {
+        lineDistance = distance;
+        lineHit = candidate;
+      }
+    }
+    return lineHit?.g;
+  };
   const imagePath = lower
     ? detail.map.lower_map_image_path
     : detail.map.map_image_path;
+  const trajectoryMovementTicks = useMemo(() => {
+    const tracks = new Map<string, { x: number; y: number; ticks: number[] }>();
+    const radar = detail.radar;
+    if (!radar) return tracks;
+    for (const frame of round.frames) {
+      for (const projectile of frame.projectiles ?? []) {
+        if (
+          radar.split_z !== null &&
+          detail.map.has_lower_radar &&
+          (lower ? projectile.z >= radar.split_z : projectile.z < radar.split_z)
+        )
+          continue;
+        const track = tracks.get(projectile.id);
+        // Match Nadegrid's 1.5 radar-unit movement threshold. A landed smoke
+        // remains an entity, but its presence must not keep the trail alive.
+        if (
+          track &&
+          Math.hypot(projectile.x - track.x, projectile.y - track.y) <
+            1.5 * radar.scale
+        )
+          continue;
+        if (track) {
+          track.x = projectile.x;
+          track.y = projectile.y;
+          track.ticks.push(frame.tick);
+        } else {
+          tracks.set(projectile.id, {
+            x: projectile.x,
+            y: projectile.y,
+            ticks: [frame.tick],
+          });
+        }
+      }
+    }
+    return tracks;
+  }, [round, detail.radar, detail.map.has_lower_radar, lower]);
   useEffect(() => {
     const element = canvas.current;
     if (!element) return;
@@ -127,15 +213,40 @@ export default function ReplayCanvas({
         [frame, next, t] = framePair(round, tick);
       if (!frame) return;
       const now = performance.now();
-      for (const smoke of activeSmokes(round, tick)) {
-        if (!visible(smoke.z)) continue;
+      const visibleSmokes = activeSmokes(round, tick, tickrate).filter(
+        (smoke) => visible(smoke.z),
+      );
+      for (const smoke of visibleSmokes) {
         const [x, y] = point(smoke.x, smoke.y);
-        ctx.fillStyle = '#c6d9dc30';
-        ctx.strokeStyle = '#c6d9dc66';
+        const radius = (SMOKE_RADIUS_GAME / radar.scale) * unit;
+        const sideColor = SMOKE_SIDE_COLORS[smoke.side?.toUpperCase() ?? ''];
+        const ending = smoke.remainingSeconds <= 5;
+        ctx.save();
+        ctx.fillStyle = 'rgba(30,41,59,0.62)';
+        ctx.strokeStyle = sideColor
+          ? `${sideColor}${ending ? 'cc' : '9e'}`
+          : 'rgba(203,213,225,0.38)';
+        ctx.lineWidth = 2;
+        ctx.shadowColor = sideColor ?? '#94a3b8';
+        ctx.shadowBlur = sideColor ? (ending ? 12 : 14) : 7;
+        if (ending) {
+          const pulse = (now % 1350) / 1350;
+          ctx.globalAlpha = (1 - pulse) * 0.75;
+          ctx.shadowBlur = 0;
+          ctx.strokeStyle = sideColor ?? '#94a3b8';
+          ctx.lineWidth = 2.5;
+          ctx.beginPath();
+          ctx.arc(x, y, radius * (1 + pulse * 0.2), 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.globalAlpha = 1;
+        }
+        if (ending) ctx.setLineDash([7, 5]);
         ctx.beginPath();
-        ctx.arc(x, y, (144 / radar.scale) * unit, 0, Math.PI * 2);
+        ctx.arc(x, y, radius, 0, Math.PI * 2);
         ctx.fill();
         ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.restore();
       }
       for (const inferno of frame.infernos ?? []) {
         ctx.fillStyle = '#ff8c3a4d';
@@ -155,25 +266,163 @@ export default function ReplayCanvas({
           ctx.stroke();
         }
       }
+      const drawExplosionEffects = () => {
+        const events = round.events.filter(
+          (event) =>
+            (event.type === 'flash_explode' || event.type === 'he_explode') &&
+            event.x !== null &&
+            event.y !== null &&
+            visible(event.z ?? 0),
+        );
+        for (const event of events) {
+          const age = (tick - event.tick) / tickrate;
+          const isFlash = event.type === 'flash_explode';
+          const duration = isFlash ? FLASH_EFFECT_SECONDS : HE_EFFECT_SECONDS;
+          if (age < 0 || age > duration) continue;
+          const [x, y] = point(event.x!, event.y!);
+          const progress = clamp(age / duration, 0, 1);
+          const fade = 1 - progress;
+          const fullRadius =
+            ((isFlash ? FLASH_FULL_RADIUS_GAME : HE_RADIUS_GAME) /
+              radar!.scale) *
+            unit;
+          const fadeRadius = (FLASH_FADE_RADIUS_GAME / radar!.scale) * unit;
+          ctx.save();
+          if (isFlash) {
+            ctx.globalAlpha = 0.16 * fade;
+            ctx.fillStyle = '#fff7c2';
+            ctx.beginPath();
+            ctx.arc(x, y, fadeRadius, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.globalAlpha = 0.3 * fade;
+            ctx.strokeStyle = '#fbbf24';
+            ctx.lineWidth = 1.5;
+            ctx.setLineDash([8, 7]);
+            ctx.beginPath();
+            ctx.arc(x, y, fadeRadius, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            const flashGradient = ctx.createRadialGradient(
+              x,
+              y,
+              fullRadius * 0.05,
+              x,
+              y,
+              fullRadius * (0.45 + progress * 0.55),
+            );
+            flashGradient.addColorStop(0, `rgba(255,255,255,${0.72 * fade})`);
+            flashGradient.addColorStop(0.3, `rgba(254,249,195,${0.48 * fade})`);
+            flashGradient.addColorStop(0.7, `rgba(251,191,36,${0.22 * fade})`);
+            flashGradient.addColorStop(1, 'rgba(251,191,36,0)');
+            ctx.fillStyle = flashGradient;
+            ctx.beginPath();
+            ctx.arc(x, y, fullRadius, 0, Math.PI * 2);
+            ctx.fill();
+            const coreRadius = fullRadius;
+            const coreGradient = ctx.createRadialGradient(
+              x,
+              y,
+              0,
+              x,
+              y,
+              coreRadius,
+            );
+            coreGradient.addColorStop(0, `rgba(255,255,255,${0.98 * fade})`);
+            coreGradient.addColorStop(0.42, `rgba(255,250,205,${0.78 * fade})`);
+            coreGradient.addColorStop(0.78, `rgba(251,191,36,${0.34 * fade})`);
+            coreGradient.addColorStop(1, 'rgba(251,191,36,0)');
+            ctx.fillStyle = coreGradient;
+            ctx.beginPath();
+            ctx.arc(x, y, coreRadius, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.globalAlpha = 0.82 * fade;
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(x, y, coreRadius, 0, Math.PI * 2);
+            ctx.stroke();
+          } else {
+            const burst = clamp(progress / 0.42, 0, 1);
+            const radius = fullRadius * (0.32 + burst * 0.68);
+            const heGradient = ctx.createRadialGradient(x, y, 0, x, y, radius);
+            const fireFade = 1 - clamp(progress / 0.78, 0, 1);
+            heGradient.addColorStop(0, `rgba(255,245,190,${0.98 * fireFade})`);
+            heGradient.addColorStop(
+              0.14,
+              `rgba(251,146,60,${0.92 * fireFade})`,
+            );
+            heGradient.addColorStop(0.34, `rgba(185,28,28,${0.74 * fade})`);
+            heGradient.addColorStop(0.58, `rgba(15,23,42,${0.68 * fade})`);
+            heGradient.addColorStop(1, 'rgba(2,6,23,0)');
+            ctx.fillStyle = heGradient;
+            ctx.beginPath();
+            ctx.arc(x, y, radius, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.globalAlpha = 0.55 * fade;
+            ctx.strokeStyle = '#f97316';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(x, y, radius * 0.68, 0, Math.PI * 2);
+            ctx.stroke();
+          }
+          ctx.restore();
+        }
+      };
+      drawExplosionEffects();
       hits.current = [];
-      if (selected?.data.trajectory?.length) {
-        ctx.strokeStyle = colors[selected.data.grenade_type] ?? '#ffffff';
-        ctx.lineWidth = 2;
-        ctx.setLineDash([4, 4]);
+      trajectoryHits.current = [];
+      for (const grenade of round.grenades) {
+        if (grenade.release_tick > tick || !grenade.data.trajectory?.length)
+          continue;
+        const movementTicks = trajectoryMovementTicks.get(grenade.id)?.ticks;
+        if (!movementTicks) continue;
+        let lo = 0,
+          hi = movementTicks.length;
+        while (lo < hi) {
+          const mid = (lo + hi) >>> 1;
+          if (movementTicks[mid] <= tick) lo = mid + 1;
+          else hi = mid;
+        }
+        if (lo < 2) continue;
+        const age = tick - movementTicks[lo - 1];
+        const fadeTicks = tickrate * TRAJECTORY_FADE_SECONDS;
+        if (age > Math.round(fadeTicks)) continue;
+        const opacity = Math.max(0.18, 1 - age / Math.max(1, fadeTicks));
+        const active = selected?.id === grenade.id;
+        const copied = copiedGrenadeId === grenade.id;
+        const trajectoryColor = copied
+          ? '#c8f43d'
+          : (colors[grenade.data.grenade_type] ?? '#f4f6f8');
+        ctx.save();
+        ctx.globalAlpha = copied || active ? 1 : 0.72 * opacity;
+        ctx.strokeStyle = trajectoryColor;
+        ctx.lineWidth = copied ? 3.5 : active ? 3.5 : 2.5;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.shadowColor = trajectoryColor;
+        ctx.shadowBlur = copied ? 10 : active ? 7 : 3;
         ctx.beginPath();
-        let drawing = false;
-        for (const p of selected.data.trajectory) {
+        let previous: [number, number] | null = null;
+        for (const p of grenade.data.trajectory) {
           if (!visible(p[2] ?? 0)) {
-            drawing = false;
+            previous = null;
             continue;
           }
           const [x, y] = point(p[0], p[1]);
-          if (drawing) ctx.lineTo(x, y);
-          else ctx.moveTo(x, y);
-          drawing = true;
+          if (previous) {
+            ctx.lineTo(x, y);
+            trajectoryHits.current.push({
+              ax: previous[0],
+              ay: previous[1],
+              bx: x,
+              by: y,
+              g: grenade,
+            });
+          } else ctx.moveTo(x, y);
+          previous = [x, y];
         }
         ctx.stroke();
-        ctx.setLineDash([]);
+        ctx.restore();
       }
       for (const projectile of frame.projectiles ?? []) {
         if (!visible(projectile.z)) continue;
@@ -182,6 +431,15 @@ export default function ReplayCanvas({
           py = projectile.y + (other ? other.y - projectile.y : 0) * t;
         const [x, y] = point(px, py);
         const grenade = round.grenades.find((g) => g.id === projectile.id);
+        // Once a smoke has bloomed, its timer replaces the grenade marker at
+        // the center of the cloud. Keep the marker visible while it is flying,
+        // then remove it as soon as it reaches the active smoke.
+        const insideActiveSmoke =
+          grenade?.data.grenade_type === 'smoke' &&
+          visibleSmokes.some(
+            (smoke) => Math.hypot(smoke.x - px, smoke.y - py) <= 36,
+          );
+        if (insideActiveSmoke) continue;
         ctx.fillStyle = colors[grenade?.data.grenade_type ?? ''] ?? '#f4f6f8';
         ctx.strokeStyle = '#101419';
         ctx.lineWidth = 2;
@@ -190,6 +448,22 @@ export default function ReplayCanvas({
         ctx.fill();
         ctx.stroke();
         if (grenade) hits.current.push({ x, y, g: grenade });
+      }
+      // Draw smoke timers after projectiles so the moving grenade point cannot
+      // cover the remaining-time label in the center of the cloud.
+      for (const smoke of visibleSmokes) {
+        const [x, y] = point(smoke.x, smoke.y);
+        const radius = (SMOKE_RADIUS_GAME / radar.scale) * unit;
+        ctx.save();
+        ctx.fillStyle = '#f8fafc';
+        ctx.strokeStyle = 'rgba(2,6,23,0.9)';
+        ctx.lineWidth = Math.max(1.5, radius * 0.055);
+        ctx.font = `900 ${Math.max(9, Math.min(18, radius * 0.62))}px Segoe UI`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.strokeText(`${smoke.remainingSeconds.toFixed(1)}s`, x, y);
+        ctx.fillText(`${smoke.remainingSeconds.toFixed(1)}s`, x, y);
+        ctx.restore();
       }
       if (
         frame.bomb &&
@@ -310,7 +584,17 @@ export default function ReplayCanvas({
       unlisten();
       image.onload = null;
     };
-  }, [detail, round, clock, lower, selected, imagePath]);
+  }, [
+    detail,
+    round,
+    clock,
+    tickrate,
+    lower,
+    selected,
+    copiedGrenadeId,
+    imagePath,
+    trajectoryMovementTicks,
+  ]);
   return (
     <div className={`replay-map ${view.s > 1 ? 'is-draggable' : ''}`}>
       <canvas
@@ -380,14 +664,18 @@ export default function ReplayCanvas({
         onPointerUp={(e) => {
           if (drag.current && !drag.current.moved) {
             const r = e.currentTarget.getBoundingClientRect();
-            const hit = hits.current.find(
-              (h) =>
-                Math.hypot(h.x - e.clientX + r.left, h.y - e.clientY + r.top) <
-                14,
-            );
-            if (hit) onSelect(hit.g);
+            const x = e.clientX - r.left;
+            const y = e.clientY - r.top;
+            const grenade = findGrenadeAt(x, y);
+            if (grenade) onSelect(grenade);
           }
           drag.current = null;
+        }}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          const r = e.currentTarget.getBoundingClientRect();
+          const grenade = findGrenadeAt(e.clientX - r.left, e.clientY - r.top);
+          if (grenade) onCopyCoordinates(grenade);
         }}
         onPointerCancel={() => {
           drag.current = null;

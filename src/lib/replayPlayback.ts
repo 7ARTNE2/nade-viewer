@@ -128,14 +128,60 @@ export function replayTimers(
         : null,
   };
 }
-export function activeSmokes(round: ReplayRound, tick: number) {
-  const active = new Map<string, { x: number; y: number; z: number }>();
+export function activeSmokes(round: ReplayRound, tick: number, tickrate = 64) {
+  const expirations = new Map<string, number[]>();
+  round.events.forEach((event) => {
+    if (event.type !== 'smoke_expired') return;
+    const id = String(event.data?.grenade_entity_id ?? '');
+    expirations.set(id, [...(expirations.get(id) ?? []), event.tick]);
+  });
+  const active = new Map<
+    string,
+    {
+      x: number;
+      y: number;
+      z: number;
+      side?: string;
+      startTick: number;
+      expireTick: number;
+    }
+  >();
   for (const event of round.events) {
     if (event.tick > tick) break;
     const id = String(event.data?.grenade_entity_id ?? '');
-    if (event.type === 'smoke_start' && event.x !== null && event.y !== null)
-      active.set(id, { x: event.x, y: event.y, z: event.z ?? 0 });
+    if (event.type === 'smoke_start' && event.x !== null && event.y !== null) {
+      // CS2 smokes last 18 seconds after they bloom.  Some demos report a
+      // delayed `smoke_expired` event (or an event from a later entity reuse),
+      // so never let that event extend the visible cloud past the game limit.
+      const maxExpireTick = event.tick + Math.round(tickrate * 18);
+      const eventExpireTick =
+        expirations.get(id)?.find((value) => value > event.tick) ??
+        maxExpireTick;
+      const expireTick = Math.min(eventExpireTick, maxExpireTick);
+      if (tick < expireTick) {
+        active.set(id, {
+          x: event.x,
+          y: event.y,
+          z: event.z ?? 0,
+          side: event.side,
+          startTick: event.tick,
+          expireTick,
+        });
+      }
+    }
     if (event.type === 'smoke_expired') active.delete(id);
   }
-  return [...active.values()];
+  return [...active.values()].map((smoke) => ({
+    x: smoke.x,
+    y: smoke.y,
+    z: smoke.z,
+    side: smoke.side,
+    remainingSeconds: Math.max(0, smoke.expireTick - tick) / tickrate,
+    progress: clamp(
+      (tick - smoke.startTick) /
+        Math.max(1, smoke.expireTick - smoke.startTick),
+      0,
+      1,
+    ),
+  }));
 }
