@@ -11,6 +11,7 @@ import {
   Crosshair,
   Eye,
   EyeOff,
+  Ellipsis,
   FolderOpen,
   Pause,
   Play,
@@ -122,6 +123,7 @@ export default function ReplayPage() {
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(1);
   const [showFreezeTime, setShowFreezeTime] = useState(true);
+  const [replayOptionsOpen, setReplayOptionsOpen] = useState(false);
   const [tick, setTick] = useState(0);
   const [lower, setLower] = useState(false);
   const [selected, setSelected] = useState<ReplayGrenade | null>(null);
@@ -679,6 +681,41 @@ export default function ReplayPage() {
                 </button>
               </div>
             )}
+            <div className="replay-options replay-round-options">
+              <button
+                type="button"
+                className="icon-btn replay-options-trigger"
+                aria-haspopup="menu"
+                aria-expanded={replayOptionsOpen}
+                onClick={() => setReplayOptionsOpen((value) => !value)}
+                aria-label={tr('Replay settings', 'Настройки реплея')}
+                data-tip={tr('Replay settings', 'Настройки реплея')}
+              >
+                <Ellipsis size={17} />
+              </button>
+              {replayOptionsOpen && (
+                <div className="replay-options-menu" role="menu">
+                  <button
+                    type="button"
+                    role="menuitemcheckbox"
+                    aria-checked={showFreezeTime}
+                    className={`replay-timeline-toggle ${showFreezeTime ? 'is-active' : ''}`}
+                    onClick={() => {
+                      const next = !showFreezeTime;
+                      setShowFreezeTime(next);
+                      if (!next && round) {
+                        seek(
+                          round.round.freeze_end_tick ?? round.round.start_tick,
+                        );
+                      }
+                    }}
+                  >
+                    {showFreezeTime ? <Eye size={14} /> : <EyeOff size={14} />}
+                    <span>{tr('Freeze time', 'Фризтайм')}</span>
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
           {round ? (
             <>
@@ -976,31 +1013,6 @@ export default function ReplayPage() {
                   onSeek={seek}
                   showFreezeTime={showFreezeTime}
                 />
-                <button
-                  type="button"
-                  className={`replay-timeline-toggle ${showFreezeTime ? 'is-active' : ''}`}
-                  aria-pressed={showFreezeTime}
-                  onClick={() => {
-                    const next = !showFreezeTime;
-                    setShowFreezeTime(next);
-                    if (!next && round) {
-                      seek(
-                        round.round.freeze_end_tick ?? round.round.start_tick,
-                      );
-                    }
-                  }}
-                  aria-label={tr(
-                    'Show freeze time on timeline',
-                    'Показывать фризтайм на таймлайне',
-                  )}
-                  data-tip={tr(
-                    'Show freeze time on timeline',
-                    'Показывать фризтайм на таймлайне',
-                  )}
-                >
-                  {showFreezeTime ? <Eye size={14} /> : <EyeOff size={14} />}
-                  <span>{tr('Freeze', 'Фризтайм')}</span>
-                </button>
                 <div
                   className="replay-speeds"
                   role="group"

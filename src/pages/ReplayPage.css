@@ -866,6 +866,34 @@
   outline: 1px solid var(--muted);
   outline-offset: 1px;
 }
+.replay-options {
+  position: relative;
+  z-index: 4;
+}
+.replay-round-options {
+  margin-left: auto;
+}
+.replay-options-trigger {
+  width: 30px;
+  height: 30px;
+}
+.replay-options-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  display: grid;
+  min-width: 150px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-2);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.42);
+}
+.replay-options-menu .replay-timeline-toggle {
+  width: 100%;
+  justify-content: flex-start;
+  border: 0;
+}
 .replay-timeline {
   position: relative;
   flex: 1;
@@ -971,8 +999,11 @@
 }
 .replay-event-ticks i {
   position: absolute;
-  height: 4px;
-  width: 2px;
+  top: 2px;
+  height: 1px;
+  width: 8px;
+  transform: translateX(-50%);
+  border-radius: 1px;
   background: var(--orange);
 }
 @media (max-width: 1100px) {

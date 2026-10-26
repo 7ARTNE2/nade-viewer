@@ -67,6 +67,9 @@ export default function ReplayCanvas({
     vy: number;
     moved: boolean;
   } | null>(null);
+  const damageState = useRef(
+    new Map<string, { health: number; damage: number; started: number }>(),
+  );
   const hits = useRef<{ x: number; y: number; g: ReplayGrenade }[]>([]);
   const imagePath = lower
     ? detail.map.lower_map_image_path
@@ -123,6 +126,7 @@ export default function ReplayCanvas({
       const tick = clock.current,
         [frame, next, t] = framePair(round, tick);
       if (!frame) return;
+      const now = performance.now();
       for (const smoke of activeSmokes(round, tick)) {
         if (!visible(smoke.z)) continue;
         const [x, y] = point(smoke.x, smoke.y);
@@ -198,15 +202,32 @@ export default function ReplayCanvas({
         ctx.strokeStyle = '#111';
         ctx.strokeRect(x - 5, y - 5, 10, 10);
       }
-      playersAt(round, tick).forEach((raw, index) => {
+      playersAt(round, tick).forEach((raw) => {
         const player = interpolatePlayer(
           raw,
           next?.players.find((p) => p.id === raw.id),
           t,
         );
+        const previous = damageState.current.get(player.id);
+        const health = Math.max(0, Math.round(player.health));
+        if (previous && health < previous.health) {
+          damageState.current.set(player.id, {
+            health,
+            damage: previous.health - health,
+            started: now,
+          });
+        } else if (!previous || health > previous.health) {
+          damageState.current.set(player.id, {
+            health,
+            damage: 0,
+            started: previous?.started ?? now,
+          });
+        } else {
+          previous.health = health;
+        }
         if (!visible(player.z)) return;
         const [x, y] = point(player.x, player.y),
-          color = player.side === 'CT' ? '#78b5ff' : '#ffbd70';
+          color = player.side === 'CT' ? '#8dbdff' : '#ff986b';
         ctx.globalAlpha = player.alive ? 1 : 0.4;
         if (player.alive) {
           const angle = (-player.yaw * Math.PI) / 180;
@@ -230,10 +251,25 @@ export default function ReplayCanvas({
           ctx.arc(x, y, 8, 0, Math.PI * 2);
           ctx.fill();
           ctx.stroke();
+          const damage = damageState.current.get(player.id);
+          const popupAge = damage ? now - damage.started : Infinity;
+          const showDamage = Boolean(damage?.damage && popupAge < 800);
           ctx.fillStyle = '#111419';
           ctx.textAlign = 'center';
-          ctx.font = 'bold 9px Segoe UI';
-          ctx.fillText(String(index + 1), x, y + 3);
+          const healthLabel = String(health);
+          const healthSize =
+            healthLabel.length >= 3 ? 7 : healthLabel.length === 2 ? 8 : 9;
+          ctx.font = `bold ${healthSize}px Segoe UI`;
+          ctx.fillText(healthLabel, x, y + 3);
+          if (showDamage) {
+            const damageLabel = `-${damage!.damage}`;
+            const damageSize = damageLabel.length >= 4 ? 7 : 8;
+            ctx.fillStyle = '#ff8e96';
+            ctx.font = `bold ${damageSize}px Segoe UI`;
+            ctx.globalAlpha = Math.max(0, 1 - popupAge / 800);
+            ctx.fillText(damageLabel, x, y - 11 - popupAge / 100);
+            ctx.globalAlpha = player.alive ? 1 : 0.4;
+          }
         } else {
           ctx.strokeStyle = color;
           ctx.lineWidth = 2;

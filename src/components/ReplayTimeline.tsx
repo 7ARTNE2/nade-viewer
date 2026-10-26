@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
-import { Clock3 } from 'lucide-react';
 import { useI18n } from '../i18n';
 import {
   clamp,
@@ -141,10 +140,6 @@ export default function ReplayTimeline({
         <time ref={elapsed} className="replay-phase-time">
           {labelAt(current)}
         </time>
-        <span className="replay-timeline-round">
-          <Clock3 size={11} />
-          {tr('Round', 'Раунд')} {round.round.number}
-        </span>
         <time>
           {timeLabel((end - Math.max(start, actionStart)) / tickrate)}
         </time>
