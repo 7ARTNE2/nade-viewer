@@ -38,6 +38,7 @@ const HE_RADIUS_GAME = 400;
 const HE_EFFECT_SECONDS = 0.82;
 const TRAJECTORY_FADE_SECONDS = 0.9;
 const SMOKE_RADIUS_GAME = 144;
+const INFERNO_RADIUS_GAME = 116;
 const SMOKE_SIDE_COLORS: Record<string, string> = {
   T: '#fb923c',
   CT: '#38bdf8',
@@ -249,22 +250,173 @@ export default function ReplayCanvas({
         ctx.restore();
       }
       for (const inferno of frame.infernos ?? []) {
-        ctx.fillStyle = '#ff8c3a4d';
-        ctx.strokeStyle = '#ffac6c99';
-        if (
-          inferno.hull?.length > 2 &&
-          inferno.fires.some((f) => visible(f.z))
-        ) {
+        if (!inferno.hull?.length || !inferno.fires.some((f) => visible(f.z)))
+          continue;
+        const center = inferno.hull.reduce(
+          (sum, p) => ({ x: sum.x + p.x, y: sum.y + p.y }),
+          { x: 0, y: 0 },
+        );
+        center.x /= inferno.hull.length;
+        center.y /= inferno.hull.length;
+        const source = round.grenades
+          .filter(
+            (g) =>
+              (g.data.grenade_type === 'molotov' ||
+                g.data.grenade_type === 'incendiary grenade') &&
+              typeof g.data.explode_pos_x === 'number' &&
+              typeof g.data.explode_pos_y === 'number',
+          )
+          .map((g) => ({
+            grenade: g,
+            distance: Math.hypot(
+              (g.data.explode_pos_x ?? 0) - center.x,
+              (g.data.explode_pos_y ?? 0) - center.y,
+            ),
+          }))
+          .sort((a, b) => a.distance - b.distance)[0];
+        const incendiary =
+          source && source.distance <= 260
+            ? source.grenade.data.grenade_type === 'incendiary grenade'
+            : false;
+        const palette = incendiary
+          ? {
+              edge: '#fb923c',
+              glow: '#ea580c',
+              fill: 'rgba(154,52,18,0.2)',
+              inner: '#fff7ae',
+              flame: '#fb923c',
+              hot: '#c2410c',
+            }
+          : {
+              edge: '#ef4444',
+              glow: '#f97316',
+              fill: 'rgba(194,65,12,0.24)',
+              inner: '#fff7c2',
+              flame: '#f97316',
+              hot: '#dc2626',
+            };
+        const [cx, cy] = point(center.x, center.y);
+        ctx.save();
+        ctx.beginPath();
+        inferno.hull.forEach((p, i) => {
+          const [x, y] = point(p.x, p.y);
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        });
+        ctx.closePath();
+        ctx.fillStyle = palette.fill;
+        ctx.strokeStyle = `${palette.edge}aa`;
+        ctx.lineWidth = 1.5;
+        ctx.shadowColor = palette.glow;
+        ctx.shadowBlur = 12;
+        ctx.fill();
+        ctx.stroke();
+        // Keep a visible fire core even when Windows/WebView reduces motion
+        // or throttles animation frames. The animated hotspots below are an
+        // enhancement, never the only representation of the inferno.
+        const core = ctx.createRadialGradient(
+          cx,
+          cy,
+          0,
+          cx,
+          cy,
+          (INFERNO_RADIUS_GAME / radar.scale) * unit * 0.88,
+        );
+        core.addColorStop(0, `${palette.inner}b8`);
+        core.addColorStop(0.28, `${palette.flame}72`);
+        core.addColorStop(0.7, `${palette.glow}2e`);
+        core.addColorStop(1, `${palette.glow}00`);
+        ctx.fillStyle = core;
+        ctx.beginPath();
+        ctx.arc(
+          cx,
+          cy,
+          (INFERNO_RADIUS_GAME / radar.scale) * unit * 0.88,
+          0,
+          Math.PI * 2,
+        );
+        ctx.fill();
+        inferno.fires.forEach((fire, fireIndex) => {
+          if (!visible(fire.z)) return;
+          const [x, y] = point(fire.x, fire.y);
+          const phase = (now / 260 + fireIndex * 1.73 + inferno.id.length) % 1;
+          const pulse = 0.82 + Math.sin(phase * Math.PI * 2) * 0.14;
+          const radius = Math.max(
+            3,
+            (INFERNO_RADIUS_GAME / radar.scale) *
+              unit *
+              (0.16 + (fireIndex % 3) * 0.035),
+          );
+          const glow = ctx.createRadialGradient(x, y, 0, x, y, radius * 2.5);
+          glow.addColorStop(0, `${palette.inner}a8`);
+          glow.addColorStop(0.3, `${palette.flame}88`);
+          glow.addColorStop(0.72, `${palette.glow}4d`);
+          glow.addColorStop(1, `${palette.glow}00`);
+          ctx.fillStyle = glow;
           ctx.beginPath();
-          inferno.hull.forEach((p, i) => {
-            const [x, y] = point(p.x, p.y);
-            if (i === 0) ctx.moveTo(x, y);
-            else ctx.lineTo(x, y);
-          });
+          ctx.arc(x, y, radius * 2.3, 0, Math.PI * 2);
+          ctx.fill();
+
+          // Draw an actual flame tongue instead of a colored dot. The
+          // varying tip and lean create a readable fire silhouette at any
+          // Windows animation/reduced-motion setting.
+          const lean = Math.sin(phase * Math.PI * 2) * radius * 0.35;
+          const tongue = radius * (1.55 + pulse * 0.35);
+          const flameGradient = ctx.createLinearGradient(
+            x,
+            y + radius * 0.75,
+            x + lean,
+            y - tongue,
+          );
+          flameGradient.addColorStop(0, `${palette.hot}e6`);
+          flameGradient.addColorStop(0.42, `${palette.flame}ee`);
+          flameGradient.addColorStop(0.78, `${palette.inner}f0`);
+          flameGradient.addColorStop(1, `${palette.inner}00`);
+          ctx.fillStyle = flameGradient;
+          ctx.beginPath();
+          ctx.moveTo(x - radius * 0.72, y + radius * 0.62);
+          ctx.quadraticCurveTo(
+            x - radius * 0.52,
+            y - radius * 0.08,
+            x - radius * 0.18 + lean * 0.18,
+            y - radius * 0.72,
+          );
+          ctx.quadraticCurveTo(
+            x - radius * 0.03 + lean * 0.2,
+            y - radius * 1.18,
+            x + lean,
+            y - tongue,
+          );
+          ctx.quadraticCurveTo(
+            x + radius * 0.24 + lean * 0.2,
+            y - radius * 0.98,
+            x + radius * 0.52,
+            y - radius * 0.38,
+          );
+          ctx.quadraticCurveTo(
+            x + radius * 0.68,
+            y + radius * 0.08,
+            x + radius * 0.72,
+            y + radius * 0.62,
+          );
           ctx.closePath();
           ctx.fill();
-          ctx.stroke();
-        }
+        });
+        ctx.restore();
+        ctx.save();
+        ctx.beginPath();
+        inferno.hull.forEach((p, i) => {
+          const [x, y] = point(p.x, p.y);
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        });
+        ctx.closePath();
+        ctx.strokeStyle = `${palette.edge}aa`;
+        ctx.lineWidth = 1.5;
+        ctx.shadowColor = palette.glow;
+        ctx.shadowBlur = 8;
+        ctx.stroke();
+        ctx.restore();
       }
       const drawExplosionEffects = () => {
         const events = round.events.filter(
