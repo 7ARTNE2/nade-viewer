@@ -1445,3 +1445,148 @@
     scroll-behavior: auto;
   }
 }
+
+/* Compact NadeViewer roster treatment. Keep the panel information-dense while
+   giving the team, player, and loadout layers a clear visual hierarchy. */
+.replay-stage {
+  grid-template-columns: 316px minmax(0, 1fr) 268px;
+}
+.replay-rosters {
+  background: #0d1014;
+  border-right-color: rgba(255,255,255,.08);
+  scrollbar-width: thin;
+}
+.replay-team {
+  padding: 0 8px 7px;
+}
+.replay-team + .replay-team {
+  border-top: 1px solid rgba(255,255,255,.07);
+  padding-top: 7px;
+}
+.replay-team header {
+  min-height: 30px;
+  padding: 5px 5px 6px;
+  border-bottom: 1px solid rgba(255,255,255,.07);
+  background: transparent;
+}
+.replay-team header::before {
+  width: 3px;
+  height: 13px;
+  margin-right: 5px;
+  border-radius: 2px;
+  background: var(--team);
+  content: '';
+}
+.replay-team header strong {
+  flex: 1;
+  font-size: 9px;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+.replay-team-economy {
+  color: var(--muted) !important;
+  font-size: 8px !important;
+  font-variant-numeric: tabular-nums;
+}
+.replay-player {
+  position: relative;
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 3px;
+  margin-top: 4px;
+  padding: 6px 6px 5px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: rgba(255,255,255,.018);
+  transition: border-color 140ms ease, background 140ms ease, opacity 140ms ease;
+}
+.replay-player:hover {
+  border-color: rgba(255,255,255,.09);
+  background: rgba(255,255,255,.035);
+}
+.replay-player-head {
+  min-height: 16px;
+  gap: 8px !important;
+}
+.replay-player-head > strong {
+  color: #e6ebf0;
+  font-size: 10px;
+  font-weight: 700;
+}
+.replay-player-stats {
+  gap: 6px;
+  color: #7f8995 !important;
+  font-size: 8px !important;
+}
+.replay-player-stats b {
+  color: #d8e0e8;
+  font-weight: 800;
+}
+.replay-player-armor-inline {
+  color: #aeb8c3 !important;
+}
+.replay-player meter {
+  height: 3px;
+  margin: 0;
+  opacity: .88;
+}
+.replay-player-loadout {
+  display: grid !important;
+  margin-top: 1px;
+  padding-top: 2px;
+  border-top: 1px solid rgba(255,255,255,.045);
+}
+.replay-player-icons {
+  min-height: 28px;
+  gap: 3px !important;
+}
+.replay-player-group + .replay-player-group {
+  padding-left: 5px;
+  border-left-color: rgba(255,255,255,.08);
+}
+.replay-player-item {
+  border-radius: 5px;
+  background: transparent;
+  opacity: .68;
+  filter: grayscale(.18) brightness(.9);
+}
+.replay-player-item:hover {
+  opacity: .95;
+  background: rgba(255,255,255,.055);
+}
+.replay-player-item.active {
+  border-color: color-mix(in srgb, var(--team) 72%, transparent);
+  background: color-mix(in srgb, var(--team) 15%, #11161b);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--team) 13%, transparent), 0 0 8px color-mix(in srgb, var(--team) 18%, transparent);
+  filter: brightness(1.12);
+}
+.replay-player-ammo,
+.replay-player-count {
+  color: #8f9aa7;
+}
+.replay-player-item.active .replay-player-ammo,
+.replay-player-item.active .replay-player-count {
+  color: var(--team);
+}
+.replay-player-specials {
+  margin-left: 2px;
+}
+.replay-player-specials .replay-player-item {
+  opacity: .86;
+}
+@media (max-width: 1100px) {
+  .replay-stage {
+    grid-template-columns: 286px minmax(0, 1fr) 238px;
+  }
+}
+@media (max-width: 860px) {
+  .replay-stage {
+    grid-template-columns: 232px minmax(0, 1fr) 186px;
+  }
+  .replay-player {
+    padding-inline: 5px;
+  }
+  .replay-player-stats {
+    gap: 3px;
+  }
+}
