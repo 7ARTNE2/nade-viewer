@@ -741,6 +741,42 @@ export default function ReplayPage() {
       roundPreviewCache.current.delete(roundNumber);
     });
   };
+  useEffect(() => {
+    if (!detail) return;
+    let cancelled = false;
+    const rounds = detail.rounds
+      .filter((item) => item.number > 0 && item.number !== number)
+      .map((item) => item.number);
+    let cursor = 0;
+    const workers = Array.from(
+      { length: Math.min(3, rounds.length) },
+      async () => {
+        while (!cancelled) {
+          const roundNumber = rounds[cursor++];
+          if (roundNumber === undefined) return;
+          if (roundPreviewCache.current.has(roundNumber)) continue;
+          const request = getReplayRoundPreview(detail.id, roundNumber);
+          roundPreviewCache.current.set(roundNumber, request);
+          try {
+            const value = await request;
+            if (!cancelled) {
+              setRoundPreviews((current) =>
+                current[roundNumber]
+                  ? current
+                  : { ...current, [roundNumber]: value },
+              );
+            }
+          } catch {
+            roundPreviewCache.current.delete(roundNumber);
+          }
+        }
+      },
+    );
+    void Promise.all(workers);
+    return () => {
+      cancelled = true;
+    };
+  }, [detail, number]);
   const scrollRoundRail = (direction: -1 | 1) => {
     roundRailRef.current?.scrollBy({
       left: direction * Math.max(160, (roundRailRef.current.clientWidth || 320) * 0.7),
