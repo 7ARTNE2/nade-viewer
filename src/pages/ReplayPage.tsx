@@ -262,7 +262,7 @@ export default function ReplayPage() {
   const [starting, setStarting] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(1);
-  const [showFreezeTime, setShowFreezeTime] = useState(true);
+  const [showFreezeTime, setShowFreezeTime] = useState(false);
   const [autoNextRound, setAutoNextRound] = useState(false);
   const [replayOptionsOpen, setReplayOptionsOpen] = useState(false);
   const [tick, setTick] = useState(0);
@@ -293,7 +293,7 @@ export default function ReplayPage() {
   const autoNextRoundRef = useRef(false);
   const autoPlayNextRound = useRef(false);
   const autoNextTimer = useRef<number>();
-  const showFreezeTimeRef = useRef(true);
+  const showFreezeTimeRef = useRef(false);
   const killTicks = useMemo(() => {
     const ticks = new Map<string, number>();
     if (!round) return ticks;
