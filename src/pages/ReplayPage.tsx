@@ -270,7 +270,11 @@ export default function ReplayPage() {
   const [selected, setSelected] = useState<ReplayGrenade | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [hoveredRound, setHoveredRound] = useState<number | null>(null);
-  const [hoveredRoundRect, setHoveredRoundRect] = useState<{ left: number; top: number } | null>(null);
+  const [hoveredRoundRect, setHoveredRoundRect] = useState<{
+    left: number;
+    top: number;
+    align: 'start' | 'center' | 'end';
+  } | null>(null);
   const [roundPreviews, setRoundPreviews] = useState<Record<number, ReplayRound>>({});
   const roundRailRef = useRef<HTMLDivElement | null>(null);
   const roundPreviewCache = useRef(new Map<number, Promise<ReplayRound>>());
@@ -1030,14 +1034,26 @@ export default function ReplayPage() {
                         onMouseEnter={(event) => {
                           const rect = event.currentTarget.getBoundingClientRect();
                           setHoveredRound(item.number);
-                          setHoveredRoundRect({ left: rect.left + rect.width / 2, top: rect.top });
+                          const first = item.number === replayRounds[0]?.number;
+                          const last = item.number === replayRounds[replayRounds.length - 1]?.number;
+                          setHoveredRoundRect({
+                            left: first ? rect.left : last ? rect.right : rect.left + rect.width / 2,
+                            top: rect.top,
+                            align: first ? 'start' : last ? 'end' : 'center',
+                          });
                           loadRoundPreview(item.number);
                         }}
                         onMouseLeave={() => setHoveredRound(null)}
                         onFocus={(event) => {
                           const rect = event.currentTarget.getBoundingClientRect();
                           setHoveredRound(item.number);
-                          setHoveredRoundRect({ left: rect.left + rect.width / 2, top: rect.top });
+                          const first = item.number === replayRounds[0]?.number;
+                          const last = item.number === replayRounds[replayRounds.length - 1]?.number;
+                          setHoveredRoundRect({
+                            left: first ? rect.left : last ? rect.right : rect.left + rect.width / 2,
+                            top: rect.top,
+                            align: first ? 'start' : last ? 'end' : 'center',
+                          });
                           loadRoundPreview(item.number);
                         }}
                         onBlur={() => setHoveredRound(null)}
@@ -1122,7 +1138,7 @@ export default function ReplayPage() {
               : '';
             return (
               <div
-                className="replay-round-rail-card"
+                className={`replay-round-rail-card is-${hoveredRoundRect.align}`}
                 role="tooltip"
                 style={{ left: hoveredRoundRect.left, top: hoveredRoundRect.top + 52 }}
               >
