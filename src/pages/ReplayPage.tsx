@@ -678,12 +678,23 @@ export default function ReplayPage() {
     return current;
   })();
   const winnerSide = roundFinished ? round?.round.winner_side : '';
-  const events =
-    round?.events.filter((e) =>
-      ['kill', 'bomb_planted', 'bomb_defused', 'bomb_exploded'].includes(
-        e.type,
-      ),
-    ) ?? [];
+  const events = useMemo(
+    () =>
+      round?.events.filter((e) =>
+        ['kill', 'bomb_planted', 'bomb_defused', 'bomb_exploded'].includes(
+          e.type,
+        ),
+      ) ?? [],
+    [round],
+  );
+  const killEvents = useMemo(
+    () => round?.events.filter((event) => event.type === 'kill') ?? [],
+    [round],
+  );
+  const damageEvents = useMemo(
+    () => round?.events.filter((event) => event.type === 'damage') ?? [],
+    [round],
+  );
   const eventTime = (value: number) => {
     if (!round || !detail) return '';
     const phase = roundPhaseTime(round.round, value, detail.metadata.tickrate);
@@ -1155,8 +1166,8 @@ export default function ReplayPage() {
 
                   killfeed={
                     <div className="replay-killfeed" aria-label={tr('Kill feed', 'Киллчат')}>
-                      {round.events
-                        .filter((event) => event.type === 'kill' && event.tick <= tick)
+                      {killEvents
+                        .filter((event) => event.tick <= tick)
                         .slice(-2)
                         .map((event) => {
                           const weapon = String(event.data?.weapon ?? '');
@@ -1168,8 +1179,8 @@ export default function ReplayPage() {
                           const storedFlashAssisterId = typeof event.data?.flash_assister_id === 'string' || typeof event.data?.flash_assister_id === 'number' ? String(event.data.flash_assister_id) : '';
                           const flashAssister = playersAtEvent.find((player) => player.id === storedFlashAssisterId);
                           const isFlashAssist = event.data?.assisted_flash === true;
-                          const damageAssistEvent = round.events
-                            .filter((candidate) => candidate.type === 'damage' && candidate.target_id === event.target_id && candidate.player_id && candidate.player_id !== event.player_id && candidate.player_id !== storedFlashAssisterId && candidate.tick <= event.tick && candidate.tick >= event.tick - detail.metadata.tickrate * 5)
+                          const damageAssistEvent = damageEvents
+                            .filter((candidate) => candidate.target_id === event.target_id && candidate.player_id && candidate.player_id !== event.player_id && candidate.player_id !== storedFlashAssisterId && candidate.tick <= event.tick && candidate.tick >= event.tick - detail.metadata.tickrate * 5)
                             .sort((a, b) => b.tick - a.tick)[0];
                           const damageAssister = damageAssistEvent ? playersAtEvent.find((player) => player.id === damageAssistEvent.player_id) : undefined;
                           const flashAssisterId = storedFlashAssisterId || flashAssister?.id;

@@ -148,6 +148,20 @@ export type SmokeTimeline = {
   expirations: Map<string, number[]>;
 };
 
+function firstEventAtOrAfter(
+  events: ReplayRound['events'],
+  tick: number,
+): number {
+  let lo = 0;
+  let hi = events.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if (events[mid].tick < tick) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
 export function buildSmokeTimeline(round: ReplayRound): SmokeTimeline {
   const expirations = new Map<string, number[]>();
   const events = round.events.filter(
@@ -179,7 +193,12 @@ export function activeSmokes(
       expireTick: number;
     }
   >();
-  for (const event of events) {
+  // A smoke cannot stay active longer than 18 seconds. Starting at this
+  // bounded window avoids rescanning the complete event history on every
+  // canvas frame in long demos.
+  const startIndex = firstEventAtOrAfter(events, tick - Math.round(tickrate * 18));
+  for (let eventIndex = startIndex; eventIndex < events.length; eventIndex += 1) {
+    const event = events[eventIndex];
     if (event.tick > tick) break;
     const id = String(event.data?.grenade_entity_id ?? '');
     if (event.type === 'smoke_start' && event.x !== null && event.y !== null) {

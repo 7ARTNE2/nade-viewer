@@ -65,6 +65,19 @@ const SMOKE_SIDE_COLORS: Record<string, string> = {
   T: '#fb923c',
   CT: '#38bdf8',
 };
+function lowerBoundTick(
+  events: ReplayRound['events'],
+  tick: number,
+): number {
+  let lo = 0;
+  let hi = events.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if (events[mid].tick < tick) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
 export default function ReplayCanvas({
   detail,
   round,
@@ -209,6 +222,28 @@ export default function ReplayCanvas({
       ),
     [round],
   );
+  const weaponFireEvents = useMemo(
+    () => round.events.filter((event) => event.type === 'weapon_fire'),
+    [round],
+  );
+  const hitEvents = useMemo(
+    () =>
+      round.events.filter((event) =>
+        ['damage', 'bullet_damage', 'kill'].includes(event.type),
+      ),
+    [round],
+  );
+  const actionEventsByPlayer = useMemo(() => {
+    const actions = new Map<string, ReplayRound['events']>();
+    for (const event of round.events) {
+      if (event.type !== 'bomb_plant_begin' && event.type !== 'bomb_defuse_start') continue;
+      if (!event.player_id) continue;
+      const list = actions.get(event.player_id) ?? [];
+      list.push(event);
+      actions.set(event.player_id, list);
+    }
+    return actions;
+  }, [round]);
   const trajectoryMovementTicks = useMemo(() => {
     const tracks = new Map<
       string,
@@ -264,7 +299,10 @@ export default function ReplayCanvas({
   useEffect(() => {
     const element = canvas.current;
     if (!element) return;
-    const ctx = element.getContext('2d');
+    const ctx = element.getContext('2d', {
+      alpha: false,
+      desynchronized: true,
+    });
     if (!ctx) return;
     const image = new Image();
     const bombImage = new Image();
@@ -295,11 +333,15 @@ export default function ReplayCanvas({
     let width = 0,
       height = 0,
       dpr = 1;
+    let lastDrawAt = 0;
     const resize = () => {
       const bounds = element.getBoundingClientRect();
       width = bounds.width;
       height = bounds.height;
-      dpr = Math.min(window.devicePixelRatio || 1, 2);
+      // Replay effects use several gradients and shadows per frame. Capping
+      // the backing store keeps high-DPI Windows displays from rendering
+      // four times as many pixels without changing the CSS-sized map.
+      dpr = Math.min(window.devicePixelRatio || 1, 1.5);
       element.width = Math.round(width * dpr);
       element.height = Math.round(height * dpr);
       setView((current) => clampView(current.s, current.x, current.y));
@@ -340,9 +382,10 @@ export default function ReplayCanvas({
         (next?.players ?? []).map((player) => [player.id, player]),
       );
       const now = performance.now();
+      const replayPlayers = playersAt(round, tick, killEvents, killTicks, frame);
       // Dead players belong to the lowest replay layer: draw their marker and
       // name before utility, bomb, tracer, and live-player overlays.
-      for (const raw of playersAt(round, tick, killEvents, killTicks, frame)) {
+      for (const raw of replayPlayers) {
         if (raw.alive || !visible(raw.z)) continue;
         const player = interpolatePlayer(raw, nextPlayers.get(raw.id), t);
         const [x, y] = point(player.x, player.y);
@@ -799,7 +842,13 @@ export default function ReplayCanvas({
         ctx.shadowBlur = copied ? 10 : active ? 7 : 3;
         ctx.beginPath();
         let previous: [number, number] | null = null;
-        for (const p of trajectory.points) {
+        // The replay keeps the full throw path visible. Sample very dense
+        // paths so large demos do not spend a frame on hundreds of redundant
+        // line segments.
+        const pointCount = trajectory.points.length;
+        const stride = pointCount > 180 ? 3 : pointCount > 90 ? 2 : 1;
+        for (let pointIndex = 0; pointIndex < pointCount; pointIndex += stride) {
+          const p = trajectory.points[pointIndex];
           if (!visible(p[2])) {
             previous = null;
             continue;
@@ -936,14 +985,18 @@ export default function ReplayCanvas({
         ctx.restore();
       };
       const fireWindow = Math.max(3, Math.round(tickrate * 0.14));
-      for (const event of round.events) {
-        if (event.tick > tick || tracerAge(event) > fireWindow || event.type !== 'weapon_fire') continue;
+      const fireStart = lowerBoundTick(weaponFireEvents, tick - fireWindow);
+      for (let eventIndex = fireStart; eventIndex < weaponFireEvents.length; eventIndex += 1) {
+        const event = weaponFireEvents[eventIndex];
+        if (event.tick > tick) break;
         const shooter = event.player_id ? playerById.get(event.player_id) : undefined;
         if (shooter) drawTracer(event, shooter, null, false, fireWindow);
       }
       const hitWindow = Math.max(3, Math.round(tickrate * 0.28));
-      for (const event of round.events) {
-        if (event.tick > tick || tracerAge(event) > hitWindow || !['damage', 'bullet_damage', 'kill'].includes(event.type)) continue;
+      const hitStart = lowerBoundTick(hitEvents, tick - hitWindow);
+      for (let eventIndex = hitStart; eventIndex < hitEvents.length; eventIndex += 1) {
+        const event = hitEvents[eventIndex];
+        if (event.tick > tick) break;
         const shooter = event.player_id ? playerById.get(event.player_id) : undefined;
         if (!shooter) continue;
         const victim = event.target_id ? playerById.get(event.target_id) : undefined;
@@ -956,9 +1009,7 @@ export default function ReplayCanvas({
       }
       // Draw dead players first so their dim markers and names stay beneath
       // live players when the two labels overlap.
-      const replayPlayers = playersAt(round, tick, killEvents, killTicks, frame)
-        .filter((player) => player.alive);
-      replayPlayers.forEach((raw) => {
+      replayPlayers.filter((player) => player.alive).forEach((raw) => {
         const player = interpolatePlayer(
           raw,
           nextPlayers.get(raw.id),
@@ -1085,13 +1136,17 @@ export default function ReplayCanvas({
           const action = player.planting || player.defusing ? player : null;
           if (action) {
             const actionType = player.defusing ? 'bomb_defuse_start' : 'bomb_plant_begin';
-            const actionEvents = round.events.filter(
-              (event) =>
-                event.type === actionType &&
-                event.player_id === player.id &&
-                event.tick <= tick,
-            );
-            const startEvent = actionEvents[actionEvents.length - 1];
+            const actionEvents = actionEventsByPlayer.get(player.id) ?? [];
+            let actionLo = 0;
+            let actionHi = actionEvents.length;
+            while (actionLo < actionHi) {
+              const mid = (actionLo + actionHi) >>> 1;
+              if (actionEvents[mid].tick <= tick) actionLo = mid + 1;
+              else actionHi = mid;
+            }
+            const startEvent = actionEvents[actionLo - 1]?.type === actionType
+              ? actionEvents[actionLo - 1]
+              : undefined;
             const duration = player.defusing ? (player.has_defuse_kit ? 5 : 10) : 3.2;
             const progress = startEvent ? clamp((tick - startEvent.tick) / (tickrate * duration), 0, 1) : 0;
             ctx.fillStyle = 'rgba(8,12,16,.82)';
@@ -1138,8 +1193,11 @@ export default function ReplayCanvas({
         ctx.globalAlpha = 1;
       });
     }
-    function loop() {
-      draw();
+    function loop(now = performance.now()) {
+      if (now - lastDrawAt >= 1000 / 60) {
+        draw();
+        lastDrawAt = now;
+      }
       if (isWindowActive() && !disposed)
         animation = requestAnimationFrame(loop);
     }
@@ -1175,6 +1233,7 @@ export default function ReplayCanvas({
     bombEvents,
     grenadeById,
     fireGrenades,
+    actionEventsByPlayer,
   ]);
   return (
     <div className={`replay-map ${view.s > 1 ? 'is-draggable' : ''}`}>
