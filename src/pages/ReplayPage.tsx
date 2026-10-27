@@ -43,6 +43,7 @@ import {
   getReplay,
   getReplayCapability,
   getReplayRound,
+  getReplayRoundPreview,
   listReplays,
   saveReplayPosition,
   startReplay,
@@ -731,7 +732,7 @@ export default function ReplayPage() {
     if (!detail || roundNumber === number || roundPreviews[roundNumber]) return;
     let request = roundPreviewCache.current.get(roundNumber);
     if (!request) {
-      request = getReplayRound(detail.id, roundNumber);
+      request = getReplayRoundPreview(detail.id, roundNumber);
       roundPreviewCache.current.set(roundNumber, request);
     }
     void request.then((value) => {

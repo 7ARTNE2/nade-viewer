@@ -1455,6 +1455,38 @@
   background: #0d1014;
   border-right-color: rgba(255,255,255,.08);
   scrollbar-width: thin;
+  scrollbar-color: #343c46 transparent;
+  scrollbar-gutter: stable;
+}
+.replay-rosters:hover {
+  scrollbar-color: var(--acid) transparent;
+}
+.replay-rosters::-webkit-scrollbar {
+  width: 7px;
+}
+.replay-rosters::-webkit-scrollbar-track {
+  background: transparent;
+}
+.replay-rosters:hover::-webkit-scrollbar-thumb {
+  background: var(--acid) !important;
+  box-shadow: 0 0 8px rgba(var(--acid-rgb), .28);
+}
+.replay-rosters::-webkit-scrollbar-thumb {
+  min-height: 42px;
+  border: 2px solid #0d1014;
+  border-radius: 999px;
+  background: #343c46;
+}
+.replay-rosters::-webkit-scrollbar-thumb:hover {
+  background: var(--acid) !important;
+  box-shadow: 0 0 8px rgba(var(--acid-rgb), .28);
+}
+.replay-rosters::-webkit-scrollbar-thumb:active {
+  background: var(--acid) !important;
+  box-shadow: 0 0 10px rgba(var(--acid-rgb), .42);
+}
+.replay-rosters::-webkit-scrollbar-corner {
+  background: transparent;
 }
 .replay-team {
   padding: 0 8px 7px;

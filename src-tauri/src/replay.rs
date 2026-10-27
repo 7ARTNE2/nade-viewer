@@ -153,6 +153,45 @@ pub(crate) fn get_replay_round(app: AppHandle, id: i64, number: i64) -> Result<V
         .map_err(|e| e.to_string())?;
     decode(&bytes)
 }
+
+/// Return only the data needed by the round rail tooltip. Full rounds contain
+/// thousands of sampled frames and projectile trajectories; decoding all of
+/// that on every hover makes the preview feel unresponsive on large demos.
+#[tauri::command]
+pub(crate) fn get_replay_round_preview(
+    app: AppHandle,
+    id: i64,
+    number: i64,
+) -> Result<Value> {
+    let conn = database(&app)?;
+    let bytes: Vec<u8> = conn
+        .query_row(
+            "SELECT data FROM rounds WHERE match_id=?1 AND number=?2",
+            params![id, number],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    let mut round = decode(&bytes)?;
+    // Player identity and team are stable through a round. The first sampled
+    // frame is enough for the tooltip; avoid walking every sampled frame.
+    let players = round["frames"]
+        .as_array()
+        .and_then(|frames| frames.first())
+        .and_then(|frame| frame["players"].as_array())
+        .cloned()
+        .unwrap_or_default();
+    let preview_frame = json!({
+        "tick": round["round"]["start_tick"].as_i64().unwrap_or_default(),
+        "round_number": number,
+        "players": players,
+        "projectiles": [],
+        "infernos": [],
+        "bomb": null
+    });
+    round["frames"] = json!([preview_frame]);
+    round["grenades"] = json!([]);
+    Ok(round)
+}
 #[tauri::command]
 pub(crate) fn save_replay_position(app: AppHandle, id: i64, number: i64, tick: f64) -> Result<()> {
     if !tick.is_finite() {
