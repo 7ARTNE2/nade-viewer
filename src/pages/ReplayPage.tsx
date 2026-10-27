@@ -5,13 +5,14 @@ import {
   ArrowLeft,
   Activity,
   Check,
-  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Clock,
   Copy,
   Crosshair,
   Eye,
   EyeOff,
-  Ellipsis,
+  Menu,
   FolderOpen,
   Pause,
   Play,
@@ -164,6 +165,21 @@ function killNotices(event: ReplayRound['events'][number]) {
     result.push('suicide');
   return result;
 }
+function roundReasonLabel(reason?: string | null, winnerSide?: string | null) {
+  const value = String(reason ?? '').trim().toLowerCase();
+  const labels: Record<string, string> = {
+    target_saved: 'Target saved',
+    bomb_defused: 'Bomb defused',
+    bomb_exploded: 'Bomb exploded',
+    terrorist_win: 'Terrorists win',
+    ct_win: 'Counter-Terrorists win',
+    time: 'Time expired',
+  };
+  return labels[value] ?? (winnerSide === 'T' ? 'Terrorists win' : winnerSide === 'CT' ? 'Counter-Terrorists win' : 'Round in progress');
+}
+function roundWinnerClass(side?: string | null) {
+  return side === 'T' || side === 'CT' ? side.toLowerCase() : 'neutral';
+}
 function Team({ side, players, bombCarrier }: { side: string; players: ReplayPlayer[]; bombCarrier?: string }) {
   const { tr } = useI18n();
   const economy = players.reduce((sum, player) => sum + (player.equipment_value ?? 0), 0);
@@ -252,6 +268,13 @@ export default function ReplayPage() {
   const [lower, setLower] = useState(false);
   const [selected, setSelected] = useState<ReplayGrenade | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [hoveredRound, setHoveredRound] = useState<number | null>(null);
+  const [hoveredRoundRect, setHoveredRoundRect] = useState<{ left: number; top: number } | null>(null);
+  const [roundPreviews, setRoundPreviews] = useState<Record<number, ReplayRound>>({});
+  const roundRailRef = useRef<HTMLDivElement | null>(null);
+  const roundPreviewCache = useRef(new Map<number, Promise<ReplayRound>>());
+  const [roundRailCanScrollPrev, setRoundRailCanScrollPrev] = useState(false);
+  const [roundRailCanScrollNext, setRoundRailCanScrollNext] = useState(false);
   const copyButton = useRef<HTMLButtonElement>(null);
   const copyTimer = useRef<number>();
   const copyRequest = useRef(0);
@@ -363,6 +386,8 @@ export default function ReplayPage() {
     setRound(null);
     setNumber(null);
     setSelected(null);
+    setRoundPreviews({});
+    roundPreviewCache.current.clear();
     setError('');
     cache.current = new Map();
     loadedRounds.current = new Map();
@@ -690,6 +715,42 @@ export default function ReplayPage() {
     }
     return grenade.release_tick;
   };
+  const replayRounds = detail?.rounds.filter((item) => item.number > 0) ?? [];
+  const loadRoundPreview = (roundNumber: number) => {
+    if (!detail || roundNumber === number || roundPreviews[roundNumber]) return;
+    let request = roundPreviewCache.current.get(roundNumber);
+    if (!request) {
+      request = getReplayRound(detail.id, roundNumber);
+      roundPreviewCache.current.set(roundNumber, request);
+    }
+    void request.then((value) => {
+      setRoundPreviews((current) => ({ ...current, [roundNumber]: value }));
+    }).catch(() => {
+      roundPreviewCache.current.delete(roundNumber);
+    });
+  };
+  const scrollRoundRail = (direction: -1 | 1) => {
+    roundRailRef.current?.scrollBy({
+      left: direction * Math.max(160, (roundRailRef.current.clientWidth || 320) * 0.7),
+      behavior: 'smooth',
+    });
+  };
+  useEffect(() => {
+    const node = roundRailRef.current;
+    if (!node) return;
+    const update = () => {
+      const max = node.scrollWidth - node.clientWidth;
+      setRoundRailCanScrollPrev(node.scrollLeft > 1);
+      setRoundRailCanScrollNext(max > 1 && node.scrollLeft < max - 1);
+    };
+    update();
+    node.addEventListener('scroll', update, { passive: true });
+    window.addEventListener('resize', update);
+    return () => {
+      node.removeEventListener('scroll', update);
+      window.removeEventListener('resize', update);
+    };
+  }, [detail?.rounds.length]);
   return (
     <div className="replay-page">
       <header className="replay-header">
@@ -875,22 +936,6 @@ export default function ReplayPage() {
       ) : detail ? (
         <div className="replay-workspace">
           <div className="replay-round-bar">
-            <div className="replay-round-select">
-              <select
-                aria-label={tr('Round', 'Раунд')}
-                value={number ?? ''}
-                onChange={(event) => changeRound(Number(event.target.value))}
-              >
-                {detail.rounds.map((r) => (
-                  <option key={r.number} value={r.number}>
-                    {r.number === 0
-                      ? tr('Warmup', 'Разминка')
-                      : `${tr('Round', 'Раунд')} ${r.number}`}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown size={13} aria-hidden="true" />
-            </div>
             {detail.metadata.incomplete && (
               <span className="replay-incomplete">
                 {tr('Incomplete demo', 'Неполное демо')}
@@ -920,6 +965,48 @@ export default function ReplayPage() {
                 </button>
               </div>
             )}
+            <div className="replay-round-rail" aria-label={tr('Round navigation', 'Навигация по раундам')}>
+              <div className="replay-round-rail-track">
+                <button type="button" className="replay-round-rail-arrow" disabled={!roundRailCanScrollPrev} onClick={() => scrollRoundRail(-1)} aria-label={tr('Previous rounds', 'Предыдущие раунды')}>
+                  <ChevronLeft size={14} />
+                </button>
+                <div className="replay-round-rail-list" ref={roundRailRef}>
+                  {replayRounds.map((item) => {
+                    const winner = roundWinnerClass(item.winner_side);
+                    return (
+                      <button
+                        key={item.number}
+                        type="button"
+                        className={`${item.number === number ? 'active' : ''} ${winner}`}
+                        onClick={() => changeRound(item.number)}
+                        onMouseEnter={(event) => {
+                          const rect = event.currentTarget.getBoundingClientRect();
+                          setHoveredRound(item.number);
+                          setHoveredRoundRect({ left: rect.left + rect.width / 2, top: rect.top });
+                          loadRoundPreview(item.number);
+                        }}
+                        onMouseLeave={() => setHoveredRound(null)}
+                        onFocus={(event) => {
+                          const rect = event.currentTarget.getBoundingClientRect();
+                          setHoveredRound(item.number);
+                          setHoveredRoundRect({ left: rect.left + rect.width / 2, top: rect.top });
+                          loadRoundPreview(item.number);
+                        }}
+                        onBlur={() => setHoveredRound(null)}
+                        aria-current={item.number === number ? 'true' : undefined}
+                        aria-label={`${tr('Round', 'Раунд')} ${item.number}, ${item.score_t}:${item.score_ct}`}
+                      >
+                        <span>R{item.number}</span>
+                        <strong>{item.score_t}:{item.score_ct}</strong>
+                      </button>
+                    );
+                  })}
+                </div>
+                <button type="button" className="replay-round-rail-arrow" disabled={!roundRailCanScrollNext} onClick={() => scrollRoundRail(1)} aria-label={tr('Next rounds', 'Следующие раунды')}>
+                  <ChevronRight size={14} />
+                </button>
+              </div>
+            </div>
             <div className="replay-options replay-round-options">
               <button
                 type="button"
@@ -930,7 +1017,7 @@ export default function ReplayPage() {
                 aria-label={tr('Replay settings', 'Настройки реплея')}
                 data-tip={tr('Replay settings', 'Настройки реплея')}
               >
-                <Ellipsis size={17} />
+                <Menu size={17} />
               </button>
               {replayOptionsOpen && (
                 <div className="replay-options-menu" role="menu">
@@ -966,6 +1053,78 @@ export default function ReplayPage() {
               )}
             </div>
           </div>
+          {hoveredRound !== null && hoveredRoundRect && (() => {
+            const preview = replayRounds.find((item) => item.number === hoveredRound);
+            if (!preview) return null;
+            const previewData = preview.number === number ? round : roundPreviews[preview.number];
+            const previewEvents = previewData?.events.filter((event) =>
+              ['kill', 'bomb_planted', 'bomb_defused', 'bomb_exploded'].includes(event.type),
+            ) ?? [];
+            const previewKillTicks = new Map<string, number>();
+            for (const event of previewData?.events ?? []) {
+              if (event.type !== 'kill' || !event.target_id) continue;
+              const previous = previewKillTicks.get(event.target_id);
+              if (previous === undefined || event.tick < previous) previewKillTicks.set(event.target_id, event.tick);
+            }
+            const previewEventTime = (value: number) => previewData && detail
+              ? (() => {
+                  const phase = roundPhaseTime(previewData.round, value, detail.metadata.tickrate);
+                  return `${phase.freezing ? '-' : ''}${phase.label}`;
+                })()
+              : '';
+            return (
+              <div
+                className="replay-round-rail-card"
+                role="tooltip"
+                style={{ left: hoveredRoundRect.left, top: hoveredRoundRect.top + 52 }}
+              >
+                <div className="replay-round-rail-card-head">
+                  <span className="replay-round-rail-card-title">{tr('Round', 'Раунд')} {preview.number}</span>
+                  <span className="replay-round-rail-card-score">{preview.score_t}:{preview.score_ct}</span>
+                  {preview.winner_side && <span className={`replay-round-rail-card-winner ${roundWinnerClass(preview.winner_side)}`}>{preview.winner_side} {tr('win', 'победа')}</span>}
+                </div>
+                <div className="replay-round-rail-card-reason">{roundReasonLabel(preview.reason, preview.winner_side)}</div>
+                <div className="replay-round-rail-card-feed">
+                  {!previewData ? (
+                    <span className="replay-round-rail-card-empty">{tr('Loading preview...', 'Загрузка превью...')}</span>
+                  ) : previewEvents.length === 0 ? (
+                    <span className="replay-round-rail-card-empty">{tr('No kills', 'Нет убийств')}</span>
+                  ) : previewEvents.map((event, eventIndex) => {
+                    if (event.type !== 'kill' || !previewData) {
+                      return (
+                        <span className="replay-round-rail-card-row" key={`${event.type}-${event.tick}-${eventIndex}`}>
+                          <time>{previewEventTime(event.tick)}</time>
+                          <span>{tr(event.type.replace(/_/g, ' '), event.type)}</span>
+                        </span>
+                      );
+                    }
+                    const eventPlayers = playersAt(previewData, event.tick, previewData.events, previewKillTicks);
+                    const killer = eventPlayers.find((player) => player.id === event.player_id);
+                    const victim = eventPlayers.find((player) => player.id === event.target_id);
+                    const flashId = String(event.data?.flash_assister_id ?? '');
+                    const assisterId = String(event.data?.assister_id ?? '');
+                    const flashAssister = eventPlayers.find((player) => player.id === flashId);
+                    const assister = eventPlayers.find((player) => player.id === assisterId);
+                    const weapon = String(event.data?.weapon ?? '');
+                    const notices = killNotices(event).map((id) => ({ id, icon: deathNoticeIcon(id) })).filter((item) => item.icon);
+                    return (
+                      <span className="replay-round-rail-card-row replay-round-rail-card-kill" key={`${event.type}-${event.tick}-${eventIndex}`}>
+                        <time>{previewEventTime(event.tick)}</time>
+                        <span className="replay-round-rail-card-kill-main">
+                          <b className={`replay-killfeed-name ${String(killer?.side ?? 'world').toLowerCase()}`}>{killer?.name ?? event.player_id ?? 'World'}</b>
+                          {event.data?.assisted_flash === true && flashAssister && <span className="replay-round-rail-card-assist flash"><img src={flashbangAssistIcon} alt="" />+{flashAssister.name}</span>}
+                          {assister && <span className="replay-round-rail-card-assist">+{assister.name}</span>}
+                          {weapon && <img className="replay-round-rail-card-weapon" src={weaponIcon(weapon)} alt="" />}
+                          {notices.map((notice) => <img className="replay-round-rail-card-notice" key={notice.id} src={notice.icon} alt="" />)}
+                          <b className={`replay-killfeed-name ${String(victim?.side ?? 'world').toLowerCase()}`}>{victim?.name ?? event.target_id ?? '—'}</b>
+                        </span>
+                      </span>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
           {round ? (
             <>
               <div className="replay-killfeed" aria-label={tr('Kill feed', 'Киллчат')}>
