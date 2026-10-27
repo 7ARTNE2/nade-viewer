@@ -1127,57 +1127,6 @@ export default function ReplayPage() {
           })()}
           {round ? (
             <>
-              <div className="replay-killfeed" aria-label={tr('Kill feed', 'Киллчат')}>
-                {round.events
-                  .filter((event) => event.type === 'kill' && event.tick <= tick)
-                  .slice(-2)
-                  .map((event) => {
-                    const weapon = String(event.data?.weapon ?? '');
-                    const playersAtEvent = playersAt(round, event.tick, round.events, killTicks);
-                    const killer = playersAtEvent.find((player) => player.id === event.player_id);
-                    const victim = playersAtEvent.find((player) => player.id === event.target_id);
-                    const assisterValue = event.data?.assister_id;
-                    const assisterId = typeof assisterValue === 'string' || typeof assisterValue === 'number'
-                      ? String(assisterValue)
-                      : '';
-                    const assister = playersAtEvent.find((player) => player.id === assisterId);
-                    const storedFlashAssisterValue = event.data?.flash_assister_id;
-                    const storedFlashAssisterId = typeof storedFlashAssisterValue === 'string' || typeof storedFlashAssisterValue === 'number'
-                      ? String(storedFlashAssisterValue)
-                      : '';
-                    const flashAssister = playersAtEvent.find((player) => player.id === storedFlashAssisterId);
-                    const isFlashAssist = event.data?.assisted_flash === true;
-                    const damageAssistEvent = round.events
-                      .filter((candidate) =>
-                        candidate.type === 'damage' &&
-                        candidate.target_id === event.target_id &&
-                        candidate.player_id &&
-                        candidate.player_id !== event.player_id &&
-                        candidate.player_id !== storedFlashAssisterId &&
-                        candidate.tick <= event.tick &&
-                        candidate.tick >= event.tick - detail.metadata.tickrate * 5,
-                      )
-                      .sort((a, b) => b.tick - a.tick)[0];
-                    const damageAssister = damageAssistEvent
-                      ? playersAtEvent.find((player) => player.id === damageAssistEvent.player_id)
-                      : undefined;
-                    const notices = killNotices(event).map((id) => ({ id, icon: deathNoticeIcon(id) })).filter((item) => item.icon);
-                    return (
-                      <div className="replay-killfeed-row" key={`${event.tick}-${event.target_id}`}>
-                        <span className={`replay-killfeed-name ${String(killer?.side ?? 'world').toLowerCase()}`}>{killer?.name ?? event.player_id ?? 'World'}</span>
-                        {assister && <span className={`replay-killfeed-assist damage ${String(assister.side).toLowerCase()}`}>+{assister.name}</span>}
-                        {damageAssister && damageAssister.id !== assister?.id && <span className={`replay-killfeed-assist damage ${String(damageAssister.side).toLowerCase()}`}>+{damageAssister.name}</span>}
-                        {isFlashAssist && <span className={`replay-killfeed-assist flash ${String(flashAssister?.side ?? 'world').toLowerCase()}`} title={tr('Flash assist', 'Ассист флешкой')}>
-                          <img className="replay-killfeed-assist-icon" src={flashbangAssistIcon} alt="" />
-                          {flashAssister ? `+${flashAssister.name}` : ''}
-                        </span>}
-                        {weapon && <img src={weaponIcon(weapon)} alt={weapon} title={weapon} />}
-                        {notices.map((item) => <img key={item.id} src={item.id === 'headshot' ? item.icon : item.icon} alt={item.id} title={item.id} />)}
-                        <span className={`replay-killfeed-name ${String(victim?.side ?? 'world').toLowerCase()}`}>{victim?.name ?? event.target_id ?? '—'}</span>
-                      </div>
-                    );
-                  })}
-              </div>
               <div className="replay-stage">
                 <aside className="replay-rosters">
                   <Team
@@ -1203,6 +1152,41 @@ export default function ReplayPage() {
                   onCopyCoordinates={(grenade) => {
                     void copyGrenadeCoordinates(grenade);
                   }}
+
+                  killfeed={
+                    <div className="replay-killfeed" aria-label={tr('Kill feed', 'Киллчат')}>
+                      {round.events
+                        .filter((event) => event.type === 'kill' && event.tick <= tick)
+                        .slice(-2)
+                        .map((event) => {
+                          const weapon = String(event.data?.weapon ?? '');
+                          const playersAtEvent = playersAt(round, event.tick, round.events, killTicks);
+                          const killer = playersAtEvent.find((player) => player.id === event.player_id);
+                          const victim = playersAtEvent.find((player) => player.id === event.target_id);
+                          const assisterId = typeof event.data?.assister_id === 'string' || typeof event.data?.assister_id === 'number' ? String(event.data.assister_id) : '';
+                          const assister = playersAtEvent.find((player) => player.id === assisterId);
+                          const storedFlashAssisterId = typeof event.data?.flash_assister_id === 'string' || typeof event.data?.flash_assister_id === 'number' ? String(event.data.flash_assister_id) : '';
+                          const flashAssister = playersAtEvent.find((player) => player.id === storedFlashAssisterId);
+                          const isFlashAssist = event.data?.assisted_flash === true;
+                          const damageAssistEvent = round.events
+                            .filter((candidate) => candidate.type === 'damage' && candidate.target_id === event.target_id && candidate.player_id && candidate.player_id !== event.player_id && candidate.player_id !== storedFlashAssisterId && candidate.tick <= event.tick && candidate.tick >= event.tick - detail.metadata.tickrate * 5)
+                            .sort((a, b) => b.tick - a.tick)[0];
+                          const damageAssister = damageAssistEvent ? playersAtEvent.find((player) => player.id === damageAssistEvent.player_id) : undefined;
+                          const notices = killNotices(event).map((id) => ({ id, icon: deathNoticeIcon(id) })).filter((item) => item.icon);
+                          return (
+                            <div className="replay-killfeed-row" key={`${event.tick}-${event.target_id}`}>
+                              <span className={`replay-killfeed-name ${String(killer?.side ?? 'world').toLowerCase()}`}>{killer?.name ?? event.player_id ?? 'World'}</span>
+                              {assister && <span className={`replay-killfeed-assist damage ${String(assister.side).toLowerCase()}`}>+{assister.name}</span>}
+                              {damageAssister && damageAssister.id !== assister?.id && <span className={`replay-killfeed-assist damage ${String(damageAssister.side).toLowerCase()}`}>+{damageAssister.name}</span>}
+                              {isFlashAssist && <span className={`replay-killfeed-assist flash ${String(flashAssister?.side ?? 'world').toLowerCase()}`} title={tr('Flash assist', 'Ассист флешкой')}><img className="replay-killfeed-assist-icon" src={flashbangAssistIcon} alt="" />{flashAssister ? `+${flashAssister.name}` : ''}</span>}
+                              {weapon && <img src={weaponIcon(weapon)} alt={weapon} title={weapon} />}
+                              {notices.map((item) => <img key={item.id} src={item.icon} alt={item.id} title={item.id} />)}
+                              <span className={`replay-killfeed-name ${String(victim?.side ?? 'world').toLowerCase()}`}>{victim?.name ?? event.target_id ?? '—'}</span>
+                            </div>
+                          );
+                        })}
+                    </div>
+                  }
                 />
                 <aside className="replay-inspector">
                   {selected ? (

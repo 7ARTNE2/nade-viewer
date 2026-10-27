@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Minus, Plus, RotateCcw } from 'lucide-react';
 import c4Icon from '../assets/equipment_icons/c4.svg';
 import { assetUrl } from '../lib/tauri';
@@ -25,6 +25,7 @@ type Props = {
   copiedGrenadeId: string | null;
   onSelect: (g: ReplayGrenade) => void;
   onCopyCoordinates: (g: ReplayGrenade) => void;
+  killfeed?: ReactNode;
 };
 const colors: Record<string, string> = {
   smoke: '#67e8f9',
@@ -74,6 +75,7 @@ export default function ReplayCanvas({
   copiedGrenadeId,
   onSelect,
   onCopyCoordinates,
+  killfeed,
 }: Props) {
   const { tr } = useI18n();
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -338,6 +340,33 @@ export default function ReplayCanvas({
         (next?.players ?? []).map((player) => [player.id, player]),
       );
       const now = performance.now();
+      // Dead players belong to the lowest replay layer: draw their marker and
+      // name before utility, bomb, tracer, and live-player overlays.
+      for (const raw of playersAt(round, tick, killEvents, killTicks, frame)) {
+        if (raw.alive || !visible(raw.z)) continue;
+        const player = interpolatePlayer(raw, nextPlayers.get(raw.id), t);
+        const [x, y] = point(player.x, player.y);
+        const color = player.side === 'CT' ? '#8dbdff' : '#ff986b';
+        ctx.save();
+        ctx.globalAlpha = 0.4;
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(x - 4, y - 4);
+        ctx.lineTo(x + 4, y + 4);
+        ctx.moveTo(x + 4, y - 4);
+        ctx.lineTo(x - 4, y + 4);
+        ctx.stroke();
+        ctx.font = '11px Segoe UI';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'alphabetic';
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = '#0a0c0f';
+        ctx.strokeText(player.name, x, y + 23);
+        ctx.fillStyle = '#f4f6f8';
+        ctx.fillText(player.name, x, y + 23);
+        ctx.restore();
+      }
       const visibleSmokes = activeSmokes(
         round,
         tick,
@@ -925,7 +954,11 @@ export default function ReplayCanvas({
             : null;
         drawTracer(event, shooter, target, true, hitWindow);
       }
-      playersAt(round, tick, killEvents, killTicks, frame).forEach((raw) => {
+      // Draw dead players first so their dim markers and names stay beneath
+      // live players when the two labels overlap.
+      const replayPlayers = playersAt(round, tick, killEvents, killTicks, frame)
+        .filter((player) => player.alive);
+      replayPlayers.forEach((raw) => {
         const player = interpolatePlayer(
           raw,
           nextPlayers.get(raw.id),
@@ -967,13 +1000,20 @@ export default function ReplayCanvas({
           );
           ctx.closePath();
           ctx.fill();
-          ctx.fillStyle = player.flashed ? '#ffffff' : color;
+          // Nadegrid keeps the team-colored player base and paints the blind
+          // indicator as a clipped white conic sector over the circle.
+          if (player.flashed) {
+            ctx.shadowColor = 'rgba(251,191,36,0.55)';
+            ctx.shadowBlur = 10;
+          }
+          ctx.fillStyle = color;
           ctx.strokeStyle = '#101419';
           ctx.lineWidth = 2;
           ctx.beginPath();
           ctx.arc(x, y, 8, 0, Math.PI * 2);
           ctx.fill();
           ctx.stroke();
+          ctx.shadowBlur = 0;
           // Show the item currently held by the player, matching the compact
           // weapon badge used by Nadegrid. Keep it outside the player circle
           // so it remains readable without changing the player marker size.
@@ -1022,16 +1062,23 @@ export default function ReplayCanvas({
           }
           if (player.flashed) {
             const flashProgress = clamp((player.flash_ms ?? 0) / 2000, 0, 1);
+            const flashArcDegrees = Math.min(
+              180,
+              Math.max(5, flashProgress * 180),
+            );
+            const flashArc = (flashArcDegrees * Math.PI) / 180;
+            // CSS conic-gradient(180deg - arc/2) in Nadegrid points down
+            // because CSS angles start at 12 o'clock. Convert that exact
+            // angle to canvas coordinates and clip the sector to the marker.
+            const flashStart = Math.PI / 2 - flashArc * 0.5;
+            const flashRadius = 8;
             ctx.save();
-            ctx.globalAlpha = 0.2 + flashProgress * 0.35;
-            ctx.strokeStyle = '#fff7c2';
-            ctx.lineWidth = 2;
+            ctx.globalAlpha = 0.88;
+            ctx.fillStyle = 'rgba(255,255,255,0.88)';
             ctx.beginPath();
-            ctx.arc(x, y, 13 + flashProgress * 4, 0, Math.PI * 2);
-            ctx.stroke();
-            ctx.fillStyle = 'rgba(255,255,255,0.16)';
-            ctx.beginPath();
-            ctx.arc(x, y, 11, 0, Math.PI * 2);
+            ctx.moveTo(x, y);
+            ctx.arc(x, y, flashRadius, flashStart, flashStart + flashArc);
+            ctx.closePath();
             ctx.fill();
             ctx.restore();
           }
@@ -1080,15 +1127,6 @@ export default function ReplayCanvas({
             ctx.fillText(damageLabel, x, y - 11 - popupAge / 100);
             ctx.globalAlpha = player.alive ? 1 : 0.4;
           }
-        } else {
-          ctx.strokeStyle = color;
-          ctx.lineWidth = 2;
-          ctx.beginPath();
-          ctx.moveTo(x - 4, y - 4);
-          ctx.lineTo(x + 4, y + 4);
-          ctx.moveTo(x + 4, y - 4);
-          ctx.lineTo(x - 4, y + 4);
-          ctx.stroke();
         }
         ctx.font = '11px Segoe UI';
         ctx.textAlign = 'center';
@@ -1140,6 +1178,7 @@ export default function ReplayCanvas({
   ]);
   return (
     <div className={`replay-map ${view.s > 1 ? 'is-draggable' : ''}`}>
+      {killfeed}
       <canvas
         ref={canvas}
         aria-label={tr('Match radar', 'Радар матча')}
