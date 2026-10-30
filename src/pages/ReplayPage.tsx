@@ -276,6 +276,7 @@ export default function ReplayPage() {
     align: 'start' | 'center' | 'end';
   } | null>(null);
   const [roundPreviews, setRoundPreviews] = useState<Record<number, ReplayRound>>({});
+  const [timelineZoomTarget, setTimelineZoomTarget] = useState<HTMLDivElement | null>(null);
   const roundRailRef = useRef<HTMLDivElement | null>(null);
   const roundPreviewCache = useRef(new Map<number, Promise<ReplayRound>>());
   const [roundRailCanScrollPrev, setRoundRailCanScrollPrev] = useState(false);
@@ -1586,28 +1587,32 @@ export default function ReplayPage() {
                     seek(grenadeTrajectoryTick(grenade));
                     setPlaying(false);
                   }}
+                  zoomPortalTarget={timelineZoomTarget}
                   onSeek={seek}
                   showFreezeTime={showFreezeTime}
                 />
-                <div
-                  className="replay-speeds"
-                  role="group"
-                  aria-label={tr('Playback speed', 'Скорость воспроизведения')}
-                >
-                  {[0.25, 0.5, 1, 2, 4].map((value) => (
-                    <button
-                      key={value}
-                      type="button"
-                      aria-label={`${value}×`}
-                      aria-pressed={speed === value}
-                      onClick={() => setSpeed(value)}
-                    >
-                      <span>
-                        {value}
-                        <small>×</small>
-                      </span>
-                    </button>
-                  ))}
+                <div className="replay-speed-stack">
+                  <div ref={setTimelineZoomTarget} className="replay-zoom-slot" />
+                  <div
+                    className="replay-speeds"
+                    role="group"
+                    aria-label={tr('Playback speed', 'Скорость воспроизведения')}
+                  >
+                    {[0.25, 0.5, 1, 2, 4].map((value) => (
+                      <button
+                        key={value}
+                        type="button"
+                        aria-label={`${value}×`}
+                        aria-pressed={speed === value}
+                        onClick={() => setSpeed(value)}
+                      >
+                        <span>
+                          {value}
+                          <small>×</small>
+                        </span>
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </footer>
             </>

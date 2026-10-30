@@ -1,4 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import type { PointerEvent as ReactPointerEvent, WheelEvent as ReactWheelEvent } from 'react';
+import type { ReactNode } from 'react';
+import { createPortal } from 'react-dom';
+import { Minus, Plus, RotateCcw } from 'lucide-react';
 import { useI18n } from '../i18n';
 import {
   clamp,
@@ -25,6 +29,7 @@ type Props = {
   grenades: ReplayGrenade[];
   grenadeTick: (grenade: ReplayGrenade) => number;
   onGrenadeSelect: (grenade: ReplayGrenade) => void;
+  zoomPortalTarget: HTMLElement | null;
   onSeek: (tick: number) => void;
   showFreezeTime: boolean;
 };
@@ -39,12 +44,19 @@ export default function ReplayTimeline({
   grenades,
   grenadeTick,
   onGrenadeSelect,
+  zoomPortalTarget,
   onSeek,
   showFreezeTime,
 }: Props) {
   const { tr } = useI18n();
   const [hoveredKill, setHoveredKill] = useState<number | null>(null);
+  const [hoveredGrenade, setHoveredGrenade] = useState<string | null>(null);
+  const [zoom, setZoom] = useState(1);
+  const [viewStart, setViewStart] = useState(0);
+  const [dragging, setDragging] = useState(false);
   const slider = useRef<HTMLInputElement>(null);
+  const viewport = useRef<HTMLDivElement>(null);
+  const drag = useRef<{ pointerId: number; x: number; start: number } | null>(null);
   const track = useRef<HTMLDivElement>(null);
   const elapsed = useRef<HTMLTimeElement>(null);
   const [start, end] = roundBounds(round);
@@ -56,9 +68,64 @@ export default function ReplayTimeline({
   const explodedLabel = tr('Exploded', 'Взорвалась');
   // When freeze time is hidden, compress it out of the visible timeline.
   const timelineStart = showFreezeTime ? start : actionStart;
+  const totalDuration = Math.max(1, end - timelineStart);
+  const viewDuration = totalDuration / zoom;
+  const maxViewStart = Math.max(timelineStart, end - viewDuration);
+  const boundedViewStart = clamp(viewStart, timelineStart, maxViewStart);
+  const viewEnd = boundedViewStart + viewDuration;
   const progress = (value: number) =>
-    clamp(((value - timelineStart) / (end - timelineStart || 1)) * 100, 0, 100);
+    clamp(((value - boundedViewStart) / (viewEnd - boundedViewStart || 1)) * 100, 0, 100);
   const current = clamp(clock.current, timelineStart, end);
+  const visibleCurrent = clamp(clock.current, boundedViewStart, viewEnd);
+  const zoomAt = useCallback((nextZoom: number, anchorRatio = 0.5) => {
+    const next = clamp(nextZoom, 1, 8);
+    const anchor = boundedViewStart + viewDuration * anchorRatio;
+    const nextDuration = totalDuration / next;
+    const nextMaxStart = Math.max(timelineStart, end - nextDuration);
+    setZoom(next);
+    setViewStart(clamp(anchor - nextDuration * anchorRatio, timelineStart, nextMaxStart));
+  }, [boundedViewStart, end, timelineStart, totalDuration, viewDuration]);
+  const handleWheel = useCallback((event: ReactWheelEvent<HTMLDivElement>) => {
+    if (Math.abs(event.deltaY) < 1) return;
+    event.preventDefault();
+    const rect = viewport.current?.getBoundingClientRect();
+    const ratio = rect ? clamp((event.clientX - rect.left) / rect.width, 0, 1) : 0.5;
+    zoomAt(zoom * (event.deltaY < 0 ? 1.18 : 1 / 1.18), ratio);
+  }, [zoom, zoomAt]);
+  const handlePointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (zoom <= 1 || (event.target as HTMLElement).closest('button,input')) return;
+    drag.current = { pointerId: event.pointerId, x: event.clientX, start: boundedViewStart };
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setDragging(true);
+  }, [boundedViewStart, zoom]);
+  const handlePointerMove = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!drag.current || !viewport.current) return;
+    const rect = viewport.current.getBoundingClientRect();
+    const delta = ((event.clientX - drag.current.x) / Math.max(1, rect.width)) * viewDuration;
+    setViewStart(clamp(drag.current.start - delta, timelineStart, maxViewStart));
+  }, [maxViewStart, timelineStart, viewDuration]);
+  const stopDragging = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!drag.current) return;
+    if (event.currentTarget.hasPointerCapture(drag.current.pointerId)) {
+      event.currentTarget.releasePointerCapture(drag.current.pointerId);
+    }
+    drag.current = null;
+    setDragging(false);
+  }, []);
+  useEffect(() => {
+    setZoom(1);
+    setViewStart(timelineStart);
+  }, [end, timelineStart]);
+  useEffect(() => {
+    setViewStart((value) => clamp(value, timelineStart, maxViewStart));
+  }, [maxViewStart, timelineStart]);
+  useEffect(() => {
+    if (!playing || zoom <= 1) return;
+    const margin = viewDuration * 0.18;
+    if (clock.current < boundedViewStart + margin || clock.current > viewEnd - margin) {
+      setViewStart(clamp(clock.current - viewDuration * 0.5, timelineStart, maxViewStart));
+    }
+  }, [boundedViewStart, clock, maxViewStart, playing, tick, timelineStart, viewDuration, viewEnd, zoom]);
   const killTicks = useMemo(() => {
     const ticks = new Map<string, number>();
     for (const event of round.events) {
@@ -128,7 +195,7 @@ export default function ReplayTimeline({
     ],
   );
   const sync = useCallback(() => {
-    const value = clamp(clock.current, timelineStart, end);
+    const value = clamp(clock.current, boundedViewStart, viewEnd);
     const timers = replayTimers(round, value, tickrate);
     const phaseColor = timers.bomb
       ? '#ff8e96'
@@ -143,7 +210,7 @@ export default function ReplayTimeline({
     if (elapsed.current) {
       elapsed.current.textContent = labelAt(value);
     }
-  }, [clock, timelineStart, end, labelAt, round, tickrate]);
+  }, [clock, boundedViewStart, viewEnd, labelAt, round, tickrate]);
   // Keep the scrubber on the playback clock without rendering the match each frame.
   useEffect(() => {
     let animation = 0;
@@ -157,8 +224,21 @@ export default function ReplayTimeline({
   useLayoutEffect(() => {
     sync();
   }, [tick, sync]);
+  const zoomTools: ReactNode = (
+    <div className="replay-timeline-tools" role="group" aria-label={tr('Timeline zoom', 'Масштаб таймлайна')}>
+      <button type="button" onClick={() => zoomAt(zoom / 1.35)} disabled={zoom <= 1.001} aria-label={tr('Zoom out', 'Уменьшить')} title={tr('Zoom out', 'Уменьшить')}><Minus size={12} /></button>
+      <span>{Math.round(zoom * 100)}%</span>
+      <button type="button" onClick={() => zoomAt(zoom * 1.35)} disabled={zoom >= 7.99} aria-label={tr('Zoom in', 'Увеличить')} title={tr('Zoom in', 'Увеличить')}><Plus size={12} /></button>
+      <button type="button" onClick={() => zoomAt(1)} disabled={zoom <= 1.001} aria-label={tr('Reset timeline zoom', 'Сбросить масштаб')} title={tr('Reset timeline zoom', 'Сбросить масштаб')}><RotateCcw size={11} /></button>
+    </div>
+  );
   return (
-    <div className="replay-timeline">
+    <>
+      {zoomPortalTarget ? createPortal(zoomTools, zoomPortalTarget) : null}
+      <div
+        className={`replay-timeline ${zoom > 1 ? 'is-zoomed' : ''} ${dragging ? 'is-dragging' : ''}`}
+        onWheel={handleWheel}
+      >
       <div>
         <time ref={elapsed} className="replay-phase-time">
           {labelAt(current)}
@@ -167,6 +247,14 @@ export default function ReplayTimeline({
           {timeLabel((end - Math.max(start, actionStart)) / tickrate)}
         </time>
       </div>
+      <div
+        ref={viewport}
+        className="replay-timeline-viewport"
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={stopDragging}
+        onPointerCancel={stopDragging}
+      >
       <div className="replay-timeline-grenade-rail" aria-label={tr('Grenades', 'Гранаты')}>
         {grenades
           .filter((grenade) => showFreezeTime || grenadeTick(grenade) >= actionStart)
@@ -179,6 +267,10 @@ export default function ReplayTimeline({
                 key={grenade.id}
                 style={{ left: `${progress(markerTick)}%` }}
                 title={`${grenade.data.thrower} · ${grenade.data.grenade_type} · ${labelAt(markerTick)}`}
+                  onMouseEnter={() => setHoveredGrenade(grenade.id)}
+                  onMouseLeave={() => setHoveredGrenade(null)}
+                  onFocus={() => setHoveredGrenade(grenade.id)}
+                  onBlur={() => setHoveredGrenade(null)}
               >
                 <button
                   type="button"
@@ -187,6 +279,21 @@ export default function ReplayTimeline({
                 >
                   <GrenadeMapIcon grenadeType={grenade.data.grenade_type} />
                 </button>
+                  {hoveredGrenade === grenade.id && (
+                    <span className="replay-timeline-grenade-preview" role="tooltip">
+                      <span className="replay-timeline-grenade-preview-head">
+                        <span className={`replay-timeline-grenade-preview-icon type-${grenadeType}`}>
+                          <GrenadeMapIcon grenadeType={grenade.data.grenade_type} />
+                        </span>
+                        <strong>{grenade.data.grenade_type}</strong>
+                        <time>{labelAt(markerTick)}</time>
+                      </span>
+                      <span className="replay-timeline-grenade-preview-info">
+                        <b>{grenade.data.thrower || tr('Unknown player', 'Неизвестный игрок')}</b>
+                        {typeof grenade.data.airtime === 'number' && <span>{tr('Airtime', 'Полёт')}: {grenade.data.airtime.toFixed(2)} s</span>}
+                      </span>
+                    </span>
+                  )}
               </span>
             );
           })}
@@ -194,10 +301,10 @@ export default function ReplayTimeline({
       <input
         ref={slider}
         type="range"
-        min={timelineStart}
-        max={Math.max(timelineStart + 1, end)}
         step="any"
-        defaultValue={current}
+        min={boundedViewStart}
+        max={Math.max(boundedViewStart + 1, viewEnd)}
+        defaultValue={visibleCurrent}
         aria-label={tr('Replay timeline', 'Таймлайн повтора')}
         onChange={(e) => onSeek(Number(e.target.value))}
       />
@@ -284,6 +391,8 @@ export default function ReplayTimeline({
             );
           })}
       </div>
-    </div>
+      </div>
+      </div>
+    </>
   );
 }
