@@ -1342,6 +1342,55 @@
   margin: 4px 6.5px 0;
   position: relative;
 }
+.replay-timeline-grenade-rail {
+  position: relative;
+  height: 22px;
+  margin: 2px 6.5px 0;
+}
+.replay-timeline-grenade-marker {
+  position: absolute;
+  top: 1px;
+  z-index: 3;
+  width: 18px;
+  height: 18px;
+  transform: translateX(-50%);
+  pointer-events: auto;
+}
+.replay-timeline-grenade-marker button {
+  display: grid;
+  width: 18px;
+  height: 18px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--grenade-dot) 55%, var(--line));
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--grenade-dot) 16%, var(--surface-2));
+  color: var(--grenade-dot);
+  box-shadow: 0 2px 7px rgba(0,0,0,.35);
+  cursor: var(--cursor-pointer);
+  transition: transform 120ms ease, filter 120ms ease;
+}
+.replay-timeline-grenade-marker button:hover,
+.replay-timeline-grenade-marker button:focus-visible {
+  filter: brightness(1.2);
+  transform: translateY(-2px);
+}
+.replay-timeline-grenade-marker .grenade-map-icon {
+  display: block;
+  width: 9px;
+  height: 13px;
+}
+.replay-timeline-grenade-marker .grenade-map-icon svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.replay-timeline-grenade-marker .grenade-map-icon path { fill: currentColor; }
+.replay-timeline-grenade-marker.type-smoke { --grenade-dot: #67e8f9; }
+.replay-timeline-grenade-marker.type-flash { --grenade-dot: #fbbf24; }
+.replay-timeline-grenade-marker.type-he { --grenade-dot: #34d399; }
+.replay-timeline-grenade-marker.type-molotov { --grenade-dot: #fb7185; }
+.replay-timeline-grenade-marker.type-incendiary-grenade { --grenade-dot: #f97316; }
 .replay-event-ticks i {
   position: absolute;
   top: 2px;

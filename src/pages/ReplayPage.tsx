@@ -1579,6 +1579,13 @@ export default function ReplayPage() {
                   tickrate={detail.metadata.tickrate}
                   playing={playing}
                   events={events}
+                  grenades={round.grenades}
+                  grenadeTick={grenadeTrajectoryTick}
+                  onGrenadeSelect={(grenade) => {
+                    setSelected(grenade);
+                    seek(grenadeTrajectoryTick(grenade));
+                    setPlaying(false);
+                  }}
                   onSeek={seek}
                   showFreezeTime={showFreezeTime}
                 />

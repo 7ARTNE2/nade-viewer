@@ -8,6 +8,8 @@ import {
   timeLabel,
 } from '../lib/replayPlayback';
 import type { ReplayEvent, ReplayRound } from '../types/replay';
+import GrenadeMapIcon from './GrenadeMapIcon';
+import type { ReplayGrenade } from '../types/replay';
 import flashbangAssistIcon from '../assets/equipment_icons/flashbang_assist.svg';
 import { deathNoticeIcon } from '../lib/deathNoticeIcons';
 import { weaponIcon } from '../lib/weaponIcons';
@@ -20,6 +22,9 @@ type Props = {
   tickrate: number;
   playing: boolean;
   events: ReplayEvent[];
+  grenades: ReplayGrenade[];
+  grenadeTick: (grenade: ReplayGrenade) => number;
+  onGrenadeSelect: (grenade: ReplayGrenade) => void;
   onSeek: (tick: number) => void;
   showFreezeTime: boolean;
 };
@@ -31,6 +36,9 @@ export default function ReplayTimeline({
   tickrate,
   playing,
   events,
+  grenades,
+  grenadeTick,
+  onGrenadeSelect,
   onSeek,
   showFreezeTime,
 }: Props) {
@@ -158,6 +166,30 @@ export default function ReplayTimeline({
         <time>
           {timeLabel((end - Math.max(start, actionStart)) / tickrate)}
         </time>
+      </div>
+      <div className="replay-timeline-grenade-rail" aria-label={tr('Grenades', 'Гранаты')}>
+        {grenades
+          .filter((grenade) => showFreezeTime || grenadeTick(grenade) >= actionStart)
+          .map((grenade) => {
+            const grenadeType = grenade.data.grenade_type.toLowerCase().replace(/ /g, '-');
+            const markerTick = grenadeTick(grenade);
+            return (
+              <span
+                className={`replay-timeline-grenade-marker type-${grenadeType}`}
+                key={grenade.id}
+                style={{ left: `${progress(markerTick)}%` }}
+                title={`${grenade.data.thrower} · ${grenade.data.grenade_type} · ${labelAt(markerTick)}`}
+              >
+                <button
+                  type="button"
+                  aria-label={`${grenade.data.thrower} · ${grenade.data.grenade_type}`}
+                  onClick={() => onGrenadeSelect(grenade)}
+                >
+                  <GrenadeMapIcon grenadeType={grenade.data.grenade_type} />
+                </button>
+              </span>
+            );
+          })}
       </div>
       <input
         ref={slider}
