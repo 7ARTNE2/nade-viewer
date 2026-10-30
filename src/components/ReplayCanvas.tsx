@@ -379,6 +379,44 @@ export default function ReplayCanvas({
         ox + ((x - radar!.pos_x) / radar!.scale) * unit,
         oy + ((radar!.pos_y - y) / radar!.scale) * unit,
       ];
+      const drawPlayerName = (
+        player: ReplayFrame['players'][number],
+        x: number,
+        y: number,
+        alpha: number,
+      ) => {
+        const name = player.name.trim() || 'Unknown';
+        const teamColor = player.side === 'CT' ? '#8dbdff' : '#ff986b';
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.font = '600 10px "Segoe UI", sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        const maxWidth = 132;
+        let label = name;
+        if (ctx.measureText(label).width > maxWidth) {
+          while (label.length > 3 && ctx.measureText(`${label}…`).width > maxWidth)
+            label = label.slice(0, -1);
+          label += '…';
+        }
+        const textWidth = ctx.measureText(label).width;
+        const width = Math.min(maxWidth + 12, textWidth + 16);
+        const top = y + 15;
+        ctx.shadowColor = 'rgba(0,0,0,.45)';
+        ctx.shadowBlur = 5;
+        ctx.fillStyle = 'rgba(8, 11, 15, .76)';
+        ctx.beginPath();
+        ctx.roundRect(x - width / 2, top, width, 16, 5);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = teamColor;
+        ctx.beginPath();
+        ctx.roundRect(x - width / 2 + 3, top + 4, 2, 8, 1);
+        ctx.fill();
+        ctx.fillStyle = '#f4f6f8';
+        ctx.fillText(label, x, top + 8);
+        ctx.restore();
+      };
       const visible = (z: number) =>
         radar!.split_z === null ||
         !detail.map.has_lower_radar ||
@@ -416,14 +454,7 @@ export default function ReplayCanvas({
         ctx.moveTo(x + 4, y - 4);
         ctx.lineTo(x - 4, y + 4);
         ctx.stroke();
-        ctx.font = '11px Segoe UI';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'alphabetic';
-        ctx.lineWidth = 3;
-        ctx.strokeStyle = '#0a0c0f';
-        ctx.strokeText(player.name, x, y + 23);
-        ctx.fillStyle = '#f4f6f8';
-        ctx.fillText(player.name, x, y + 23);
+        drawPlayerName(player, x, y, 0.4);
         ctx.restore();
       }
       const visibleSmokes = activeSmokes(
@@ -1289,13 +1320,7 @@ export default function ReplayCanvas({
             ctx.globalAlpha = player.alive ? 1 : 0.4;
           }
         }
-        ctx.font = '11px Segoe UI';
-        ctx.textAlign = 'center';
-        ctx.lineWidth = 3;
-        ctx.strokeStyle = '#0a0c0f';
-        ctx.strokeText(player.name, x, y + 23);
-        ctx.fillStyle = '#f4f6f8';
-        ctx.fillText(player.name, x, y + 23);
+        drawPlayerName(player, x, y, player.alive ? 1 : 0.4);
         ctx.globalAlpha = 1;
       });
     }
