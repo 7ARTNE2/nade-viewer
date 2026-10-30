@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useI18n } from '../i18n';
 import {
   clamp,
@@ -8,6 +8,10 @@ import {
   timeLabel,
 } from '../lib/replayPlayback';
 import type { ReplayEvent, ReplayRound } from '../types/replay';
+import flashbangAssistIcon from '../assets/equipment_icons/flashbang_assist.svg';
+import { deathNoticeIcon } from '../lib/deathNoticeIcons';
+import { weaponIcon } from '../lib/weaponIcons';
+import { playersAt } from '../lib/replayPlayback';
 
 type Props = {
   round: ReplayRound;
@@ -31,6 +35,7 @@ export default function ReplayTimeline({
   showFreezeTime,
 }: Props) {
   const { tr } = useI18n();
+  const [hoveredKill, setHoveredKill] = useState<number | null>(null);
   const slider = useRef<HTMLInputElement>(null);
   const track = useRef<HTMLDivElement>(null);
   const elapsed = useRef<HTMLTimeElement>(null);
@@ -46,6 +51,16 @@ export default function ReplayTimeline({
   const progress = (value: number) =>
     clamp(((value - timelineStart) / (end - timelineStart || 1)) * 100, 0, 100);
   const current = clamp(clock.current, timelineStart, end);
+  const killTicks = useMemo(() => {
+    const ticks = new Map<string, number>();
+    for (const event of round.events) {
+      if (event.type !== 'kill' || !event.target_id) continue;
+      const previous = ticks.get(event.target_id);
+      if (previous === undefined || event.tick < previous) ticks.set(event.target_id, event.tick);
+    }
+    return ticks;
+  }, [round]);
+  const killEvents = events.filter((event) => event.type === 'kill');
   const plant = round.events.find((event) => event.type === 'bomb_planted');
   const resolution = round.events.find(
     (event) =>
@@ -180,12 +195,62 @@ export default function ReplayTimeline({
           />
         ))}
       </div>
-      <div className="replay-event-ticks" aria-hidden="true">
+      <div className="replay-event-ticks">
         {events
           .filter((event) => showFreezeTime || event.tick >= actionStart)
-          .map((event, index) => (
-            <i key={index} style={{ left: `${progress(event.tick)}%` }} />
-          ))}
+          .map((event, index) => {
+            const killIndex = event.type === 'kill' ? killEvents.indexOf(event) : -1;
+            if (killIndex < 0) {
+              return <i key={index} style={{ left: `${progress(event.tick)}%` }} />;
+            }
+            const eventPlayers = playersAt(round, event.tick, round.events, killTicks);
+            const killer = eventPlayers.find((player) => player.id === event.player_id);
+            const victim = eventPlayers.find((player) => player.id === event.target_id);
+            const assisterId = String(event.data?.assister_id ?? '');
+            const flashAssisterId = String(event.data?.flash_assister_id ?? '');
+            const assister = eventPlayers.find((player) => player.id === assisterId);
+            const flashAssister = eventPlayers.find((player) => player.id === flashAssisterId);
+            const weapon = String(event.data?.weapon ?? '');
+            const notices = [
+              event.data?.headshot === true ? 'headshot' : '',
+              event.data?.attacker_blind === true ? 'blind' : '',
+              event.data?.wallbang === true || Number(event.data?.penetrated_objects ?? 0) > 0 ? 'penetrate' : '',
+              event.data?.through_smoke === true ? 'smoke' : '',
+              event.player_id && event.player_id === event.target_id ? 'suicide' : '',
+            ].filter(Boolean).map((id) => ({ id, icon: deathNoticeIcon(id) })).filter((item) => item.icon);
+            const isHovered = hoveredKill === killIndex;
+            const edge = progress(event.tick) < 18 ? 'is-start' : progress(event.tick) > 82 ? 'is-end' : '';
+            return (
+              <span
+                className="replay-timeline-event-marker"
+                key={index}
+                style={{ left: `${progress(event.tick)}%` }}
+                onMouseEnter={() => setHoveredKill(killIndex)}
+                onMouseLeave={() => setHoveredKill(null)}
+                onFocus={() => setHoveredKill(killIndex)}
+                onBlur={() => setHoveredKill(null)}
+              >
+                <button
+                  type="button"
+                  aria-label={`${killer?.name ?? event.player_id ?? 'World'} → ${victim?.name ?? event.target_id ?? '—'}`}
+                  onClick={() => onSeek(event.tick)}
+                />
+                {isHovered && (
+                  <span className={`replay-timeline-kill-preview ${edge}`} role="tooltip">
+                    <time>{labelAt(event.tick)}</time>
+                    <span className="replay-timeline-kill-main">
+                      <b className={`replay-killfeed-name ${String(killer?.side ?? 'world').toLowerCase()}`}>{killer?.name ?? event.player_id ?? 'World'}</b>
+                      {event.data?.assisted_flash === true && flashAssister && <span className="replay-timeline-kill-assist flash"><img src={flashbangAssistIcon} alt="" />+{flashAssister.name}</span>}
+                      {assister && <span className="replay-timeline-kill-assist">+{assister.name}</span>}
+                      {weapon && <img className="replay-timeline-kill-weapon" src={weaponIcon(weapon)} alt="" />}
+                      {notices.map((notice) => <img className="replay-timeline-kill-notice" key={notice.id} src={notice.icon} alt="" />)}
+                      <b className={`replay-killfeed-name ${String(victim?.side ?? 'world').toLowerCase()}`}>{victim?.name ?? event.target_id ?? '—'}</b>
+                    </span>
+                  </span>
+                )}
+              </span>
+            );
+          })}
       </div>
     </div>
   );

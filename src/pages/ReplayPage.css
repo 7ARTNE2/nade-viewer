@@ -1351,6 +1351,71 @@
   border-radius: 1px;
   background: var(--orange);
 }
+.replay-timeline-event-marker {
+  position: absolute;
+  top: 4px;
+  z-index: 2;
+  display: block;
+  width: 8px;
+  height: 9px;
+  transform: translateX(-50%);
+}
+.replay-timeline-event-marker > button {
+  display: block;
+  width: 8px;
+  height: 8px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--orange);
+  box-shadow: 0 0 0 1px var(--surface), 0 0 7px rgba(255, 142, 76, .45);
+  cursor: var(--cursor-pointer);
+}
+.replay-timeline-event-marker:focus-within { z-index: 20; }
+.replay-timeline-kill-preview {
+  position: absolute;
+  bottom: 15px;
+  left: 50%;
+  display: flex;
+  width: max-content;
+  min-width: 0;
+  max-width: min(380px, 52vw);
+  box-sizing: border-box;
+  flex-direction: column;
+  gap: 5px;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #151a20;
+  color: var(--text);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, .5);
+  pointer-events: none;
+  transform: translateX(-50%);
+}
+.replay-timeline-kill-preview::after {
+  position: absolute;
+  bottom: -5px;
+  left: 50%;
+  width: 8px;
+  height: 8px;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  background: #151a20;
+  content: '';
+  transform: translateX(-50%) rotate(45deg);
+}
+.replay-timeline-kill-preview.is-start { left: 0; transform: none; }
+.replay-timeline-kill-preview.is-end { left: 0; transform: translateX(-100%); }
+.replay-timeline-kill-preview.is-start::after { left: 12px; }
+.replay-timeline-kill-preview.is-end::after { left: calc(100% - 12px); }
+.replay-timeline-kill-preview time { color: var(--dim); font-size: 8px; font-variant-numeric: tabular-nums; }
+.replay-timeline-kill-main { display: inline-flex; align-items: center; gap: 5px; overflow: hidden; white-space: nowrap; }
+.replay-timeline-kill-main b { overflow: hidden; text-overflow: ellipsis; font-size: 9px; }
+.replay-timeline-kill-assist { color: var(--muted); font-size: 8px; }
+.replay-timeline-kill-assist.flash { display: inline-flex; align-items: center; color: #fbbf24; }
+.replay-timeline-kill-assist.flash img { width: 14px; height: 14px; object-fit: contain; }
+.replay-timeline-kill-weapon { width: 25px; height: 14px; object-fit: contain; }
+.replay-timeline-kill-notice { width: 14px; height: 14px; object-fit: contain; }
 @media (max-width: 1100px) {
   .replay-stage {
     grid-template-columns: 240px minmax(0, 1fr) 220px;
