@@ -856,9 +856,16 @@
 .replay-events > h2 {
   margin-bottom: 10px;
 }
+.replay-throw-row {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  border-bottom: 1px solid var(--line-soft);
+}
 .replay-throw {
   display: flex;
-  width: 100%;
+  min-width: 0;
+  flex: 1;
   align-items: center;
   gap: 8px;
   min-height: 58px;
@@ -873,6 +880,20 @@
   transition:
     background 150ms ease,
     border-color 150ms ease;
+}
+.replay-throw-row > .replay-throw {
+  border-bottom: 0;
+}
+.replay-throw-copy {
+  align-self: center;
+  flex: 0 0 28px;
+  width: 28px;
+  min-height: 28px;
+  padding: 0 !important;
+}
+.replay-throw-copy:disabled {
+  cursor: var(--cursor-not-allowed);
+  opacity: 0.42;
 }
 .replay-throw:hover,
 .replay-throw.active {

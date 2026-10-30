@@ -235,8 +235,17 @@ func collectReplay(path string, options ReplayOptions, emit func(models.ReplaySt
 		delete(flashAssistByVictim, replayPlayerID(e.Victim))
 	})
 	p.RegisterEventHandler(func(e events.PlayerHurt) {
+		attackerWeapon := replaySafe((*common.Equipment)(nil), func() *common.Equipment {
+			if e.Attacker == nil {
+				return nil
+			}
+			return e.Attacker.ActiveWeapon()
+		})
 		event("damage", replayDamageMessage(e), e.Attacker, e.Player, replayPlayerPosition(e.Player),
-			map[string]interface{}{"damage": e.HealthDamageTaken})
+			map[string]interface{}{
+				"damage": e.HealthDamageTaken,
+				"weapon": replayEquipmentName(attackerWeapon),
+			})
 	})
 	p.RegisterEventHandler(func(e events.WeaponFire) {
 		shooter := e.Shooter

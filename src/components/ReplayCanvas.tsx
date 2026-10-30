@@ -78,6 +78,22 @@ function lowerBoundTick(
   }
   return lo;
 }
+
+type WeaponEffect = 'firearm' | 'knife' | 'zeus' | 'none';
+
+function weaponEffect(name: unknown): WeaponEffect {
+  const weapon = String(name ?? '')
+    .toLowerCase()
+    .replace(/[_-]/g, ' ')
+    .trim();
+  if (/knife|bayonet|karambit|kukri|talon|butterfly|flip|gut|huntsman|falchion|shadow daggers|navaja|stiletto|ursus|nomad|paracord|survival/.test(weapon))
+    return 'knife';
+  if (/taser|zeus/.test(weapon)) return 'zeus';
+  if (/grenade|flashbang|smoke|molotov|incendiary|decoy|c4|bomb/.test(weapon))
+    return 'none';
+  return 'firearm';
+}
+
 export default function ReplayCanvas({
   detail,
   round,
@@ -984,13 +1000,99 @@ export default function ReplayCanvas({
         }
         ctx.restore();
       };
+      const drawSpecialEffect = (
+        event: ReplayRound['events'][number],
+        shooter: ReplayFrame['players'][number],
+        target: { x: number; y: number } | null,
+        effect: 'knife' | 'zeus',
+        windowTicks: number,
+      ) => {
+        const age = tracerAge(event);
+        if (age < 0 || age > windowTicks || !visible(shooter.z)) return;
+        const start = point(shooter.x, shooter.y);
+        const rawYaw = Number(event.data?.yaw ?? shooter.yaw);
+        const angle = (-rawYaw * Math.PI) / 180;
+        const progress = Math.min(1, age / Math.max(1, windowTicks));
+        const color = effect === 'zeus' ? '#f8e16c' : '#e7edf5';
+        ctx.save();
+        ctx.globalAlpha = Math.max(0.12, 1 - progress);
+        ctx.strokeStyle = color;
+        ctx.fillStyle = color;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.shadowColor = color;
+        ctx.shadowBlur = effect === 'zeus' ? 15 : 9;
+        if (effect === 'knife') {
+          // Keep the knife readable as a small held blade, with only a
+          // restrained slash arc to communicate the swing.
+          // The in-game knife animation rocks the blade across the view. Use
+          // the event lifetime to reproduce that short left-right movement.
+          const swingAngle = angle + Math.sin(progress * Math.PI * 2) * 0.72;
+          const ux = Math.cos(swingAngle);
+          const uy = Math.sin(swingAngle);
+          const px = -uy;
+          const py = ux;
+          const handleStart = 7;
+          const bladeStart = 12;
+          const bladeEnd = 28 + progress * 7;
+          ctx.globalCompositeOperation = 'source-over';
+          ctx.globalAlpha = Math.max(0.2, 1 - progress);
+          ctx.shadowBlur = 5;
+          ctx.strokeStyle = '#252b33';
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.moveTo(start[0] + ux * handleStart, start[1] + uy * handleStart);
+          ctx.lineTo(start[0] + ux * bladeStart, start[1] + uy * bladeStart);
+          ctx.stroke();
+          ctx.fillStyle = '#e8eef5';
+          ctx.strokeStyle = '#94a3b8';
+          ctx.lineWidth = 0.9;
+          ctx.beginPath();
+          ctx.moveTo(start[0] + ux * bladeStart + px * 2.2, start[1] + uy * bladeStart + py * 2.2);
+          ctx.lineTo(start[0] + ux * (bladeEnd - 4) + px * 2.2, start[1] + uy * (bladeEnd - 4) + py * 2.2);
+          ctx.lineTo(start[0] + ux * bladeEnd, start[1] + uy * bladeEnd);
+          ctx.lineTo(start[0] + ux * (bladeEnd - 4) - px * 1.2, start[1] + uy * (bladeEnd - 4) - py * 1.2);
+          ctx.lineTo(start[0] + ux * bladeStart - px * 1.2, start[1] + uy * bladeStart - py * 1.2);
+          ctx.closePath();
+          ctx.fill();
+          ctx.stroke();
+        } else {
+          const end = target
+            ? point(target.x, target.y)
+            : [
+                start[0] + Math.cos(angle) * (36 + progress * 20),
+                start[1] + Math.sin(angle) * (36 + progress * 20),
+              ] as [number, number];
+          ctx.lineWidth = 2.2;
+          ctx.beginPath();
+          ctx.moveTo(start[0] + Math.cos(angle) * 8, start[1] + Math.sin(angle) * 8);
+          ctx.lineTo(end[0], end[1]);
+          ctx.stroke();
+          for (const offset of [-0.28, 0.28]) {
+            ctx.beginPath();
+            ctx.moveTo(start[0] + Math.cos(angle + offset) * 8, start[1] + Math.sin(angle + offset) * 8);
+            ctx.lineTo(end[0] + Math.cos(angle + offset) * 8, end[1] + Math.sin(angle + offset) * 8);
+            ctx.stroke();
+          }
+          if (target) {
+            ctx.beginPath();
+            ctx.arc(end[0], end[1], 5 + progress * 3, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+        ctx.restore();
+      };
       const fireWindow = Math.max(3, Math.round(tickrate * 0.14));
       const fireStart = lowerBoundTick(weaponFireEvents, tick - fireWindow);
       for (let eventIndex = fireStart; eventIndex < weaponFireEvents.length; eventIndex += 1) {
         const event = weaponFireEvents[eventIndex];
         if (event.tick > tick) break;
         const shooter = event.player_id ? playerById.get(event.player_id) : undefined;
-        if (shooter) drawTracer(event, shooter, null, false, fireWindow);
+        if (!shooter) continue;
+        const effect = weaponEffect(event.data?.weapon);
+        if (effect === 'firearm') drawTracer(event, shooter, null, false, fireWindow);
+        else if (effect === 'knife' || effect === 'zeus')
+          drawSpecialEffect(event, shooter, null, effect, fireWindow);
       }
       const hitWindow = Math.max(3, Math.round(tickrate * 0.28));
       const hitStart = lowerBoundTick(hitEvents, tick - hitWindow);
@@ -999,13 +1101,17 @@ export default function ReplayCanvas({
         if (event.tick > tick) break;
         const shooter = event.player_id ? playerById.get(event.player_id) : undefined;
         if (!shooter) continue;
+        const effect = weaponEffect(event.data?.weapon);
+        if (effect === 'none') continue;
         const victim = event.target_id ? playerById.get(event.target_id) : undefined;
         const target = victim
           ? { x: victim.x, y: victim.y }
           : typeof event.x === 'number' && typeof event.y === 'number'
             ? { x: event.x, y: event.y }
             : null;
-        drawTracer(event, shooter, target, true, hitWindow);
+        if (effect === 'firearm') drawTracer(event, shooter, target, true, hitWindow);
+        else if (effect === 'knife' || effect === 'zeus')
+          drawSpecialEffect(event, shooter, target, effect, hitWindow);
       }
       // Draw dead players first so their dim markers and names stay beneath
       // live players when the two labels overlap.

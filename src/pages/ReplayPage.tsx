@@ -731,7 +731,25 @@ export default function ReplayPage() {
     }
     return grenade.release_tick;
   };
-  const replayRounds = detail?.rounds.filter((item) => item.number > 0) ?? [];
+  const replayRounds = useMemo(
+    () => detail?.rounds.filter((item) => item.number > 0) ?? [],
+    [detail],
+  );
+  const replayEndScores = useMemo(() => {
+    const scores: Record<number, { t: number; ct: number }> = {};
+    replayRounds.forEach((item) => {
+      const calculated = {
+        t: item.score_t + (item.winner_side === 'T' ? 1 : 0),
+        ct: item.score_ct + (item.winner_side === 'CT' ? 1 : 0),
+      };
+      // The next round may already be stored after a side switch and therefore
+      // have T/CT values in the opposite orientation. Calculate the ending
+      // score from this round itself so the final pre-switch score stays in
+      // the orientation shown during the round.
+      scores[item.number] = calculated;
+    });
+    return scores;
+  }, [replayRounds]);
   const loadRoundPreview = (roundNumber: number) => {
     if (!detail || roundNumber === number || roundPreviews[roundNumber]) return;
     let request = roundPreviewCache.current.get(roundNumber);
@@ -1025,6 +1043,10 @@ export default function ReplayPage() {
                 <div className="replay-round-rail-list" ref={roundRailRef}>
                   {replayRounds.map((item) => {
                     const winner = roundWinnerClass(item.winner_side);
+                    const endingScore = replayEndScores[item.number] ?? {
+                      t: item.score_t,
+                      ct: item.score_ct,
+                    };
                     return (
                       <button
                         key={item.number}
@@ -1058,10 +1080,10 @@ export default function ReplayPage() {
                         }}
                         onBlur={() => setHoveredRound(null)}
                         aria-current={item.number === number ? 'true' : undefined}
-                        aria-label={`${tr('Round', 'Раунд')} ${item.number}, ${item.score_t}:${item.score_ct}`}
+                        aria-label={`${tr('Round', 'Раунд')} ${item.number}, ${endingScore.t}:${endingScore.ct}`}
                       >
                         <span>R{item.number}</span>
-                        <strong>{item.score_t}:{item.score_ct}</strong>
+                        <strong>{endingScore.t}:{endingScore.ct}</strong>
                       </button>
                     );
                   })}
@@ -1120,6 +1142,10 @@ export default function ReplayPage() {
           {hoveredRound !== null && hoveredRoundRect && (() => {
             const preview = replayRounds.find((item) => item.number === hoveredRound);
             if (!preview) return null;
+            const previewScore = replayEndScores[preview.number] ?? {
+              t: preview.score_t,
+              ct: preview.score_ct,
+            };
             const previewData = preview.number === number ? round : roundPreviews[preview.number];
             const previewEvents = previewData?.events.filter((event) =>
               ['kill', 'bomb_planted', 'bomb_defused', 'bomb_exploded'].includes(event.type),
@@ -1144,7 +1170,7 @@ export default function ReplayPage() {
               >
                 <div className="replay-round-rail-card-head">
                   <span className="replay-round-rail-card-title">{tr('Round', 'Раунд')} {preview.number}</span>
-                  <span className="replay-round-rail-card-score">{preview.score_t}:{preview.score_ct}</span>
+                  <span className="replay-round-rail-card-score">{previewScore.t}:{previewScore.ct}</span>
                   {preview.winner_side && <span className={`replay-round-rail-card-winner ${roundWinnerClass(preview.winner_side)}`}>{preview.winner_side} {tr('win', 'победа')}</span>}
                 </div>
                 <div className="replay-round-rail-card-reason">{roundReasonLabel(preview.reason, preview.winner_side)}</div>
@@ -1413,28 +1439,55 @@ export default function ReplayPage() {
                       </small>
                     </h2>
                     {round.grenades.map((g) => (
-                      <button
-                        key={g.id}
-                        className={`replay-throw ${selected?.id === g.id ? 'active' : ''}`}
-                        onClick={() => {
-                          setSelected(g);
-                          seek(grenadeTrajectoryTick(g));
-                          setPlaying(false);
-                        }}
-                      >
-                        <span
-                          className={`replay-nade-icon type-${g.data.grenade_type.toLowerCase().replace(/ /g, '-')}`}
+                      <div className="replay-throw-row" key={g.id}>
+                        <button
+                          className={`replay-throw ${selected?.id === g.id ? 'active' : ''}`}
+                          onClick={() => {
+                            setSelected(g);
+                            seek(grenadeTrajectoryTick(g));
+                            setPlaying(false);
+                          }}
                         >
-                          <GrenadeMapIcon grenadeType={g.data.grenade_type} />
-                        </span>
-                        <span>
-                          <strong>{g.data.thrower}</strong>
-                          <small>
-                            {grenadeLabel(g.data.grenade_type, locale)}
-                          </small>
-                        </span>
-                        <time>{grenadeTime(g)}</time>
-                      </button>
+                          <span
+                            className={`replay-nade-icon type-${g.data.grenade_type.toLowerCase().replace(/ /g, '-')}`}
+                          >
+                            <GrenadeMapIcon grenadeType={g.data.grenade_type} />
+                          </span>
+                          <span>
+                            <strong>{g.data.thrower}</strong>
+                            <small>
+                              {grenadeLabel(g.data.grenade_type, locale)}
+                            </small>
+                          </span>
+                          <time>{grenadeTime(g)}</time>
+                        </button>
+                        <button
+                          type="button"
+                          className={`copy-action replay-throw-copy ${copiedId === g.id ? 'copied' : ''}`}
+                          onClick={() => void copyGrenadeCoordinates(g)}
+                          disabled={!g.data.coordinates}
+                          aria-label={tr(
+                            'Copy grenade coordinates',
+                            'Копировать координаты гранаты',
+                          )}
+                          data-tip={
+                            copiedId === g.id
+                              ? tr('Copied', 'Скопировано')
+                              : tr('Copy coordinates', 'Копировать координаты')
+                          }
+                        >
+                          {copiedId === g.id ? (
+                            <Check className="copy-action-icon" size={13} />
+                          ) : (
+                            <Copy className="copy-action-icon" size={13} />
+                          )}
+                          <span className="sr-only">
+                            {copiedId === g.id
+                              ? tr('Copied', 'Скопировано')
+                              : tr('Copy', 'Копировать')}
+                          </span>
+                        </button>
+                      </div>
                     ))}
                   </section>
                   <section className="replay-events">
