@@ -7,7 +7,22 @@ can download a MessagePack snapshot from a configured HTTPS URL and verify its d
 It also replays local CS2 demos on a 2D radar and saves round-linked text and
 drawing notes for reviewing matches.
 
-Current application version: **0.7.0**.
+Current application version: **0.7.1**.
+
+## What's new in 0.7.1
+
+- Nuke replay shows the main radar on the left and the lower radar on the right,
+  with independent zoom and pan. Both stay visible in compact windows.
+- Both Nuke radars share one Notes button, note list, drawing tools, and color
+  palette. Drawings remain attached to their own floor, and saved note links
+  restore the selected drawing in the common editor.
+- The mouse wheel zooms the radar while drawing, keeping completed strokes
+  anchored to the map. Scrolling the notes panel does not zoom the radar.
+- Replay arrows work after focusing either radar: Up/Down change playback
+  speed, and Left/Right pause and seek five seconds within the current round.
+- The shared killfeed uses the application's team colors and font, shows up to
+  five recent kills, and fades after six seconds of demo time. Pausing, changing
+  speed, and seeking keep it synchronized with the replay.
 
 ## What's new in 0.7.0
 
@@ -49,7 +64,9 @@ The **Replay** section (**Повторы** in Russian) opens local CS2 demos thr
 Nade Parser 0.3.0 or newer. The player includes rounds, a seekable timeline,
 0.25x to 4x playback, player positions and equipment, kills, bomb state, smoke
 and fire effects, and selectable grenade trajectories with copyable lineup
-coordinates. Upper and lower radars are supported where bundled assets exist.
+coordinates. Nuke opens two equally sized radars side by side: main on the left,
+lower on the right, each with independent zoom and pan. The layout stays side
+by side at every window width. Vertigo retains its upper/lower radar switch.
 
 Replay samples default to **16 frames per second**, every four ticks for a
 64-tick demo, with interpolated rendering. Grenade detection runs on every demo
@@ -69,12 +86,34 @@ and bomb events. Grenade icons on the radar follow their trajectories and use
 the same type colors as the timeline. Selecting a grenade exposes its throw
 details and copyable commands.
 
-Press **Space** to pause or resume and **Left/Right** to seek five seconds.
-These shortcuts are suspended while typing or using another control. Zoom and
-pan the radar with the map controls; **Home** resets the view when the radar is
-focused. Freeze time is
-hidden by default and can be enabled in the replay options. Automatic advance
-to the next round is optional; playback pauses when the app loses focus.
+| Control          | Action                                                  |
+| ---------------- | ------------------------------------------------------- |
+| Space            | Pause or resume playback                                |
+| Left / Right     | Pause and seek backward / forward by five demo seconds  |
+| Up / Down        | Raise / lower speed: 0.25x, 0.5x, 1x, 2x, 4x            |
+| Mouse wheel      | Zoom the radar under the cursor, including drawing mode |
+| Left-button drag | Pan a zoomed radar when drawing is closed               |
+| + / -            | Zoom in / out when the radar is focused                 |
+| Home / 0         | Reset the focused radar's view                          |
+
+Holding Left or Right repeats five-second seeks. Keyboard seeking stops at the
+current round's boundaries and respects the freeze-time visibility setting;
+it does not switch rounds. Speed shortcuts keep the current play/pause state.
+Typing, sliders, selection controls, and open menus or dialogs retain their
+own keyboard handling. The mouse wheel zooms from 1x to 6x around the cursor;
+scrolling over the notes panel scrolls that panel instead.
+
+Freeze time is hidden by default and can be enabled in the replay options.
+Automatic advance to the next round is optional; playback pauses when the app
+loses focus.
+
+The killfeed appears once at the top right of the radar area, including on
+Nuke. It keeps the latest five kills for six seconds of demo time and fades
+during the final 0.3 seconds. A paused replay keeps the current entries visible;
+at 2x speed, six demo seconds take three real seconds. Seeking reconstructs the
+feed at the selected position. Names use the application's orange T and blue
+CT colors and existing font; damage and flash assists and special-kill icons
+remain visible.
 
 #### Notes and drawings
 
@@ -84,6 +123,17 @@ preset and custom colors, and Undo removes the last stroke. Notes belong to a
 specific match, round, tick, and radar level; a round badge marks rounds with
 notes. Opening a note restores its time, floor, and drawings, including notes
 made during freeze time.
+
+Nuke uses one shared Notes button, editor, note list, drawing tool, and color
+selection for both radars. Opening Notes enables drawing on either floor.
+Selecting a note from the common list displays its strokes on that floor;
+drawing on the other floor creates a separate note for that floor. The shared
+Undo action edits the selected note. Existing notes keep their floor assignment
+and require no conversion.
+
+Zooming preserves completed drawing coordinates. If the wheel is used while a
+stroke is still in progress, only that unfinished stroke is discarded. Closing
+Notes exits drawing mode on both Nuke radars.
 
 The panel next to the match list initially shows **all notes from all saved
 matches**. Search by text, demo filename, map, team, or round, and combine the
@@ -170,7 +220,7 @@ limitations are documented in [Data formats](docs/data-formats.md).
 ## Technology stack
 
 Versions below are the resolved versions from `package-lock.json` and
-`src-tauri/Cargo.lock` for Nade Viewer 0.7.0.
+`src-tauri/Cargo.lock` for Nade Viewer 0.7.1.
 
 ### Application architecture
 
@@ -314,8 +364,8 @@ for Viewer releases.
 Create and push a semantic-version tag from the repository root:
 
 ```powershell
-git tag -a v0.7.0 -m "Nade Viewer 0.7.0"
-git push --atomic origin main v0.7.0
+git tag -a v0.7.1 -m "Nade Viewer 0.7.1"
+git push --atomic origin main v0.7.1
 ```
 
 Pushing the tag starts the `Release` workflow automatically. It builds the
@@ -325,6 +375,11 @@ installers and creates a GitHub Release with files from:
 src-tauri/target/release/bundle/msi/*.msi
 src-tauri/target/release/bundle/nsis/*.exe
 ```
+
+Each release also includes the signed NSIS updater's `.sig` file and
+`latest.json` manifest. Published NSIS filenames replace spaces with dots.
+The release workflow validates that the tag matches the npm, Tauri, and Rust
+application versions; the CI workflow runs the quality checks separately.
 
 ### Online library updates
 
@@ -430,7 +485,7 @@ To rebuild an existing tag without creating a new one:
 1. Open the repository's `Actions` tab on GitHub.
 2. Select the `Release` workflow.
 3. Click `Run workflow`.
-4. Enter an existing tag, for example `v0.7.0`.
+4. Enter an existing tag, for example `v0.7.1`.
 5. Click `Run workflow` again.
 
 The manual workflow also requires a tag in the `vMAJOR.MINOR.PATCH` format,
@@ -474,9 +529,11 @@ and mocked Tauri IPC. Install the test browser once with `npx playwright install
 Run just these regressions with `npm run test:replay`; an existing Chromium binary
 can be selected with `NADE_VIEWER_TEST_BROWSER_PATH`.
 
-Replay regressions cover playback and round navigation, kill and grenade
-previews, assists, drawing colors, note filters, note links, save retries, and
-failed note reads. Rust tests separately exercise note persistence across
+Replay regressions cover playback and round navigation, five-second keyboard
+seeks and speed changes, killfeed lifetime and fading, kill and grenade previews,
+assists, drawing colors, wheel zoom while drawing, the shared Nuke notes editor,
+independent floor views at 1920/1280/860 pixels, note filters and links, save
+retries, and failed note reads or radar loads. Rust tests separately exercise note persistence across
 database connections, atomic writes, validation, and cascading deletion.
 CI also checks the separate Go parser with `gofmt`, `go vet`, `go test`, and
 `go build` from `plugins/nade-parser`.
@@ -626,7 +683,8 @@ Bundled previews, radar images, and radar coordinate configs currently cover:
 
 Nuke and Vertigo also have lower-level radar images. The application only
 enables lower-level switching when both a lower image and a lower altitude
-boundary exist.
+boundary exist. The lineup workspace uses that switch on both maps; Nuke
+replay instead displays the two floors simultaneously.
 
 The authoritative asset inventory is the repository itself:
 
