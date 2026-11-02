@@ -1,0 +1,12 @@
+.replay-kill-assist.damage.t {
+  color: #ff986b;
+}
+.replay-kill-assist.damage.ct {
+  color: #8dbdff;
+}
+.replay-kill-assist.flash {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  color: #fbbf24;
+}

@@ -78,9 +78,42 @@ function makeRound(number) {
               target_id: String(index + 6),
               side: 'T',
               message: `Player 1 killed Player ${index + 6}`,
-              data: { weapon: 'glock', headshot: true },
+              data: {
+                weapon: 'glock',
+                headshot: true,
+                ...(index === 1 ? { assister_id: 2 } : {}),
+                ...(index === 2
+                  ? {
+                      assister_id: '2',
+                      assisted_flash: true,
+                      flash_assister_id: '3',
+                    }
+                  : {}),
+                ...(index === 3
+                  ? {
+                      assister_id: '2',
+                      assisted_flash: true,
+                      flash_assister_id: '2',
+                    }
+                  : {}),
+                ...(index === 4 ? { assisted_flash: true } : {}),
+              },
             }),
         );
+  if (number > 0) {
+    for (const [seconds, attacker, victim] of [
+      [44, '2', '7'],
+      [53, '5', '8'], // Too old to contribute to the kill at 60 seconds.
+      [58, '2', '8'],
+      [59, '4', '8'],
+      [59.5, '3', '8'], // The flash assister must not also appear as damage.
+      [59.75, '1', '8'], // The killer must not appear as an assister.
+      [60.5, '5', '8'], // Future damage must not appear when seeking backward.
+    ])
+      events.push(
+        event(seconds, 'damage', { player_id: attacker, target_id: victim }),
+      );
+  }
   if (number === 1) {
     events.push(event(12, 'bomb_plant_begin', { player_id: '1' }));
   }

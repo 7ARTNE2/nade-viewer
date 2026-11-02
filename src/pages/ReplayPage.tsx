@@ -29,7 +29,7 @@ import {
   X,
 } from 'lucide-react';
 import c4Icon from '../assets/equipment_icons/c4.svg';
-import flashbangAssistIcon from '../assets/equipment_icons/flashbang_assist.svg';
+import ReplayKillAssists from '../components/ReplayKillAssists';
 import defuserIcon from '../assets/equipment_icons/defuser.svg';
 import armorIcon from '../assets/equipment_icons/armor.svg';
 import armorHelmetIcon from '../assets/equipment_icons/armor_helmet.svg';
@@ -1402,6 +1402,10 @@ export default function ReplayPage() {
                 preview.number === number
                   ? round
                   : roundPreviews[preview.number];
+              const previewDamageEvents =
+                previewData?.events.filter(
+                  (event) => event.type === 'damage',
+                ) ?? [];
               const previewEvents =
                 previewData?.events.filter((event) =>
                   [
@@ -1490,18 +1494,6 @@ export default function ReplayPage() {
                         const victim = eventPlayers.find(
                           (player) => player.id === event.target_id,
                         );
-                        const flashId = String(
-                          event.data?.flash_assister_id ?? '',
-                        );
-                        const assisterId = String(
-                          event.data?.assister_id ?? '',
-                        );
-                        const flashAssister = eventPlayers.find(
-                          (player) => player.id === flashId,
-                        );
-                        const assister = eventPlayers.find(
-                          (player) => player.id === assisterId,
-                        );
                         const weapon = String(event.data?.weapon ?? '');
                         const notices = killNotices(event)
                           .map((id) => ({ id, icon: deathNoticeIcon(id) }))
@@ -1518,18 +1510,13 @@ export default function ReplayPage() {
                               >
                                 {killer?.name ?? event.player_id ?? 'World'}
                               </b>
-                              {event.data?.assisted_flash === true &&
-                                flashAssister && (
-                                  <span className="replay-round-rail-card-assist flash">
-                                    <img src={flashbangAssistIcon} alt="" />+
-                                    {flashAssister.name}
-                                  </span>
-                                )}
-                              {assister && (
-                                <span className="replay-round-rail-card-assist">
-                                  +{assister.name}
-                                </span>
-                              )}
+                              <ReplayKillAssists
+                                event={event}
+                                players={eventPlayers}
+                                events={previewDamageEvents}
+                                tickrate={detail.metadata.tickrate}
+                                className="replay-round-rail-card-assist"
+                              />
                               {weapon && (
                                 <img
                                   className="replay-round-rail-card-weapon"
@@ -1620,45 +1607,6 @@ export default function ReplayPage() {
                           const victim = playersAtEvent.find(
                             (player) => player.id === event.target_id,
                           );
-                          const assisterId =
-                            typeof event.data?.assister_id === 'string' ||
-                            typeof event.data?.assister_id === 'number'
-                              ? String(event.data.assister_id)
-                              : '';
-                          const assister = playersAtEvent.find(
-                            (player) => player.id === assisterId,
-                          );
-                          const storedFlashAssisterId =
-                            typeof event.data?.flash_assister_id === 'string' ||
-                            typeof event.data?.flash_assister_id === 'number'
-                              ? String(event.data.flash_assister_id)
-                              : '';
-                          const flashAssister = playersAtEvent.find(
-                            (player) => player.id === storedFlashAssisterId,
-                          );
-                          const isFlashAssist =
-                            event.data?.assisted_flash === true;
-                          const damageAssistEvent = damageEvents
-                            .filter(
-                              (candidate) =>
-                                candidate.target_id === event.target_id &&
-                                candidate.player_id &&
-                                candidate.player_id !== event.player_id &&
-                                candidate.player_id !== storedFlashAssisterId &&
-                                candidate.tick <= event.tick &&
-                                candidate.tick >=
-                                  event.tick - detail.metadata.tickrate * 5,
-                            )
-                            .sort((a, b) => b.tick - a.tick)[0];
-                          const damageAssister = damageAssistEvent
-                            ? playersAtEvent.find(
-                                (player) =>
-                                  player.id === damageAssistEvent.player_id,
-                              )
-                            : undefined;
-                          const flashAssisterId =
-                            storedFlashAssisterId || flashAssister?.id;
-                          const damageAssisterId = damageAssister?.id;
                           const notices = killNotices(event)
                             .map((id) => ({ id, icon: deathNoticeIcon(id) }))
                             .filter((item) => item.icon);
@@ -1672,40 +1620,13 @@ export default function ReplayPage() {
                               >
                                 {killer?.name ?? event.player_id ?? 'World'}
                               </span>
-                              {assister && assister.id !== flashAssisterId && (
-                                <span
-                                  className={`replay-killfeed-assist damage ${String(assister.side).toLowerCase()}`}
-                                >
-                                  +{assister.name}
-                                </span>
-                              )}
-                              {damageAssister &&
-                                damageAssisterId !== assister?.id &&
-                                damageAssisterId !== flashAssisterId && (
-                                  <span
-                                    className={`replay-killfeed-assist damage ${String(damageAssister.side).toLowerCase()}`}
-                                  >
-                                    +{damageAssister.name}
-                                  </span>
-                                )}
-                              {isFlashAssist && (
-                                <span
-                                  className={`replay-killfeed-assist flash ${String(flashAssister?.side ?? 'world').toLowerCase()}`}
-                                  data-tip={tr(
-                                    'Flash assist',
-                                    'Ассист флешкой',
-                                  )}
-                                >
-                                  <img
-                                    className="replay-killfeed-assist-icon"
-                                    src={flashbangAssistIcon}
-                                    alt=""
-                                  />
-                                  {flashAssister
-                                    ? `+${flashAssister.name}`
-                                    : ''}
-                                </span>
-                              )}
+                              <ReplayKillAssists
+                                event={event}
+                                players={playersAtEvent}
+                                events={damageEvents}
+                                tickrate={detail.metadata.tickrate}
+                                className="replay-killfeed-assist"
+                              />
                               {weapon && (
                                 <img
                                   src={weaponIcon(weapon)}

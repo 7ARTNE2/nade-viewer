@@ -24,7 +24,7 @@ import {
 import type { ReplayEvent, ReplayRound } from '../types/replay';
 import GrenadeMapIcon from './GrenadeMapIcon';
 import type { ReplayGrenade } from '../types/replay';
-import flashbangAssistIcon from '../assets/equipment_icons/flashbang_assist.svg';
+import ReplayKillAssists from './ReplayKillAssists';
 import { deathNoticeIcon } from '../lib/deathNoticeIcons';
 import { weaponIcon } from '../lib/weaponIcons';
 import { playersAt } from '../lib/replayPlayback';
@@ -59,6 +59,10 @@ export default function ReplayTimeline({
   showFreezeTime,
 }: Props) {
   const { tr } = useI18n();
+  const damageEvents = useMemo(
+    () => round.events.filter((event) => event.type === 'damage'),
+    [round],
+  );
   const [hoveredKill, setHoveredKill] = useState<number | null>(null);
   const [hoveredGrenade, setHoveredGrenade] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
@@ -489,16 +493,6 @@ export default function ReplayTimeline({
                 const victim = eventPlayers.find(
                   (player) => player.id === event.target_id,
                 );
-                const assisterId = String(event.data?.assister_id ?? '');
-                const flashAssisterId = String(
-                  event.data?.flash_assister_id ?? '',
-                );
-                const assister = eventPlayers.find(
-                  (player) => player.id === assisterId,
-                );
-                const flashAssister = eventPlayers.find(
-                  (player) => player.id === flashAssisterId,
-                );
                 const weapon = String(event.data?.weapon ?? '');
                 const notices = [
                   event.data?.headshot === true ? 'headshot' : '',
@@ -550,18 +544,13 @@ export default function ReplayTimeline({
                           >
                             {killer?.name ?? event.player_id ?? 'World'}
                           </b>
-                          {event.data?.assisted_flash === true &&
-                            flashAssister && (
-                              <span className="replay-timeline-kill-assist flash">
-                                <img src={flashbangAssistIcon} alt="" />+
-                                {flashAssister.name}
-                              </span>
-                            )}
-                          {assister && (
-                            <span className="replay-timeline-kill-assist">
-                              +{assister.name}
-                            </span>
-                          )}
+                          <ReplayKillAssists
+                            event={event}
+                            players={eventPlayers}
+                            events={damageEvents}
+                            tickrate={tickrate}
+                            className="replay-timeline-kill-assist"
+                          />
                           {weapon && (
                             <img
                               className="replay-timeline-kill-weapon"

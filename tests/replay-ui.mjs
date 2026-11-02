@@ -349,6 +349,107 @@ try {
     );
     await seekTimeline(first.frames[0].tick);
   }
+  if (!records) {
+    const assistState = (container) =>
+      container.locator('.replay-kill-assist').evaluateAll((nodes) =>
+        nodes.map((node) => ({
+          text: node.textContent.trim(),
+          type: node.classList.contains('flash') ? 'flash' : 'damage',
+          color: window.getComputedStyle(node).color,
+          icons: node.querySelectorAll('img').length,
+        })),
+      );
+    const expected = [
+      [],
+      [
+        {
+          text: '+Player 2',
+          type: 'damage',
+          color: 'rgb(255, 152, 107)',
+          icons: 0,
+        },
+      ],
+      [
+        {
+          text: '+Player 2',
+          type: 'damage',
+          color: 'rgb(255, 152, 107)',
+          icons: 0,
+        },
+        {
+          text: '+Player 4',
+          type: 'damage',
+          color: 'rgb(255, 152, 107)',
+          icons: 0,
+        },
+        {
+          text: '+Player 3',
+          type: 'flash',
+          color: 'rgb(251, 191, 36)',
+          icons: 1,
+        },
+      ],
+      [
+        {
+          text: '+Player 2',
+          type: 'flash',
+          color: 'rgb(251, 191, 36)',
+          icons: 1,
+        },
+      ],
+      [{ text: '', type: 'flash', color: 'rgb(251, 191, 36)', icons: 1 }],
+    ];
+    const kills = first.events.filter((event) => event.type === 'kill');
+    for (const [index, event] of kills.entries()) {
+      await seekTimeline(event.tick);
+      const feed = page.locator('.replay-killfeed-row').last();
+      assert.deepEqual(
+        await assistState(feed),
+        expected[index],
+        `killfeed assist case ${index}`,
+      );
+      await page.locator('.replay-round-rail-list button.active').hover();
+      const roundPreview = page
+        .locator('.replay-round-rail-card-kill')
+        .nth(index);
+      await roundPreview.waitFor();
+      assert.deepEqual(
+        await assistState(roundPreview),
+        expected[index],
+        `round preview must match killfeed case ${index}`,
+      );
+      if (index === 2)
+        await page.screenshot({ path: 'dist/replay-checks/round-assists.png' });
+      await page
+        .locator(
+          `.replay-timeline-event-marker[data-tick="${event.tick}"] button`,
+        )
+        .hover();
+      const timelinePreview = page.locator('.replay-timeline-kill-preview');
+      await timelinePreview.waitFor();
+      assert.deepEqual(
+        await assistState(timelinePreview),
+        expected[index],
+        `timeline preview must match killfeed case ${index}`,
+      );
+      if (index === 2)
+        await page.screenshot({
+          path: 'dist/replay-checks/timeline-assists.png',
+        });
+    }
+    // A hovered, unloaded round uses its own event history for damage assists.
+    await page
+      .locator('.replay-round-rail-list button')
+      .filter({ has: page.locator('span', { hasText: /^R2$/ }) })
+      .hover();
+    await page.locator('.replay-round-rail-card-kill').nth(2).waitFor();
+    assert.deepEqual(
+      await assistState(page.locator('.replay-round-rail-card-kill').nth(2)),
+      expected[2],
+    );
+    await page.mouse.move(0, 0);
+    await seekTimeline(first.frames[0].tick);
+  }
   const checkSliderLayers = async () => {
     const layers = await timeline.evaluate((slider) => {
       const track = document.querySelector('.replay-timeline-track');
