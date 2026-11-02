@@ -115,11 +115,13 @@ pub(crate) fn list_replays(app: AppHandle) -> Result<Vec<ReplayEntry>> {
                 .unwrap_or_default()
                 .trim()
                 .to_string();
-            // Count round winners using the team names carried by frames.
-            // T/CT sides change after halftime, while metadata keeps the
-            // parser's final side orientation. Infer a missing side from the
-            // two stable metadata team names before counting the winner.
-            let mut wins_by_team = std::collections::HashMap::<String, i64>::new();
+            // The last round summary contains the score at its start. Add
+            // that round's winner to get the final score. Unlike a cumulative
+            // winner count this remains valid when T/CT sides switch at half.
+            let mut final_score_t = 0_i64;
+            let mut final_score_ct = 0_i64;
+            let mut final_team_t = String::new();
+            let mut final_team_ct = String::new();
             let mut rounds = conn
                 .prepare("SELECT number,summary,data FROM rounds WHERE match_id=?1 ORDER BY number")
                 .map_err(|e| e.to_string())?;
@@ -154,21 +156,33 @@ pub(crate) fn list_replays(app: AppHandle) -> Result<Vec<ReplayEntry>> {
                         if !round_t.is_empty() && !round_ct.is_empty() { break; }
                     }
                 }
+                if !round_t.is_empty() {
+                    final_team_t = round_t.clone();
+                }
+                if !round_ct.is_empty() {
+                    final_team_ct = round_ct.clone();
+                }
                 if round_t.is_empty() && round_ct == team_t { round_t = team_ct.clone(); }
                 if round_ct.is_empty() && round_t == team_t { round_ct = team_ct.clone(); }
                 if round_t.is_empty() && round_ct == team_ct { round_t = team_t.clone(); }
                 if round_ct.is_empty() && round_t == team_ct { round_ct = team_t.clone(); }
-                let winner_team = match winner_side {
-                    "T" => round_t,
-                    "CT" => round_ct,
-                    _ => String::new(),
-                };
-                if !winner_team.is_empty() {
-                    *wins_by_team.entry(winner_team).or_insert(0) += 1;
+                final_score_t = summary["score_t"].as_i64().unwrap_or(final_score_t);
+                final_score_ct = summary["score_ct"].as_i64().unwrap_or(final_score_ct);
+                if winner_side == "T" {
+                    final_score_t += 1;
+                } else if winner_side == "CT" {
+                    final_score_ct += 1;
                 }
             }
-            let score_t = wins_by_team.get(&team_t).copied().unwrap_or(0);
-            let score_ct = wins_by_team.get(&team_ct).copied().unwrap_or(0);
+            let score_t = final_score_t;
+            let score_ct = final_score_ct;
+            let mut display_metadata = metadata_value;
+            if !final_team_t.is_empty() {
+                display_metadata["team_t"] = Value::String(final_team_t);
+            }
+            if !final_team_ct.is_empty() {
+                display_metadata["team_ct"] = Value::String(final_team_ct);
+            }
             let winner_side = if score_t > score_ct {
                 "T".to_string()
             } else if score_ct > score_t {
@@ -178,7 +192,7 @@ pub(crate) fn list_replays(app: AppHandle) -> Result<Vec<ReplayEntry>> {
             };
             Ok(ReplayEntry {
                 id,
-                metadata: metadata_value,
+                metadata: display_metadata,
                 size,
                 round_number,
                 tick,
