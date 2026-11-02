@@ -1,4 +1,5 @@
 import type {
+  ReplayEvent,
   ReplayFrame,
   ReplayPlayer,
   ReplayRound,
@@ -48,10 +49,12 @@ export function playersAt(
           .map((e) => e.target_id),
       );
   return frame.players.map((player) =>
-    (killTicks
-      ? (killTicks.get(player.id) ?? Infinity) > frame.tick &&
-        (killTicks.get(player.id) ?? Infinity) <= tick
-      : killed!.has(player.id))
+    (
+      killTicks
+        ? (killTicks.get(player.id) ?? Infinity) > frame.tick &&
+          (killTicks.get(player.id) ?? Infinity) <= tick
+        : killed!.has(player.id)
+    )
       ? { ...player, alive: false, health: 0 }
       : player,
   );
@@ -73,6 +76,38 @@ export function interpolatePlayer(
     yaw: a.yaw + delta * t,
   };
 }
+export function playerBombAction(
+  player: ReplayPlayer,
+  tick: number,
+  tickrate: number,
+  events: readonly ReplayEvent[],
+) {
+  if (!player.alive || tickrate <= 0 || (!player.planting && !player.defusing))
+    return null;
+  const defusing = Boolean(player.defusing);
+  const startType = defusing ? 'bomb_defuse_start' : 'bomb_plant_begin';
+  let lo = 0,
+    hi = events.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if (events[mid].tick <= tick) lo = mid + 1;
+    else hi = mid;
+  }
+  const start = events[lo - 1];
+  // Sampled flags can persist across rounds. Only a start event in this
+  // round can establish an action; completion events invalidate it immediately.
+  if (start?.type !== startType) return null;
+  const duration = defusing ? (player.has_defuse_kit ? 5 : 10) : 3.2;
+  const elapsed = (tick - start.tick) / tickrate;
+  if (elapsed < 0 || elapsed >= duration) return null;
+  return {
+    label: defusing ? 'DEFUSE' : 'PLANT',
+    defusing,
+    progress: elapsed / duration,
+    remaining: duration - elapsed,
+  };
+}
+
 export function roundBounds(round: ReplayRound): [number, number] {
   const start = round.frames[0]?.tick ?? round.round.start_tick;
   const end =
@@ -196,8 +231,15 @@ export function activeSmokes(
   // A smoke cannot stay active longer than 18 seconds. Starting at this
   // bounded window avoids rescanning the complete event history on every
   // canvas frame in long demos.
-  const startIndex = firstEventAtOrAfter(events, tick - Math.round(tickrate * 18));
-  for (let eventIndex = startIndex; eventIndex < events.length; eventIndex += 1) {
+  const startIndex = firstEventAtOrAfter(
+    events,
+    tick - Math.round(tickrate * 18),
+  );
+  for (
+    let eventIndex = startIndex;
+    eventIndex < events.length;
+    eventIndex += 1
+  ) {
     const event = events[eventIndex];
     if (event.tick > tick) break;
     const id = String(event.data?.grenade_entity_id ?? '');

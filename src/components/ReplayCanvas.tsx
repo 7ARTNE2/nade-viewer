@@ -8,6 +8,7 @@ import {
   clamp,
   framePair,
   interpolatePlayer,
+  playerBombAction,
   playersAt,
 } from '../lib/replayPlayback';
 import { isWindowActive, onWindowActiveChange } from '../lib/windowActive';
@@ -258,7 +259,9 @@ export default function ReplayCanvas({
     for (const event of round.events) {
       if (
         event.type !== 'bomb_plant_begin' &&
-        event.type !== 'bomb_defuse_start'
+        event.type !== 'bomb_defuse_start' &&
+        event.type !== 'bomb_planted' &&
+        event.type !== 'bomb_defused'
       )
         continue;
       if (!event.player_id) continue;
@@ -1370,41 +1373,23 @@ export default function ReplayCanvas({
               ctx.fill();
               ctx.restore();
             }
-            const action = player.planting || player.defusing ? player : null;
+            const action = playerBombAction(
+              player,
+              tick,
+              tickrate,
+              actionEventsByPlayer.get(player.id) ?? [],
+            );
             if (action) {
-              const actionType = player.defusing
-                ? 'bomb_defuse_start'
-                : 'bomb_plant_begin';
-              const actionEvents = actionEventsByPlayer.get(player.id) ?? [];
-              let actionLo = 0;
-              let actionHi = actionEvents.length;
-              while (actionLo < actionHi) {
-                const mid = (actionLo + actionHi) >>> 1;
-                if (actionEvents[mid].tick <= tick) actionLo = mid + 1;
-                else actionHi = mid;
-              }
-              const startEvent =
-                actionEvents[actionLo - 1]?.type === actionType
-                  ? actionEvents[actionLo - 1]
-                  : undefined;
-              const duration = player.defusing
-                ? player.has_defuse_kit
-                  ? 5
-                  : 10
-                : 3.2;
-              const progress = startEvent
-                ? clamp((tick - startEvent.tick) / (tickrate * duration), 0, 1)
-                : 0;
               ctx.fillStyle = 'rgba(8,12,16,.82)';
               ctx.fillRect(x - 22, y - 28, 44, 5);
-              ctx.fillStyle = player.defusing ? '#8fd8ff' : '#ffbd70';
-              ctx.fillRect(x - 21, y - 27, 42 * progress, 3);
+              ctx.fillStyle = action.defusing ? '#8fd8ff' : '#ffbd70';
+              ctx.fillRect(x - 21, y - 27, 42 * action.progress, 3);
               ctx.fillStyle = '#f8fafc';
               ctx.font = '700 8px Segoe UI';
               ctx.textAlign = 'center';
               ctx.textBaseline = 'bottom';
               ctx.fillText(
-                `${player.defusing ? 'DEFUSE' : 'PLANT'} ${Math.max(0, duration - (tick - (startEvent?.tick ?? tick)) / tickrate).toFixed(1)}s`,
+                `${action.label} ${action.remaining.toFixed(1)}s`,
                 x,
                 y - 30,
               );

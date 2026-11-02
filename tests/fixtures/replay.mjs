@@ -71,23 +71,30 @@ function makeRound(number) {
   const events =
     number === 0
       ? []
-      : [20, 45, 60, 70, 80].map((seconds, index) =>
-          event(seconds, 'kill', {
-            player_id: '1',
-            target_id: String(index + 6),
-            side: 'T',
-            message: `Player 1 killed Player ${index + 6}`,
-            data: { weapon: 'glock', headshot: true },
-          }),
+      : (number === 3 ? [20, 45, 60, 70] : [20, 45, 60, 70, 80]).map(
+          (seconds, index) =>
+            event(seconds, 'kill', {
+              player_id: '1',
+              target_id: String(index + 6),
+              side: 'T',
+              message: `Player 1 killed Player ${index + 6}`,
+              data: { weapon: 'glock', headshot: true },
+            }),
         );
+  if (number === 1) {
+    events.push(event(12, 'bomb_plant_begin', { player_id: '1' }));
+  }
   if (number === 3) {
+    events.push(event(47, 'bomb_plant_begin', { player_id: '1' }));
     events.push(
       event(50, 'bomb_planted', {
+        player_id: '1',
         message: 'A',
         data: { duration_seconds: 40 },
       }),
     );
-    events.push(event(85, 'bomb_defused'));
+    events.push(event(80, 'bomb_defuse_start', { player_id: '10' }));
+    events.push(event(85, 'bomb_defused', { player_id: '10' }));
   }
   events.sort((a, b) => a.tick - b.tick);
   const frames = [];
@@ -104,6 +111,13 @@ function makeRound(number) {
           x: p.x + Math.max(0, tick - freeze) / tickrate,
           alive: !dead,
           health: dead ? 0 : 100,
+          // Reproduce flags left over from a previous round, including a
+          // missing completion event in round 1. The UI must validate events.
+          planting:
+            p.id === '1' &&
+            (number === 1 || (number === 3 && tick < freeze + 50 * tickrate)),
+          defusing:
+            p.id === '10' && number === 3 && tick < freeze + 85 * tickrate,
         };
       }),
       projectiles: grenades.flatMap((g) => {

@@ -85,6 +85,17 @@ try {
         },
       });
       const drawImage = window.CanvasRenderingContext2D.prototype.drawImage;
+      const clearRect = window.CanvasRenderingContext2D.prototype.clearRect;
+      window.CanvasRenderingContext2D.prototype.clearRect = function (...args) {
+        window.__replayActionLabels = [];
+        return clearRect.apply(this, args);
+      };
+      const fillText = window.CanvasRenderingContext2D.prototype.fillText;
+      window.CanvasRenderingContext2D.prototype.fillText = function (...args) {
+        if (/^(PLANT|DEFUSE) /.test(args[0]))
+          window.__replayActionLabels.push(args[0]);
+        return fillText.apply(this, args);
+      };
       window.CanvasRenderingContext2D.prototype.drawImage = function (...args) {
         if (args[0].src?.includes('_radar_') && args[0].naturalWidth > 0) {
           window.__replayCamera = args.slice(1);
@@ -264,6 +275,43 @@ try {
       setter.call(slider, String(tick));
       slider.dispatchEvent(new window.Event('input', { bubbles: true }));
     }, value);
+  }
+  const actionLabelsAt = async (tick) => {
+    await seekTimeline(tick);
+    return page.evaluate(
+      () =>
+        new Promise((resolve) => {
+          window.requestAnimationFrame(() =>
+            window.requestAnimationFrame(() =>
+              resolve(window.__replayActionLabels),
+            ),
+          );
+        }),
+    );
+  };
+  if (!records) {
+    const begin = first.events.find((e) => e.type === 'bomb_plant_begin');
+    assert.deepEqual(
+      await actionLabelsAt(first.frames[0].tick),
+      [],
+      'stale flags must not start an action',
+    );
+    assert.ok(
+      (await actionLabelsAt(begin.tick + metadata.tickrate / 2)).includes(
+        'PLANT 2.7s',
+      ),
+    );
+    assert.deepEqual(
+      await actionLabelsAt(begin.tick + metadata.tickrate * 4),
+      [],
+      'a stale flag must not extend an expired action',
+    );
+    assert.deepEqual(
+      await actionLabelsAt(begin.tick - 1),
+      [],
+      'seeking backward must not use a future start',
+    );
+    await seekTimeline(first.frames[0].tick);
   }
   const checkSliderLayers = async () => {
     const layers = await timeline.evaluate((slider) => {
@@ -610,6 +658,49 @@ try {
   const terminalLabel =
     resolved.type === 'bomb_defused' ? 'Обезврежена' : 'Взорвалась';
   assert.ok(plant && resolved);
+  const plantBegin = bombRound.events.find(
+    (e) => e.type === 'bomb_plant_begin' && e.player_id === plant.player_id,
+  );
+  assert.ok(plantBegin, 'fixture must contain a plant start event');
+  assert.deepEqual(
+    await actionLabelsAt(bombRound.round.freeze_end_tick),
+    [],
+    'round-start flags must not show a future plant or defuse',
+  );
+  assert.deepEqual(await actionLabelsAt(plantBegin.tick - 1), []);
+  assert.ok(
+    (await actionLabelsAt(plantBegin.tick + metadata.tickrate / 2)).includes(
+      'PLANT 2.7s',
+    ),
+    'real plant countdown must remain visible',
+  );
+  assert.ok(
+    !(await actionLabelsAt(plant.tick)).some((label) =>
+      label.startsWith('PLANT '),
+    ),
+    'plant completion must immediately hide the bar',
+  );
+  assert.deepEqual(
+    await actionLabelsAt(bombRound.round.freeze_end_tick),
+    [],
+    'rewinding must clear the action indicator',
+  );
+  const defuseBegin = bombRound.events.find(
+    (e) => e.type === 'bomb_defuse_start',
+  );
+  if (defuseBegin) {
+    assert.ok(
+      (await actionLabelsAt(defuseBegin.tick + metadata.tickrate)).some(
+        (label) => label.startsWith('DEFUSE '),
+      ),
+    );
+    assert.ok(
+      !(await actionLabelsAt(resolved.tick)).some((label) =>
+        label.startsWith('DEFUSE '),
+      ),
+      'defuse completion must immediately hide the bar',
+    );
+  }
   await seekTimeline(plant.tick - 1);
   assert.equal(await page.locator('.replay-clocks.has-bomb').count(), 0);
   await seekTimeline(plant.tick);
