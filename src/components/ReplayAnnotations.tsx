@@ -15,9 +15,10 @@ import { useI18n } from '../i18n';
 import type { ReplayDetail, ReplayRound } from '../types/replay';
 import './ReplayAnnotations.css';
 import {
-  loadReplayNotes,
-  replayNotesKey,
+  retryReplayNotes,
   saveReplayNotes,
+  useReplayNotes,
+  useAllReplayNotes,
   type ReplayNote as Note,
   type ReplayStroke as Stroke,
 } from '../lib/replayNotes';
@@ -83,19 +84,24 @@ export default function ReplayAnnotations({
   onSeek,
 }: Props) {
   const { tr } = useI18n();
-  const storageKey = replayNotesKey(detail);
-  const [notes, setNotes] = useState<Note[]>(() => loadReplayNotes(storageKey));
+  const notes = useReplayNotes(detail);
+  const notesState = useAllReplayNotes();
+  const ready = !notesState.loading && !notesState.loadError;
+  const saveError = notesState.loadError || notesState.saveErrors[detail.id];
+  const setNotes = (update: (all: Note[]) => Note[]) => {
+    if (ready) saveReplayNotes(detail.id, update(notes));
+  };
   const [open, setOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [searchParams] = useSearchParams();
   const requestedNoteId = searchParams.get('note');
+  const openedRequest = useRef<string | null>(null);
   const [tool, setTool] = useState<Stroke['tool']>('pen');
   const [color, setColor] = useState<string>(colors[0][0]);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const palette = useRef<HTMLDivElement>(null);
   const [draft, setDraft] = useState<Stroke | null>(null);
   const gesture = useRef<Stroke | null>(null);
-  const [saveError, setSaveError] = useState(false);
   const svg = useRef<SVGSVGElement>(null);
   const [size, setSize] = useState({ width: 1, height: 1 });
   const currentNotes = notes.filter((n) => n.round === round.round_number);
@@ -107,21 +113,14 @@ export default function ReplayAnnotations({
   const ox = (size.width - 1024 * unit) / 2 + view.x;
   const oy = (size.height - 1024 * unit) / 2 + view.y;
   useEffect(() => {
-    const note = loadReplayNotes(storageKey).find(
-      (item) => item.id === requestedNoteId,
-    );
+    const request = requestedNoteId ? `${detail.id}:${requestedNoteId}` : null;
+    if (!request || openedRequest.current === request) return;
+    const note = notes.find((item) => item.id === requestedNoteId);
     if (note?.round !== round.round_number || note.lower !== lower) return;
+    openedRequest.current = request;
     setSelectedId(note.id);
     setOpen(true);
-  }, [requestedNoteId, storageKey, round.round_number, lower]);
-  useEffect(() => {
-    try {
-      saveReplayNotes(storageKey, notes);
-      setSaveError(false);
-    } catch {
-      setSaveError(true);
-    }
-  }, [notes, storageKey]);
+  }, [requestedNoteId, notes, round.round_number, lower, detail.id]);
   useEffect(() => {
     if (!svg.current) return;
     const observer = new ResizeObserver(([entry]) =>
@@ -200,7 +199,7 @@ export default function ReplayAnnotations({
         className={`replay-annotations ${open && detail.radar ? 'is-drawing' : ''}`}
         aria-label={tr('Replay drawings', 'Рисунки реплея')}
         onPointerDown={(e) => {
-          if (!open || !detail.radar || e.button !== 0) return;
+          if (!open || !detail.radar || !ready || e.button !== 0) return;
           e.preventDefault();
           onPause();
           e.currentTarget.setPointerCapture(e.pointerId);
@@ -387,6 +386,7 @@ export default function ReplayAnnotations({
           </p>
           <div className="replay-note-actions">
             <button
+              disabled={!ready}
               onClick={() => {
                 onPause();
                 const note = makeNote();
@@ -418,6 +418,7 @@ export default function ReplayAnnotations({
               {selected?.lower ? ` · ${tr('Lower', 'Нижний')}` : ''}
             </span>
             <textarea
+              disabled={!ready}
               aria-label={tr('Note text', 'Текст заметки')}
               placeholder={tr(
                 'Add a note about this moment…',
@@ -455,10 +456,19 @@ export default function ReplayAnnotations({
           {saveError && (
             <p role="alert">
               {tr(
-                'Unable to save notes. Local storage is full or unavailable.',
-                'Не удалось сохранить заметки: локальное хранилище заполнено или недоступно.',
-              )}
+                'Unable to load or save notes.',
+                'Не удалось загрузить или сохранить заметки.',
+              )}{' '}
+              <button onClick={() => retryReplayNotes(detail.id)}>
+                {tr('Retry', 'Повторить')}
+              </button>
             </p>
+          )}
+          {notesState.loading && (
+            <p role="status">{tr('Loading notes…', 'Загрузка заметок…')}</p>
+          )}
+          {!saveError && notesState.saving.includes(detail.id) && (
+            <p role="status">{tr('Saving…', 'Сохранение…')}</p>
           )}
         </section>
       )}

@@ -9,10 +9,16 @@ const pngIcons = import.meta.glob('../assets/deathnotice_icons/*.png', {
   query: '?url',
 }) as Record<string, string>;
 const byFileName = new Map(
-  Object.entries({ ...svgIcons, ...pngIcons }).map(([path, url]) => [
-    path.split('/').pop()?.replace(/\.(svg|png)$/i, '') ?? '',
-    url,
-  ] as const),
+  Object.entries({ ...svgIcons, ...pngIcons }).map(
+    ([path, url]) =>
+      [
+        path
+          .split('/')
+          .pop()
+          ?.replace(/\.(svg|png)$/i, '') ?? '',
+        url,
+      ] as const,
+  ),
 );
 const explicit: Record<string, string> = {
   blind: 'blind_kill',
@@ -38,4 +44,3 @@ export function deathNoticeIcon(name?: string | null) {
   const file = explicit[value] ?? value.replace(/\s+/g, '_');
   return byFileName.get(file) ?? '';
 }
-

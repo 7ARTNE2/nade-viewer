@@ -4,8 +4,24 @@ Nade Viewer is a Windows desktop application for browsing Counter-Strike grenade
 lineups from local JSON and MessagePack files. It imports lineups into a local SQLite database
 and presents them on bundled radar images. An optional online library update path
 can download a MessagePack snapshot from a configured HTTPS URL and verify its digest.
+It also replays local CS2 demos on a 2D radar and saves round-linked text and
+drawing notes for reviewing matches.
 
-Current application version: **0.6.0**.
+Current application version: **0.7.0**.
+
+## What's new in 0.7.0
+
+- Replay local CS2 demos with round previews, a phase and event timeline,
+  interpolated player movement, equipment, killfeed, and grenade effects.
+- Annotate moments with text and radar drawings, saved automatically in SQLite.
+  Browse notes from every match alongside replay history and jump to their exact
+  round, time, and radar level.
+- Filter notes by match, map, round, and text/drawing content, search their text
+  and match details, and sort by last edit or match, round, and time.
+- See damage and flash assists consistently in the killfeed and kill previews.
+  Flying grenade silhouettes use the timeline's colors; molotovs have animated
+  flames. Replay controls use the application's standard tooltips.
+- The section is named **Replay** in English and **Повторы** in Russian.
 
 ## Features
 
@@ -21,15 +37,15 @@ Current application version: **0.6.0**.
 - Copies grenade and spawn coordinates with animated success and error feedback.
 - Uses a responsive map workspace, persistent view settings, onboarding, and
   localized animated notifications.
-- Stores imported data and settings locally in SQLite.
+- Stores imported lineups, Favorites, parsed replays, and replay notes locally in SQLite.
 - Saves independent grenade snapshots to Favorites and organizes them into named
   collections. Saved data, trajectories, statistics, and screenshots remain
   available after switching or deleting libraries, including the last library.
 - Provides English and Russian interfaces.
 
-### 2D Replay
+### Replay / Повторы
 
-The **2D Replay** section opens local CS2 demos through the separately installed
+The **Replay** section (**Повторы** in Russian) opens local CS2 demos through the separately installed
 Nade Parser 0.3.0 or newer. The player includes rounds, a seekable timeline,
 0.25x to 4x playback, player positions and equipment, kills, bomb state, smoke
 and fire effects, and selectable grenade trajectories with copyable lineup
@@ -44,6 +60,46 @@ compressed round data loaded as needed. Saved matches remain playable without
 the original demo or the parser plugin. The history supports deletion and resumes
 the last viewed round and position. Removing a match does not delete its demo.
 Replay does not automatically import grenades into a library or Favorites.
+
+#### Playback and previews
+
+Use the horizontal round strip to select rounds and preview their events on
+hover. Timeline previews show kills, damage and flash assists, grenade throws,
+and bomb events. Grenade icons on the radar follow their trajectories and use
+the same type colors as the timeline. Selecting a grenade exposes its throw
+details and copyable commands.
+
+Press **Space** to pause or resume and **Left/Right** to seek five seconds.
+These shortcuts are suspended while typing or using another control. Zoom and
+pan the radar with the map controls; **Home** resets the view when the radar is
+focused. Freeze time is
+hidden by default and can be enabled in the replay options. Automatic advance
+to the next round is optional; playback pauses when the app loses focus.
+
+#### Notes and drawings
+
+Open **Notes** in the player to pause playback and annotate the current moment.
+Write text, draw freehand, or use arrows and circles. The palette provides
+preset and custom colors, and Undo removes the last stroke. Notes belong to a
+specific match, round, tick, and radar level; a round badge marks rounds with
+notes. Opening a note restores its time, floor, and drawings, including notes
+made during freeze time.
+
+The panel next to the match list initially shows **all notes from all saved
+matches**. Search by text, demo filename, map, team, or round, and combine the
+match, map, round, and content-type filters. Choose **With text**, **With
+drawings**, or **Text and drawings**; sort by most recently edited or by match,
+round, and time. The note-count button on a match filters the panel to that
+match; click it again to clear that match filter, or reset all filters to show
+every match.
+
+Text and drawing coordinates are saved automatically in the `replay_notes`
+table in `replays.sqlite`. Notes use the saved match ID rather than its parse
+timestamp. Saving is transactional, and an unsuccessful write retains the
+current edits with a Retry action. Notes remain available after restarting
+the app. Deleting an individual note removes it from the database; deleting
+the match removes all its notes. Notes are local and are not included in
+Favorites `.nvshare` exports.
 
 ### Favorites and collections
 
@@ -114,7 +170,7 @@ limitations are documented in [Data formats](docs/data-formats.md).
 ## Technology stack
 
 Versions below are the resolved versions from `package-lock.json` and
-`src-tauri/Cargo.lock` for Nade Viewer 0.6.0.
+`src-tauri/Cargo.lock` for Nade Viewer 0.7.0.
 
 ### Application architecture
 
@@ -133,40 +189,46 @@ Versions below are the resolved versions from `package-lock.json` and
 
 ### Frontend and tooling
 
-| Technology             | Version | Purpose                                    |
-| ---------------------- | ------: | ------------------------------------------ |
-| React                  |  18.3.1 | Component UI and application state         |
-| React DOM              |  18.3.1 | WebView rendering                          |
-| React Router DOM       |  6.30.4 | Client-side navigation                     |
-| TypeScript             |   5.9.3 | Strict static typing, targeting ES2020     |
-| Vite                   |   6.4.3 | Development server and production bundling |
-| `@vitejs/plugin-react` |   4.7.0 | React integration for Vite                 |
-| `@tauri-apps/api`      |  2.10.1 | Frontend access to Tauri APIs              |
-| `@tauri-apps/cli`      |  2.10.1 | Desktop development and packaging          |
-| Lucide React           | 0.468.0 | Interface icons                            |
-| ESLint                 |  9.39.5 | JavaScript and TypeScript linting          |
-| `typescript-eslint`    |  8.64.0 | TypeScript ESLint integration              |
-| Prettier               |   3.9.5 | Source formatting checks                   |
+| Technology                   | Version | Purpose                                    |
+| ---------------------------- | ------: | ------------------------------------------ |
+| React                        |  18.3.1 | Component UI and application state         |
+| React DOM                    |  18.3.1 | WebView rendering                          |
+| React Router DOM             |  6.30.4 | Client-side navigation                     |
+| TypeScript                   |   5.9.3 | Strict static typing, targeting ES2020     |
+| Vite                         |   6.4.3 | Development server and production bundling |
+| `@vitejs/plugin-react`       |   4.7.0 | React integration for Vite                 |
+| `@tauri-apps/api`            |  2.10.1 | Frontend access to Tauri APIs              |
+| `@tauri-apps/cli`            |  2.10.1 | Desktop development and packaging          |
+| `@tauri-apps/plugin-updater` |  2.10.1 | Signed application updates                 |
+| Lucide React                 | 0.468.0 | Interface icons                            |
+| ESLint                       |  9.39.5 | JavaScript and TypeScript linting          |
+| `typescript-eslint`          |  8.64.0 | TypeScript ESLint integration              |
+| Prettier                     |   3.9.5 | Source formatting checks                   |
+| Playwright                   |  1.64.1 | Browser regression checks                  |
 
 The project also uses `@eslint/js` 9.39.5, `@types/react` 18.3.28, and
 `@types/react-dom` 18.3.7 for lint configuration and React type declarations.
 
 ### Rust and native dependencies
 
-| Crate         | Version | Purpose                            |
-| ------------- | ------: | ---------------------------------- |
-| Tauri         |  2.10.3 | Native application runtime and IPC |
-| `tauri-build` |   2.5.6 | Tauri build-time integration       |
-| `rusqlite`    |  0.32.1 | Bundled SQLite storage and queries |
-| Serde         | 1.0.228 | Rust data serialization            |
-| `serde_json`  | 1.0.149 | JSON import and export             |
-| `rmp-serde`   |   1.3.1 | MessagePack import                 |
-| `reqwest`     |  0.13.2 | HTTPS manifest and data downloads  |
-| `sha2`        |  0.10.9 | Download integrity verification    |
-| Chrono        |  0.4.44 | Date and time handling             |
-| Regex         |  1.12.3 | Parsing and text normalization     |
-| RFD           |  0.15.4 | Native file selection dialogs      |
-| Thiserror     |  2.0.18 | Structured backend errors          |
+| Crate                  | Version | Purpose                                   |
+| ---------------------- | ------: | ----------------------------------------- |
+| Tauri                  |  2.10.3 | Native application runtime and IPC        |
+| `tauri-build`          |   2.5.6 | Tauri build-time integration              |
+| `rusqlite`             |  0.32.1 | Bundled SQLite storage and queries        |
+| Serde                  | 1.0.228 | Rust data serialization                   |
+| `serde_json`           | 1.0.149 | JSON import and export                    |
+| `rmp-serde`            |   1.3.1 | MessagePack import                        |
+| `reqwest`              |  0.13.2 | HTTPS manifest and data downloads         |
+| `sha2`                 |  0.10.9 | Download integrity verification           |
+| Chrono                 |  0.4.44 | Date and time handling                    |
+| Regex                  |  1.12.3 | Parsing and text normalization            |
+| RFD                    |  0.15.4 | Native file selection dialogs             |
+| Thiserror              |  2.0.18 | Structured backend errors                 |
+| `tauri-plugin-updater` |  2.10.1 | Signed Windows application updates        |
+| `zstd`                 |  0.13.3 | Compressed replay rounds and library data |
+| `zip`                  |   2.4.2 | Screenshot archive imports                |
+| Image                  | 0.25.10 | Screenshot processing                     |
 
 ### Quality and release pipeline
 
@@ -239,14 +301,21 @@ and manual runs.
 Keep the version synchronized in these files before creating a release:
 
 - `package.json`
+- `package-lock.json` (root version and root package version)
 - `src-tauri/tauri.conf.json`
 - `src-tauri/Cargo.toml`
+- `src-tauri/Cargo.lock` (the `nade-viewer` package)
+- The current version and release examples in this README
+
+The application header and startup screen read their version from `package.json`.
+The separately distributed Nade Parser has its own version and is not bumped
+for Viewer releases.
 
 Create and push a semantic-version tag from the repository root:
 
 ```powershell
-git tag v0.1.0
-git push origin v0.1.0
+git tag -a v0.7.0 -m "Nade Viewer 0.7.0"
+git push --atomic origin main v0.7.0
 ```
 
 Pushing the tag starts the `Release` workflow automatically. It builds the
@@ -347,21 +416,8 @@ $env:NADE_VIEWER_LIBRARY_MANIFEST_URL = "https://example.com/library-manifest.js
 npm run tauri:build
 ```
 
-Use a new version tag for each release, for example:
-
-```powershell
-git tag v0.2.0
-git push origin v0.2.0
-```
-
-For the current release:
-
-```powershell
-  git tag v0.6.0
-  git push origin v0.6.0
-```
-
-Check existing local tags with `git tag` and tags on GitHub with:
+Use a new version tag for each release. Check existing local tags with `git tag`
+and tags on GitHub with:
 
 ```powershell
 git ls-remote --tags origin
@@ -374,7 +430,7 @@ To rebuild an existing tag without creating a new one:
 1. Open the repository's `Actions` tab on GitHub.
 2. Select the `Release` workflow.
 3. Click `Run workflow`.
-4. Enter an existing tag, for example `v0.1.0`.
+4. Enter an existing tag, for example `v0.7.0`.
 5. Click `Run workflow` again.
 
 The manual workflow also requires a tag in the `vMAJOR.MINOR.PATCH` format,
@@ -417,6 +473,13 @@ npm test
 and mocked Tauri IPC. Install the test browser once with `npx playwright install chromium`.
 Run just these regressions with `npm run test:replay`; an existing Chromium binary
 can be selected with `NADE_VIEWER_TEST_BROWSER_PATH`.
+
+Replay regressions cover playback and round navigation, kill and grenade
+previews, assists, drawing colors, note filters, note links, save retries, and
+failed note reads. Rust tests separately exercise note persistence across
+database connections, atomic writes, validation, and cascading deletion.
+CI also checks the separate Go parser with `gofmt`, `go vet`, `go test`, and
+`go build` from `plugins/nade-parser`.
 
 Individual quality commands are also available:
 
@@ -466,10 +529,26 @@ Favorites and collection membership are stored in the same database, while their
 independent screenshots are stored in the adjacent `favorites/` directory. Include
 that directory when backing up saved lineups.
 
+### Replay data and notes
+
+Replay uses the **local**, rather than roaming, application data directory:
+
+```text
+%LOCALAPPDATA%\app.nadeviewer.desktop\replays.sqlite
+```
+
+This database stores parsed match metadata, compressed rounds, playback
+positions, text notes, and drawing strokes. Original `.dem` files are not
+copied into the database. Close Nade Viewer before copying it for a backup;
+while the app runs, SQLite may also keep `replays.sqlite-wal` and
+`replays.sqlite-shm` alongside it. Clearing WebView browser storage does not
+delete SQLite notes. Removing the database or deleting a match in the app does
+remove its notes.
+
 ### Nade Parser workspaces
 
-Nade Parser keeps parsing data in two independent SQLite workspaces under the
-same application data directory:
+Nade Parser keeps parsing data in two independent SQLite workspaces under
+`%LOCALAPPDATA%\app.nadeviewer.desktop`, alongside the replay database:
 
 - `parser-workspace.sqlite` is the `Production` workspace. Existing databases,
   including large libraries, are preserved in place.

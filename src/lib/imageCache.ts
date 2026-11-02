@@ -1,8 +1,13 @@
 import { assetUrl } from './tauri';
 
-const images = new Map<string, { image?: HTMLImageElement; promise: Promise<HTMLImageElement> }>();
+const images = new Map<
+  string,
+  { image?: HTMLImageElement; promise: Promise<HTMLImageElement> }
+>();
 
-export function preloadImage(path?: string | null): Promise<HTMLImageElement | null> {
+export function preloadImage(
+  path?: string | null,
+): Promise<HTMLImageElement | null> {
   if (!path) return Promise.resolve(null);
   const key = assetUrl(path);
   const cached = images.get(key);

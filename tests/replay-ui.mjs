@@ -74,6 +74,39 @@ try {
   const context = await browser.newContext({
     viewport: { width: 1280, height: 720 },
   });
+  // The IPC fixture lives outside the browser so reloads exercise backend reads.
+  let storedNotes = [];
+  await context.exposeBinding(
+    '__replayNotesBackend',
+    async (_, command, args) => {
+      if (command === 'list_replay_notes') return storedNotes;
+      if (command === 'delete_replay') {
+        storedNotes = storedNotes.filter((item) => item.replay_id !== args.id);
+        return null;
+      }
+      const previous = storedNotes.filter(
+        (item) => item.replay_id === args.replayId,
+      );
+      const saved = args.notes.map((note) => {
+        const old = previous.find((item) => item.note.id === note.id);
+        return {
+          replay_id: args.replayId,
+          note,
+          round_summary: rounds.find((r) => r.round_number === note.round)
+            ?.round,
+          updated_at:
+            old && JSON.stringify(old.note) === JSON.stringify(note)
+              ? old.updated_at
+              : Date.now(),
+        };
+      });
+      storedNotes = [
+        ...storedNotes.filter((item) => item.replay_id !== args.replayId),
+        ...saved,
+      ];
+      return saved;
+    },
+  );
   await context.addInitScript(
     ({ metadata, rounds, mapImagePath, radar }) => {
       localStorage.setItem('nadeviewer.locale', 'ru');
@@ -151,7 +184,11 @@ try {
               {
                 ...entry,
                 id: 2,
-                metadata: { ...metadata, demo_filename: 'second-replay.dem' },
+                metadata: {
+                  ...metadata,
+                  map: 'Inferno',
+                  demo_filename: 'second-replay.dem',
+                },
               },
             ]
           : [entry];
@@ -203,6 +240,18 @@ try {
               return job;
             case 'list_replays':
               return entries;
+            case 'list_replay_notes':
+              if (window.__failReplayNotesLoad)
+                throw new Error('Test notes read failed');
+              return window.__replayNotesBackend(command, args);
+            case 'save_replay_notes':
+              if (window.__failReplayNotesSave)
+                throw new Error('Test notes save failed');
+              if (window.__replayNotesSaveDelay)
+                await new Promise((resolve) =>
+                  window.setTimeout(resolve, window.__replayNotesSaveDelay),
+                );
+              return window.__replayNotesBackend(command, args);
             case 'get_replay':
               return {
                 id: args.id,
@@ -229,6 +278,7 @@ try {
               return null;
             case 'delete_replay':
               entries = [];
+              await window.__replayNotesBackend(command, args);
               return null;
             case 'select_demo_files':
               return ['match.dem'];
@@ -594,6 +644,54 @@ try {
   await seekTimeline(noteTick);
   const noteText = page.getByRole('textbox', { name: 'Текст заметки' });
   await noteText.fill('Занять плент после флешки');
+  await page.waitForFunction(() =>
+    window.__replayCalls.some((call) => call.command === 'save_replay_notes'),
+  );
+  assert.equal(
+    await page.evaluate(() =>
+      Object.keys(localStorage).some((key) =>
+        key.startsWith('nadeviewer.replay-notes.'),
+      ),
+    ),
+    false,
+    'notes must use SQLite IPC instead of localStorage',
+  );
+  await page.evaluate(() => {
+    window.__failReplayNotesSave = true;
+  });
+  await noteText.fill('Проверка ошибки сохранения');
+  const noteSaveError = page
+    .getByRole('alert')
+    .filter({ hasText: 'Не удалось загрузить или сохранить заметки.' });
+  await noteSaveError.waitFor();
+  assert.equal(
+    await noteText.inputValue(),
+    'Проверка ошибки сохранения',
+    'a failed write must retain the draft',
+  );
+  await page.evaluate(() => {
+    window.__failReplayNotesSave = false;
+  });
+  await noteSaveError
+    .getByRole('button', { name: 'Повторить', exact: true })
+    .click();
+  await noteSaveError.waitFor({ state: 'hidden' });
+  await page.evaluate(() => {
+    window.__replayNotesSaveDelay = 100;
+  });
+  await noteText.fill('Промежуточный текст');
+  await noteText.fill('Занять плент после флешки');
+  await page.waitForFunction(
+    () => !document.querySelector('.replay-notes-panel [role="status"]'),
+  );
+  assert.equal(
+    storedNotes.find((item) => item.replay_id === 1).note.text,
+    'Занять плент после флешки',
+    'queued saves must persist the newest edit',
+  );
+  await page.evaluate(() => {
+    window.__replayNotesSaveDelay = 0;
+  });
   assert.equal(
     await page
       .locator('.replay-round-rail-list button.active .replay-round-note-badge')
@@ -1302,7 +1400,7 @@ try {
     .waitFor();
   await page.screenshot({ path: 'dist/replay-checks/history.png' });
   const notesPanel = page.getByRole('complementary', {
-    name: 'Заметки матча',
+    name: 'Все заметки реплеев',
     exact: true,
   });
   await notesPanel
@@ -1371,14 +1469,102 @@ try {
   );
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.evaluate(() => window.__setSecondReplay(true));
+  storedNotes.push({
+    replay_id: 2,
+    note: {
+      id: 'second-match-drawing',
+      round: 3,
+      tick: rounds[3].round.freeze_end_tick + 128,
+      lower: false,
+      text: '',
+      strokes: [
+        {
+          tool: 'circle',
+          color: '#123abc',
+          points: [
+            [100, 100],
+            [150, 150],
+          ],
+        },
+      ],
+    },
+    round_summary: rounds[3].round,
+    updated_at: Date.now() + 1000,
+  });
   await page.reload();
+  await notesPanel.locator('.replay-history-note').nth(1).waitFor();
+  assert.equal(
+    await notesPanel.locator('.replay-history-note').count(),
+    2,
+    'all matches must be shown by default',
+  );
+  assert.ok(
+    (
+      await notesPanel.locator('.replay-history-note').first().textContent()
+    ).includes('second-replay.dem'),
+    'recent edits appear first',
+  );
+  const chooseNoteFilter = async (label, option) => {
+    await notesPanel
+      .getByRole('combobox', { name: label, exact: true })
+      .click();
+    await page.getByRole('option', { name: option, exact: true }).click();
+  };
+  await chooseNoteFilter('Тип заметки', 'С рисунками');
+  assert.equal(await notesPanel.locator('.replay-history-note').count(), 1);
+  assert.ok(
+    (await notesPanel.locator('.replay-history-note').textContent()).includes(
+      'second-replay.dem',
+    ),
+  );
+  await chooseNoteFilter('Тип заметки', 'С текстом');
+  assert.equal(await notesPanel.locator('.replay-history-note').count(), 1);
+  await chooseNoteFilter('Тип заметки', 'Текст и рисунки');
+  await notesPanel.getByText('Заметки не найдены', { exact: true }).waitFor();
+  await notesPanel
+    .getByRole('button', { name: 'Сбросить фильтры', exact: true })
+    .click();
+  await chooseNoteFilter('Карта', 'Inferno');
+  assert.equal(await notesPanel.locator('.replay-history-note').count(), 1);
+  await chooseNoteFilter('Раунд', 'Раунд 3');
+  assert.equal(await notesPanel.locator('.replay-history-note').count(), 1);
+  await searchNotes.fill('second-replay');
+  assert.equal(await notesPanel.locator('.replay-history-note').count(), 1);
+  await searchNotes.fill('не существует');
+  await notesPanel.getByText('Заметки не найдены', { exact: true }).waitFor();
+  await notesPanel
+    .getByRole('button', { name: 'Сбросить фильтры', exact: true })
+    .click();
+  await chooseNoteFilter('Сортировка заметок', 'Матч, раунд и время');
+  await chooseNoteFilter('Реплей', `${metadata.demo_filename} ${metadata.map}`);
+  assert.equal(await notesPanel.locator('.replay-history-note').count(), 1);
+  await notesPanel
+    .getByRole('button', { name: 'Сбросить фильтры', exact: true })
+    .click();
+  await page
+    .getByRole('button', {
+      name: 'Заметки матча second-replay.dem: 1',
+      exact: true,
+    })
+    .click();
+  assert.equal(await notesPanel.locator('.replay-history-note').count(), 1);
+  await notesPanel
+    .getByRole('link', { name: /^Открыть заметку: Раунд 3/ })
+    .click();
+  await noteText.waitFor();
+  assert.equal(new URL(page.url()).pathname, '/replays/2');
+  assert.equal(await drawing.locator('circle').count(), 1);
+  await page
+    .getByRole('button', { name: 'Удалить заметку', exact: true })
+    .click();
+  await page.getByRole('button', { name: 'История матчей' }).click();
   await page
     .getByRole('button', {
       name: 'Заметки матча second-replay.dem: 0',
       exact: true,
     })
     .click();
-  await notesPanel.getByText('Пока нет заметок', { exact: true }).waitFor();
+  await notesPanel.getByText('Заметки не найдены', { exact: true }).waitFor();
   await page
     .getByRole('button', {
       name: `Заметки матча ${metadata.demo_filename}: 1`,
@@ -1418,9 +1604,56 @@ try {
     .getByRole('alert')
     .filter({ hasText: 'Parsing cancelled' })
     .waitFor();
+  const failedNotesPage = await context.newPage();
+  failedNotesPage.on('pageerror', (error) => errors.push(error.message));
+  await failedNotesPage.addInitScript(() => {
+    window.__failReplayNotesLoad = true;
+  });
+  await failedNotesPage.goto('http://127.0.0.1:1428/replays/1');
+  await failedNotesPage.getByRole('button', { name: /^Заметки/ }).click();
+  const failedNotesAlert = failedNotesPage
+    .getByRole('alert')
+    .filter({ hasText: 'Не удалось загрузить или сохранить заметки.' });
+  await failedNotesAlert.waitFor();
+  assert.equal(
+    await failedNotesPage
+      .getByRole('textbox', { name: 'Текст заметки' })
+      .isDisabled(),
+    true,
+    'editing is blocked until existing notes have loaded',
+  );
+  assert.equal(
+    await failedNotesPage.evaluate(
+      () =>
+        window.__replayCalls.filter(
+          (call) => call.command === 'save_replay_notes',
+        ).length,
+    ),
+    0,
+    'a failed read must never overwrite stored notes with an empty snapshot',
+  );
+  await failedNotesPage.evaluate(() => {
+    window.__failReplayNotesLoad = false;
+  });
+  await failedNotesAlert
+    .getByRole('button', { name: 'Повторить', exact: true })
+    .click();
+  await failedNotesAlert.waitFor({ state: 'hidden' });
+  await failedNotesPage.getByRole('button', { name: 'История матчей' }).click();
+  await failedNotesPage.locator('.replay-history-note').waitFor();
+  assert.equal(
+    await failedNotesPage.locator('.replay-history-note').count(),
+    1,
+  );
+  await failedNotesPage.close();
   await page.getByRole('button', { name: 'Удалить матч', exact: true }).click();
   await page.getByRole('button', { name: 'Удалить', exact: true }).click();
   await page.getByRole('heading', { name: 'Нет сохранённых матчей' }).waitFor();
+  assert.equal(
+    storedNotes.length,
+    0,
+    'deleting a match removes its SQLite notes',
+  );
   const failedRadarPage = await context.newPage();
   failedRadarPage.on('pageerror', (e) => errors.push(e.message));
   await failedRadarPage.route('**/*_radar_psd.png', (route) => route.abort());

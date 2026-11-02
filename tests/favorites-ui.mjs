@@ -525,6 +525,11 @@ try {
   await chooseMap('Nuke');
   assert.equal(await mapTab('Nuke').getAttribute('aria-pressed'), 'true');
   assert.equal(await mapTab('Ancient').count(), 0);
+  // Appearance is saved independently per map; Nuke starts with asset icons.
+  await page.locator('.map-canvas.icon-theme-asset').waitFor();
+  assert.equal(await pointIcons.getAttribute('aria-pressed'), 'true');
+  await pointIcons.click();
+  await page.locator('.map-canvas.icon-theme-tile').waitFor();
   assert.equal(await pointIcons.getAttribute('aria-pressed'), 'true');
   await pointIcons.click();
   assert.equal(await pointIcons.getAttribute('aria-pressed'), 'false');
@@ -539,6 +544,9 @@ try {
   await page.keyboard.press('Escape');
   await mapTab('Mirage').click();
   await page.locator('.nade-row').first().waitFor();
+  await page.locator('.map-canvas.icon-theme-tile').waitFor();
+  assert.equal(await pointIcons.getAttribute('aria-pressed'), 'true');
+  await pointIcons.click();
   assert.equal(await pointIcons.getAttribute('aria-pressed'), 'false');
   await pointIcons.click();
   await page.evaluate(() => {

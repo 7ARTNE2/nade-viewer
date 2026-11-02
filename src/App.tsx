@@ -568,12 +568,12 @@ function Shell() {
                 </button>
                 <button
                   className={`topbar-nav-link ${location.pathname.startsWith('/replays') ? 'active' : ''}`}
-                  aria-label="2D Replay"
-                  data-tip="2D Replay"
+                  aria-label={tr('Replay', 'Повторы')}
+                  data-tip={tr('Replay', 'Повторы')}
                   onClick={() => navigate('/replays')}
                 >
                   <Film size={16} />
-                  <span>2D Replay</span>
+                  <span>{tr('Replay', 'Повторы')}</span>
                 </button>
                 <div
                   className="language-switch"

@@ -1,6 +1,6 @@
 use crate::{plugin, AppState};
 use rusqlite::{params, Connection, OptionalExtension};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{
     fs,
@@ -32,7 +32,15 @@ fn open(path: &std::path::Path) -> Result<Connection> {
         CREATE TABLE IF NOT EXISTS rounds(
             match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
             number INTEGER NOT NULL, summary TEXT NOT NULL, data BLOB NOT NULL,
-            PRIMARY KEY(match_id,number));",
+            PRIMARY KEY(match_id,number));
+        CREATE TABLE IF NOT EXISTS replay_notes(
+            match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
+            id TEXT NOT NULL, round_number INTEGER NOT NULL, tick REAL NOT NULL,
+            lower_radar INTEGER NOT NULL, text TEXT NOT NULL, strokes TEXT NOT NULL,
+            updated_at INTEGER NOT NULL,
+            PRIMARY KEY(match_id,id),
+            FOREIGN KEY(match_id,round_number) REFERENCES rounds(match_id,number) ON DELETE CASCADE);
+        CREATE INDEX IF NOT EXISTS replay_notes_updated ON replay_notes(updated_at DESC);",
     )
     .map_err(|e| e.to_string())?;
     Ok(conn)
@@ -49,6 +57,149 @@ fn encode(value: &Value) -> Result<Vec<u8>> {
 fn decode(bytes: &[u8]) -> Result<Value> {
     serde_json::from_slice(&zstd::stream::decode_all(bytes).map_err(|e| e.to_string())?)
         .map_err(|e| e.to_string())
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub(crate) struct ReplayStroke {
+    tool: String,
+    color: String,
+    points: Vec<[f64; 2]>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub(crate) struct ReplayNote {
+    id: String,
+    round: i64,
+    tick: f64,
+    lower: bool,
+    text: String,
+    strokes: Vec<ReplayStroke>,
+}
+
+#[derive(Debug, Serialize)]
+pub(crate) struct StoredReplayNote {
+    replay_id: i64,
+    note: ReplayNote,
+    round_summary: Value,
+    updated_at: i64,
+}
+
+fn read_notes(conn: &Connection, replay_id: Option<i64>) -> Result<Vec<StoredReplayNote>> {
+    let mut stmt = conn.prepare(
+        "SELECT n.match_id,n.id,n.round_number,n.tick,n.lower_radar,n.text,n.strokes,r.summary,n.updated_at
+         FROM replay_notes n JOIN rounds r ON r.match_id=n.match_id AND r.number=n.round_number
+         WHERE (?1 IS NULL OR n.match_id=?1) ORDER BY n.updated_at DESC,n.match_id,n.round_number,n.tick,n.id",
+    ).map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map([replay_id], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, i64>(2)?,
+                row.get::<_, f64>(3)?,
+                row.get::<_, bool>(4)?,
+                row.get::<_, String>(5)?,
+                row.get::<_, String>(6)?,
+                row.get::<_, String>(7)?,
+                row.get::<_, i64>(8)?,
+            ))
+        })
+        .map_err(|e| e.to_string())?;
+    rows.map(|row| {
+        let (replay_id, id, round, tick, lower, text, strokes, summary, updated_at) =
+            row.map_err(|e| e.to_string())?;
+        Ok(StoredReplayNote {
+            replay_id,
+            note: ReplayNote {
+                id,
+                round,
+                tick,
+                lower,
+                text,
+                strokes: serde_json::from_str(&strokes).map_err(|e| e.to_string())?,
+            },
+            round_summary: serde_json::from_str(&summary).map_err(|e| e.to_string())?,
+            updated_at,
+        })
+    })
+    .collect()
+}
+
+fn write_notes(
+    conn: &mut Connection,
+    replay_id: i64,
+    notes: &[ReplayNote],
+) -> Result<Vec<StoredReplayNote>> {
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    let exists: bool = tx
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM matches WHERE id=?1)",
+            [replay_id],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    if !exists {
+        return Err("Replay not found".into());
+    }
+    let mut ids = std::collections::HashSet::new();
+    for note in notes {
+        if note.id.is_empty()
+            || !ids.insert(&note.id)
+            || !note.tick.is_finite()
+            || note.tick < 0.0
+            || note.round < 0
+        {
+            return Err("Invalid replay note".into());
+        }
+        for stroke in &note.strokes {
+            if !["pen", "arrow", "circle"].contains(&stroke.tool.as_str())
+                || stroke.color.len() != 7
+                || !stroke.color.starts_with('#')
+                || !stroke.color[1..].bytes().all(|c| c.is_ascii_hexdigit())
+                || stroke.points.is_empty()
+                || stroke.points.iter().flatten().any(|v| !v.is_finite())
+            {
+                return Err("Invalid replay drawing".into());
+            }
+        }
+        tx.execute(
+            "INSERT INTO replay_notes(match_id,id,round_number,tick,lower_radar,text,strokes,updated_at)
+             VALUES(?1,?2,?3,?4,?5,?6,?7,CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER))
+             ON CONFLICT(match_id,id) DO UPDATE SET round_number=excluded.round_number,tick=excluded.tick,
+             lower_radar=excluded.lower_radar,text=excluded.text,strokes=excluded.strokes,updated_at=excluded.updated_at
+             WHERE round_number!=excluded.round_number OR tick!=excluded.tick OR lower_radar!=excluded.lower_radar
+             OR text!=excluded.text OR strokes!=excluded.strokes",
+            params![replay_id,note.id,note.round,note.tick,note.lower,note.text,serde_json::to_string(&note.strokes).map_err(|e| e.to_string())?],
+        ).map_err(|e| e.to_string())?;
+    }
+    // Replace only this replay's collection, keeping unchanged notes' edit times.
+    let old = read_notes(&tx, Some(replay_id))?;
+    for stored in old {
+        if !ids.contains(&stored.note.id) {
+            tx.execute(
+                "DELETE FROM replay_notes WHERE match_id=?1 AND id=?2",
+                params![replay_id, stored.note.id],
+            )
+            .map_err(|e| e.to_string())?;
+        }
+    }
+    let result = read_notes(&tx, Some(replay_id))?;
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(result)
+}
+
+#[tauri::command]
+pub(crate) fn list_replay_notes(app: AppHandle) -> Result<Vec<StoredReplayNote>> {
+    read_notes(&database(&app)?, None)
+}
+
+#[tauri::command]
+pub(crate) fn save_replay_notes(
+    app: AppHandle,
+    replay_id: i64,
+    notes: Vec<ReplayNote>,
+) -> Result<Vec<StoredReplayNote>> {
+    write_notes(&mut database(&app)?, replay_id, &notes)
 }
 
 #[tauri::command]
@@ -513,6 +664,74 @@ fn ingest(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn notes_persist_validate_atomically_and_cascade() {
+        let path = std::env::temp_dir().join(format!(
+            "nade-replay-notes-{}-{}.sqlite",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let mut conn = open(&path).unwrap();
+        for id in [1, 2] {
+            conn.execute(
+                "INSERT INTO matches(id,hash,version,metadata) VALUES(?1,?1,1,'{}')",
+                [id],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO rounds(match_id,number,summary,data) VALUES(?1,1,?2,x'00')",
+                params![
+                    id,
+                    json!({"number":1,"start_tick":100,"freeze_end_tick":200,"end_tick":1000})
+                        .to_string()
+                ],
+            )
+            .unwrap();
+        }
+        let mut note: ReplayNote = serde_json::from_value(json!({"id":"same-note-id","round":1,"tick":350.5,"lower":true,"text":"Занять B","strokes":[{"tool":"arrow","color":"#123abc","points":[[10.25,20.5],[50.0,75.0]]}]})).unwrap();
+        let first = write_notes(&mut conn, 1, &[note.clone()]).unwrap();
+        let timestamp = first[0].updated_at;
+        write_notes(&mut conn, 2, &[note.clone()]).unwrap();
+        // Saving another replay with the same note ID must not affect this one.
+        note.text = "Вторая запись".into();
+        write_notes(&mut conn, 2, &[note.clone()]).unwrap();
+        drop(conn);
+        let mut conn = open(&path).unwrap();
+        let saved = read_notes(&conn, Some(1)).unwrap();
+        assert_eq!(saved.len(), 1);
+        assert_eq!(saved[0].note.text, "Занять B");
+        assert_eq!(saved[0].note.tick, 350.5);
+        assert!(saved[0].note.lower);
+        assert_eq!(
+            saved[0].note.strokes[0].points,
+            vec![[10.25, 20.5], [50.0, 75.0]]
+        );
+        assert_eq!(saved[0].round_summary["start_tick"], 100);
+        assert_eq!(
+            write_notes(&mut conn, 1, &[saved[0].note.clone()]).unwrap()[0].updated_at,
+            timestamp
+        );
+        assert_eq!(read_notes(&conn, None).unwrap().len(), 2);
+        // A bad second record rolls back even the valid edit preceding it.
+        let mut invalid = note.clone();
+        invalid.id = "invalid".into();
+        invalid.round = 999;
+        assert!(write_notes(&mut conn, 1, &[note.clone(), invalid]).is_err());
+        assert_eq!(read_notes(&conn, Some(1)).unwrap()[0].note.text, "Занять B");
+        note.strokes[0].color = "invalid".into();
+        assert!(write_notes(&mut conn, 1, &[note.clone()]).is_err());
+        assert!(write_notes(&mut conn, 999, &[]).is_err());
+        write_notes(&mut conn, 1, &[]).unwrap();
+        assert_eq!(read_notes(&conn, None).unwrap().len(), 1);
+        conn.execute("DELETE FROM matches WHERE id=2", []).unwrap();
+        assert!(read_notes(&conn, None).unwrap().is_empty());
+        drop(conn);
+        fs::remove_file(path).unwrap();
+    }
+
     #[test]
     fn compressed_round_preserves_ids() {
         let value = json!({"players":[{"steamid64":"76561198012345678"}],"grenades":[]});

@@ -1,9 +1,6 @@
-import { useCallback, useSyncExternalStore } from 'react';
-import type {
-  ReplayDetail,
-  ReplayEntry,
-  ReplayRoundSummary,
-} from '../types/replay';
+import { invoke } from '@tauri-apps/api/core';
+import { useEffect, useMemo, useSyncExternalStore } from 'react';
+import type { ReplayEntry, ReplayRoundSummary } from '../types/replay';
 
 export type ReplayStroke = {
   tool: 'pen' | 'arrow' | 'circle';
@@ -18,85 +15,183 @@ export type ReplayNote = {
   text: string;
   strokes: ReplayStroke[];
 };
-type Source = Pick<ReplayEntry, 'id' | 'metadata'>;
-const empty: ReplayNote[] = [];
-const cache = new Map<string, { raw: string | null; notes: ReplayNote[] }>();
-const changed = 'nadeviewer:replay-notes-changed';
+export type StoredReplayNote = {
+  replay_id: number;
+  note: ReplayNote;
+  round_summary: ReplayRoundSummary | null;
+  updated_at: number;
+};
+type Source = Pick<ReplayEntry, 'id'>;
+type NotesState = {
+  items: StoredReplayNote[];
+  loading: boolean;
+  loadError: string;
+  saveErrors: Record<number, string>;
+  saving: number[];
+};
+let state: NotesState = {
+  items: [],
+  loading: true,
+  loadError: '',
+  saveErrors: {},
+  saving: [],
+};
+let loaded = false;
+let request: Promise<void> | null = null;
+const listeners = new Set<() => void>();
+const pending = new Map<number, ReplayNote[]>();
+const active = new Set<number>();
+const generations = new Map<number, number>();
+function publish(update: Partial<NotesState>) {
+  state = { ...state, ...update };
+  listeners.forEach((listener) => listener());
+}
+function subscribe(listener: () => void) {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+const snapshot = () => state;
 
-export function replayNotesKey(source: Source) {
-  return `nadeviewer.replay-notes.v1.${source.id}.${source.metadata.parsed_at}`;
+async function ensureNotes() {
+  if (loaded) return;
+  if (!request) {
+    publish({ loading: true, loadError: '' });
+    request = invoke<StoredReplayNote[]>('list_replay_notes')
+      .then((items) => {
+        loaded = true;
+        publish({ items, loading: false });
+      })
+      .catch((error: unknown) => {
+        publish({ loading: false, loadError: String(error) });
+        throw error;
+      })
+      .finally(() => {
+        request = null;
+      });
+  }
+  return request;
 }
 
-export function loadReplayNotes(key: string): ReplayNote[] {
+export async function loadReplayNotes(replayId: number): Promise<ReplayNote[]> {
+  await ensureNotes();
+  return state.items
+    .filter((item) => item.replay_id === replayId)
+    .map((item) => item.note);
+}
+
+// One writer per replay prevents a slow earlier save overwriting a newer edit.
+async function flush(replayId: number) {
+  if (active.has(replayId)) return;
+  active.add(replayId);
+  const generation = generations.get(replayId);
+  publish({ saving: [...active] });
   try {
-    const raw = localStorage.getItem(key);
-    const cached = cache.get(key);
-    if (cached?.raw === raw) return cached.notes;
-    const data: unknown = JSON.parse(raw ?? '[]');
-    const notes = Array.isArray(data)
-      ? data.filter(
-          (note): note is ReplayNote =>
-            note &&
-            typeof note.id === 'string' &&
-            Number.isFinite(note.round) &&
-            Number.isFinite(note.tick) &&
-            typeof note.lower === 'boolean' &&
-            typeof note.text === 'string' &&
-            Array.isArray(note.strokes) &&
-            note.strokes.every(
-              (stroke: ReplayStroke) =>
-                stroke &&
-                ['pen', 'arrow', 'circle'].includes(stroke.tool) &&
-                typeof stroke.color === 'string' &&
-                /^#[0-9a-f]{6}$/i.test(stroke.color) &&
-                Array.isArray(stroke.points) &&
-                stroke.points.length > 0 &&
-                stroke.points.every(
-                  (point) =>
-                    Array.isArray(point) &&
-                    point.length === 2 &&
-                    point.every(Number.isFinite),
-                ),
-            ),
-        )
-      : empty;
-    cache.set(key, { raw, notes });
-    return notes;
-  } catch {
-    return empty;
+    while (pending.has(replayId)) {
+      const notes = pending.get(replayId)!;
+      pending.delete(replayId);
+      try {
+        const items = await invoke<StoredReplayNote[]>('save_replay_notes', {
+          replayId,
+          notes,
+        });
+        if (generations.get(replayId) !== generation) return;
+        const saveErrors = { ...state.saveErrors };
+        delete saveErrors[replayId];
+        publish({
+          ...(pending.has(replayId)
+            ? {}
+            : {
+                items: [
+                  ...state.items.filter((item) => item.replay_id !== replayId),
+                  ...items,
+                ],
+              }),
+          saveErrors,
+        });
+      } catch (error) {
+        if (generations.get(replayId) !== generation) return;
+        if (!pending.has(replayId)) pending.set(replayId, notes);
+        publish({
+          saveErrors: { ...state.saveErrors, [replayId]: String(error) },
+        });
+        break;
+      }
+    }
+  } finally {
+    active.delete(replayId);
+    publish({ saving: [...active] });
   }
 }
 
-export function saveReplayNotes(key: string, notes: ReplayNote[]) {
-  const raw = JSON.stringify(notes);
-  if (localStorage.getItem(key) === raw) return;
-  localStorage.setItem(key, raw);
-  window.dispatchEvent(new Event(changed));
-}
-
-export function deleteReplayNotes(source: Source) {
-  const key = replayNotesKey(source);
-  localStorage.removeItem(key);
-  cache.delete(key);
-  window.dispatchEvent(new Event(changed));
-}
-
-function subscribe(listener: () => void) {
-  window.addEventListener(changed, listener);
-  window.addEventListener('storage', listener);
-  return () => {
-    window.removeEventListener(changed, listener);
-    window.removeEventListener('storage', listener);
-  };
-}
-
-export function useReplayNotes(source: Source | ReplayDetail | null) {
-  const key = source ? replayNotesKey(source) : null;
-  const snapshot = useCallback(
-    () => (key ? loadReplayNotes(key) : empty),
-    [key],
+export function saveReplayNotes(replayId: number, notes: ReplayNote[]) {
+  if (!loaded) return;
+  const previous = new Map(
+    state.items
+      .filter((item) => item.replay_id === replayId)
+      .map((item) => [item.note.id, item]),
   );
-  return useSyncExternalStore(subscribe, snapshot);
+  const items = notes.map((note): StoredReplayNote => {
+    const old = previous.get(note.id);
+    return {
+      replay_id: replayId,
+      note,
+      round_summary: old?.round_summary ?? null,
+      updated_at:
+        old && JSON.stringify(old.note) === JSON.stringify(note)
+          ? old.updated_at
+          : Date.now(),
+    };
+  });
+  pending.set(replayId, notes);
+  publish({
+    items: [
+      ...state.items.filter((item) => item.replay_id !== replayId),
+      ...items,
+    ],
+  });
+  void flush(replayId);
+}
+
+// SQLite cascades deletion; discard the matching in-memory snapshot afterwards.
+export function deleteReplayNotes(source: Source) {
+  generations.set(source.id, (generations.get(source.id) ?? 0) + 1);
+  pending.delete(source.id);
+  const saveErrors = { ...state.saveErrors };
+  delete saveErrors[source.id];
+  publish({
+    items: state.items.filter((item) => item.replay_id !== source.id),
+    saveErrors,
+  });
+}
+
+export function retryReplayNotes(replayId?: number) {
+  if (!loaded) {
+    void ensureNotes().catch(() => undefined);
+    return;
+  }
+  for (const id of pending.keys())
+    if (replayId === undefined || replayId === id) void flush(id);
+}
+
+export function useAllReplayNotes() {
+  const value = useSyncExternalStore(subscribe, snapshot);
+  useEffect(() => {
+    void ensureNotes().catch(() => undefined);
+  }, []);
+  return value;
+}
+
+export function useReplayNotes(source: Source | null) {
+  const { items } = useAllReplayNotes();
+  return useMemo(
+    () =>
+      items
+        .filter((item) => item.replay_id === source?.id)
+        .map((item) => item.note),
+    [items, source?.id],
+  );
 }
 
 export function replayNoteTime(

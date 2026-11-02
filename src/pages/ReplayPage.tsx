@@ -38,7 +38,6 @@ import ReplayHistory from '../components/ReplayHistory';
 import {
   deleteReplayNotes,
   loadReplayNotes,
-  replayNotesKey,
   useReplayNotes,
 } from '../lib/replayNotes';
 import ReplayTimeline from '../components/ReplayTimeline';
@@ -604,11 +603,11 @@ export default function ReplayPage() {
       ).catch(() => undefined);
     position.current = null;
     if (id === null) return;
-    void getReplay(id).then(
-      (v) => {
+    void Promise.all([getReplay(id), loadReplayNotes(id).catch(() => [])]).then(
+      ([v, notes]) => {
         if (!alive) return;
         setDetail(v);
-        const note = loadReplayNotes(replayNotesKey(v)).find(
+        const note = notes.find(
           (item) =>
             item.id === requestedNoteId &&
             v.rounds.some((r) => r.number === item.round),
@@ -1101,7 +1100,11 @@ export default function ReplayPage() {
             <span className="replay-eyebrow">
               {detail ? detail.metadata.map : 'NADE VIEWER'}
             </span>
-            <h1>{detail ? tr('Match replay', 'Повтор матча') : '2D Replay'}</h1>
+            <h1>
+              {detail
+                ? tr('Match replay', 'Повтор матча')
+                : tr('Replay', 'Повторы')}
+            </h1>
             {detail && (
               <small
                 className="replay-source-name"

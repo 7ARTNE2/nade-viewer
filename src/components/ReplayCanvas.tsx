@@ -13,7 +13,10 @@ import {
 } from '../lib/replayPlayback';
 import { isWindowActive, onWindowActiveChange } from '../lib/windowActive';
 import { weaponIcon } from '../lib/weaponIcons';
-import { replayGrenadeIcon } from '../lib/replayGrenadeIcons';
+import {
+  replayGrenadeIcon,
+  replayGrenadeColors as colors,
+} from '../lib/replayGrenadeIcons';
 import { drawReplayInfernos } from '../lib/replayInferno';
 import ReplayAnnotations from './ReplayAnnotations';
 import { useI18n } from '../i18n';
@@ -37,13 +40,6 @@ type Props = {
   onPause: () => void;
   onSeekNote: (tick: number, lower: boolean) => void;
   killfeed?: ReactNode;
-};
-const colors: Record<string, string> = {
-  smoke: '#67e8f9',
-  flash: '#fbbf24',
-  HE: '#34d399',
-  molotov: '#fb7185',
-  'incendiary grenade': '#f97316',
 };
 const FLASH_FULL_RADIUS_GAME = 400;
 const FLASH_FADE_RADIUS_GAME = 1000;
