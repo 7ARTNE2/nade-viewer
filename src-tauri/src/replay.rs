@@ -3,7 +3,6 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
 use serde_json::{json, Value};
 use std::{
-    collections::HashMap,
     fs,
     io::{BufRead, BufReader, Read},
     path::PathBuf,
@@ -116,60 +115,56 @@ pub(crate) fn list_replays(app: AppHandle) -> Result<Vec<ReplayEntry>> {
                 .unwrap_or_default()
                 .trim()
                 .to_string();
-            // Round summaries store the score from the perspective of the
-            // current T/CT sides. That perspective changes after halftime,
-            // so summing score_t/score_ct across rounds produces an invalid
-            // match result. Count each round winner against the stable team
-            // name carried by the replay frames instead.
-            let mut wins_by_team: HashMap<String, i64> = HashMap::new();
+            // Count round winners using the team names carried by frames.
+            // T/CT sides change after halftime, while metadata keeps the
+            // parser's final side orientation. Infer a missing side from the
+            // two stable metadata team names before counting the winner.
+            let mut wins_by_team = std::collections::HashMap::<String, i64>::new();
             let mut rounds = conn
-                .prepare("SELECT summary,data FROM rounds WHERE match_id=?1 ORDER BY number")
+                .prepare("SELECT number,summary,data FROM rounds WHERE match_id=?1 ORDER BY number")
                 .map_err(|e| e.to_string())?;
             let summaries = rounds
                 .query_map([id], |row| {
-                    Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?))
+                    Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?, row.get::<_, Vec<u8>>(2)?))
                 })
                 .map_err(|e| e.to_string())?;
             for record in summaries {
-                let (summary_raw, data_raw) = record.map_err(|e| e.to_string())?;
+                let (number, summary_raw, data_raw) = record.map_err(|e| e.to_string())?;
+                if number <= 0 {
+                    continue;
+                }
                 let summary: Value =
                     serde_json::from_str(&summary_raw).map_err(|e| e.to_string())?;
                 let winner_side = summary["winner_side"].as_str().unwrap_or_default();
                 let data = decode(&data_raw)?;
-                let mut round_team_t = String::new();
-                let mut round_team_ct = String::new();
+                let mut round_t = String::new();
+                let mut round_ct = String::new();
                 if let Some(frames) = data["frames"].as_array() {
                     for frame in frames {
-                        let Some(players) = frame["players"].as_array() else {
-                            continue;
-                        };
-                        for player in players {
-                            let team = player["team_name"].as_str().unwrap_or_default().trim();
-                            if team.is_empty() {
-                                continue;
-                            }
-                            match player["side"].as_str() {
-                                Some("T") if round_team_t.is_empty() => {
-                                    round_team_t = team.to_string();
+                        if let Some(players) = frame["players"].as_array() {
+                            for player in players {
+                                let name = player["team_name"].as_str().unwrap_or_default().trim();
+                                match player["side"].as_str() {
+                                    Some("T") if round_t.is_empty() && !name.is_empty() => round_t = name.to_string(),
+                                    Some("CT") if round_ct.is_empty() && !name.is_empty() => round_ct = name.to_string(),
+                                    _ => {}
                                 }
-                                Some("CT") if round_team_ct.is_empty() => {
-                                    round_team_ct = team.to_string();
-                                }
-                                _ => {}
                             }
                         }
-                        if !round_team_t.is_empty() && !round_team_ct.is_empty() {
-                            break;
-                        }
+                        if !round_t.is_empty() && !round_ct.is_empty() { break; }
                     }
                 }
+                if round_t.is_empty() && round_ct == team_t { round_t = team_ct.clone(); }
+                if round_ct.is_empty() && round_t == team_t { round_ct = team_ct.clone(); }
+                if round_t.is_empty() && round_ct == team_ct { round_t = team_t.clone(); }
+                if round_ct.is_empty() && round_t == team_ct { round_ct = team_t.clone(); }
                 let winner_team = match winner_side {
-                    "T" if !round_team_t.is_empty() => Some(round_team_t),
-                    "CT" if !round_team_ct.is_empty() => Some(round_team_ct),
-                    _ => None,
+                    "T" => round_t,
+                    "CT" => round_ct,
+                    _ => String::new(),
                 };
-                if let Some(team) = winner_team {
-                    *wins_by_team.entry(team).or_insert(0) += 1;
+                if !winner_team.is_empty() {
+                    *wins_by_team.entry(winner_team).or_insert(0) += 1;
                 }
             }
             let score_t = wins_by_team.get(&team_t).copied().unwrap_or(0);
