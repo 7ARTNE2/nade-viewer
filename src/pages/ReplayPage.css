@@ -286,6 +286,24 @@
   font-size: 10px;
   margin-inline: 8px;
 }
+.replay-match-result {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: -2px;
+  color: var(--muted);
+  font-size: 9px;
+}
+.replay-match-result b {
+  color: var(--acid);
+  font: 700 16px/1 Orbitron, sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+.replay-match-result span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .replay-match-open small {
   color: var(--muted, #89929f);
   font-size: 10px;

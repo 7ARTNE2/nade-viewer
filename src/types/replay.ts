@@ -137,6 +137,9 @@ export type ReplayEntry = {
   size: number;
   round_number: number;
   tick: number | null;
+  score_t: number;
+  score_ct: number;
+  winner_side: string;
 };
 export type ReplayDetail = {
   id: number;

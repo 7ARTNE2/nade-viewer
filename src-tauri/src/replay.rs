@@ -3,6 +3,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
 use serde_json::{json, Value};
 use std::{
+    collections::HashMap,
     fs,
     io::{BufRead, BufReader, Read},
     path::PathBuf,
@@ -76,6 +77,9 @@ pub(crate) struct ReplayEntry {
     size: i64,
     round_number: i64,
     tick: Option<f64>,
+    score_t: i64,
+    score_ct: i64,
+    winner_side: String,
 }
 #[tauri::command]
 pub(crate) fn list_replays(app: AppHandle) -> Result<Vec<ReplayEntry>> {
@@ -94,17 +98,101 @@ pub(crate) fn list_replays(app: AppHandle) -> Result<Vec<ReplayEntry>> {
             ))
         })
         .map_err(|e| e.to_string())?;
-    rows.map(|r| {
-        let (id, metadata, size, round_number, tick) = r.map_err(|e| e.to_string())?;
-        Ok(ReplayEntry {
-            id,
-            metadata: serde_json::from_str(&metadata).map_err(|e| e.to_string())?,
-            size,
-            round_number,
-            tick,
+    let records: Vec<_> = rows
+        .map(|r| r.map_err(|e| e.to_string()))
+        .collect::<Result<_>>()?;
+    records
+        .into_iter()
+        .map(|(id, metadata, size, round_number, tick)| {
+            let metadata_value: Value =
+                serde_json::from_str(&metadata).map_err(|e| e.to_string())?;
+            let team_t = metadata_value["team_t"]
+                .as_str()
+                .unwrap_or_default()
+                .trim()
+                .to_string();
+            let team_ct = metadata_value["team_ct"]
+                .as_str()
+                .unwrap_or_default()
+                .trim()
+                .to_string();
+            // Round summaries store the score from the perspective of the
+            // current T/CT sides. That perspective changes after halftime,
+            // so summing score_t/score_ct across rounds produces an invalid
+            // match result. Count each round winner against the stable team
+            // name carried by the replay frames instead.
+            let mut wins_by_team: HashMap<String, i64> = HashMap::new();
+            let mut rounds = conn
+                .prepare("SELECT summary,data FROM rounds WHERE match_id=?1 ORDER BY number")
+                .map_err(|e| e.to_string())?;
+            let summaries = rounds
+                .query_map([id], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?))
+                })
+                .map_err(|e| e.to_string())?;
+            for record in summaries {
+                let (summary_raw, data_raw) = record.map_err(|e| e.to_string())?;
+                let summary: Value =
+                    serde_json::from_str(&summary_raw).map_err(|e| e.to_string())?;
+                let winner_side = summary["winner_side"].as_str().unwrap_or_default();
+                let data = decode(&data_raw)?;
+                let mut round_team_t = String::new();
+                let mut round_team_ct = String::new();
+                if let Some(frames) = data["frames"].as_array() {
+                    for frame in frames {
+                        let Some(players) = frame["players"].as_array() else {
+                            continue;
+                        };
+                        for player in players {
+                            let team = player["team_name"].as_str().unwrap_or_default().trim();
+                            if team.is_empty() {
+                                continue;
+                            }
+                            match player["side"].as_str() {
+                                Some("T") if round_team_t.is_empty() => {
+                                    round_team_t = team.to_string();
+                                }
+                                Some("CT") if round_team_ct.is_empty() => {
+                                    round_team_ct = team.to_string();
+                                }
+                                _ => {}
+                            }
+                        }
+                        if !round_team_t.is_empty() && !round_team_ct.is_empty() {
+                            break;
+                        }
+                    }
+                }
+                let winner_team = match winner_side {
+                    "T" if !round_team_t.is_empty() => Some(round_team_t),
+                    "CT" if !round_team_ct.is_empty() => Some(round_team_ct),
+                    _ => None,
+                };
+                if let Some(team) = winner_team {
+                    *wins_by_team.entry(team).or_insert(0) += 1;
+                }
+            }
+            let score_t = wins_by_team.get(&team_t).copied().unwrap_or(0);
+            let score_ct = wins_by_team.get(&team_ct).copied().unwrap_or(0);
+            let winner_side = if score_t > score_ct {
+                "T".to_string()
+            } else if score_ct > score_t {
+                "CT".to_string()
+            } else {
+                String::new()
+            };
+            Ok(ReplayEntry {
+                id,
+                metadata: metadata_value,
+                size,
+                round_number,
+                tick,
+                score_t,
+                score_ct,
+                winner_side,
+            })
         })
-    })
-    .collect()
+        .collect()
 }
 #[tauri::command]
 pub(crate) fn get_replay(
@@ -158,11 +246,7 @@ pub(crate) fn get_replay_round(app: AppHandle, id: i64, number: i64) -> Result<V
 /// thousands of sampled frames and projectile trajectories; decoding all of
 /// that on every hover makes the preview feel unresponsive on large demos.
 #[tauri::command]
-pub(crate) fn get_replay_round_preview(
-    app: AppHandle,
-    id: i64,
-    number: i64,
-) -> Result<Value> {
+pub(crate) fn get_replay_round_preview(app: AppHandle, id: i64, number: i64) -> Result<Value> {
     let conn = database(&app)?;
     let bytes: Vec<u8> = conn
         .query_row(

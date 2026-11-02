@@ -181,6 +181,12 @@ function roundReasonLabel(reason?: string | null, winnerSide?: string | null) {
 function roundWinnerClass(side?: string | null) {
   return side === 'T' || side === 'CT' ? side.toLowerCase() : 'neutral';
 }
+function roundEndingScore(round: { score_t: number; score_ct: number; winner_side?: string | null }) {
+  return {
+    t: round.score_t + (round.winner_side === 'T' ? 1 : 0),
+    ct: round.score_ct + (round.winner_side === 'CT' ? 1 : 0),
+  };
+}
 function Team({ side, players, bombCarrier }: { side: string; players: ReplayPlayer[]; bombCarrier?: string }) {
   const { tr } = useI18n();
   const economy = players.reduce((sum, player) => sum + (player.equipment_value ?? 0), 0);
@@ -671,19 +677,17 @@ export default function ReplayPage() {
   const index = detail?.rounds.findIndex((r) => r.number === number) ?? -1;
   const bounds = round ? roundBounds(round) : [0, 1];
   const roundFinished = Boolean(round && tick >= bounds[1]);
-  const score = (() => {
-    const current = {
-      t: round?.round.score_t ?? 0,
-      ct: round?.round.score_ct ?? 0,
-    };
-    if (!roundFinished || !round || !detail) return current;
-    const next = detail.rounds[index + 1];
-    if (next) return { t: next.score_t, ct: next.score_ct };
-    if (round.round.winner_side === 'T') current.t += 1;
-    if (round.round.winner_side === 'CT') current.ct += 1;
-    return current;
-  })();
-  const winnerSide = roundFinished ? round?.round.winner_side : '';
+  const replayRounds = useMemo(
+    () => detail?.rounds.filter((item) => item.number > 0) ?? [],
+    [detail],
+  );
+  const currentScore = round ? {
+    t: round.round.score_t,
+    ct: round.round.score_ct,
+  } : { t: 0, ct: 0 };
+  const finishedScore = round ? roundEndingScore(round.round) : currentScore;
+  const score = roundFinished ? finishedScore : currentScore;
+  const winnerSide = roundFinished ? round?.round.winner_side ?? '' : '';
   const events = useMemo(
     () =>
       round?.events.filter((e) =>
@@ -732,23 +736,11 @@ export default function ReplayPage() {
     }
     return grenade.release_tick;
   };
-  const replayRounds = useMemo(
-    () => detail?.rounds.filter((item) => item.number > 0) ?? [],
-    [detail],
-  );
   const replayEndScores = useMemo(() => {
     const scores: Record<number, { t: number; ct: number }> = {};
-    replayRounds.forEach((item) => {
-      const calculated = {
-        t: item.score_t + (item.winner_side === 'T' ? 1 : 0),
-        ct: item.score_ct + (item.winner_side === 'CT' ? 1 : 0),
-      };
-      // The next round may already be stored after a side switch and therefore
-      // have T/CT values in the opposite orientation. Calculate the ending
-      // score from this round itself so the final pre-switch score stays in
-      // the orientation shown during the round.
-      scores[item.number] = calculated;
-    });
+    for (const item of replayRounds) {
+      scores[item.number] = roundEndingScore(item);
+    }
     return scores;
   }, [replayRounds]);
   const loadRoundPreview = (roundNumber: number) => {
@@ -971,6 +963,17 @@ export default function ReplayPage() {
                         {entry.metadata.team_t || 'T'} <span>vs</span>{' '}
                         {entry.metadata.team_ct || 'CT'}
                       </strong>
+                      <div className="replay-match-result">
+                        <b>{entry.score_t}:{entry.score_ct}</b>
+                        {entry.winner_side ? (
+                          <span>
+                            {tr('Winner', 'Победитель')}:{' '}
+                            {entry.winner_side === 'T'
+                              ? entry.metadata.team_t || 'T'
+                              : entry.metadata.team_ct || 'CT'}
+                          </span>
+                        ) : null}
+                      </div>
                       <small title={entry.metadata.demo_filename}>
                         {entry.metadata.demo_filename}
                       </small>
