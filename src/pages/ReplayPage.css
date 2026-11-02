@@ -916,12 +916,6 @@
     0 1px 5px #050607,
     0 0 3px #050607;
 }
-.replay-killfeed .replay-killfeed-name.t {
-  color: #e8c86c;
-}
-.replay-killfeed .replay-killfeed-name.ct {
-  color: #9fc8e8;
-}
 .replay-killfeed .replay-killfeed-assist {
   max-width: 120px;
   font-size: 12px;
