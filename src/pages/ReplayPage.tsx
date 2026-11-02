@@ -797,13 +797,16 @@ export default function ReplayPage() {
     };
   }, []);
   const seek = useCallback(
-    (value: number) => {
+    (value: number, includeFreezeTime = false) => {
       cancelAutoNext();
       if (!round) return;
       const [a, b] = roundBounds(round);
-      const start = showFreezeTime
-        ? a
-        : clamp(round.round.freeze_end_tick ?? a, a, b);
+      if (includeFreezeTime && value < (round.round.freeze_end_tick ?? a))
+        setShowFreezeTime(true);
+      const start =
+        showFreezeTime || includeFreezeTime
+          ? a
+          : clamp(round.round.freeze_end_tick ?? a, a, b);
       clock.current = clamp(value, start, b);
       setTick(clock.current);
     },
@@ -1616,6 +1619,14 @@ export default function ReplayPage() {
                   tickrate={detail.metadata.tickrate}
                   lower={lower}
                   selected={selected}
+                  onPause={() => {
+                    cancelAutoNext();
+                    setPlaying(false);
+                  }}
+                  onSeekNote={(noteTick, noteLower) => {
+                    setLower(noteLower);
+                    seek(noteTick, true);
+                  }}
                   copiedGrenadeId={copiedId}
                   onSelect={(grenade) => {
                     cancelAutoNext();

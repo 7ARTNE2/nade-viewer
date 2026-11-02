@@ -128,7 +128,28 @@ function makeRound(number) {
           { id: g.id, type: g.data.grenade_type, thrower_id: '1', x, y, z },
         ];
       }),
-      infernos: [],
+      infernos:
+        number > 0 &&
+        tick >= freeze + 66.5 * tickrate &&
+        tick < freeze + 73 * tickrate
+          ? [
+              {
+                id: `fire-${number}`,
+                hull: [
+                  { x: -1600, y: -1250 },
+                  { x: -1150, y: -1250 },
+                  { x: -1100, y: -900 },
+                  { x: -1550, y: -850 },
+                ],
+                fires: Array.from({ length: 12 }, (_, index) => ({
+                  x: -1540 + (index % 4) * 120,
+                  y: -1180 + Math.floor(index / 4) * 120,
+                  z: 0,
+                  burning: index !== 11,
+                })),
+              },
+            ]
+          : [],
       bomb:
         number === 3 && tick >= freeze + 50 * tickrate
           ? {

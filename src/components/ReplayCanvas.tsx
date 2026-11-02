@@ -13,6 +13,9 @@ import {
 } from '../lib/replayPlayback';
 import { isWindowActive, onWindowActiveChange } from '../lib/windowActive';
 import { weaponIcon } from '../lib/weaponIcons';
+import { replayGrenadeIcon } from '../lib/replayGrenadeIcons';
+import { drawReplayInfernos } from '../lib/replayInferno';
+import ReplayAnnotations from './ReplayAnnotations';
 import { useI18n } from '../i18n';
 import type {
   ReplayDetail,
@@ -31,6 +34,8 @@ type Props = {
   copiedGrenadeId: string | null;
   onSelect: (g: ReplayGrenade) => void;
   onCopyCoordinates: (g: ReplayGrenade) => void;
+  onPause: () => void;
+  onSeekNote: (tick: number, lower: boolean) => void;
   killfeed?: ReactNode;
 };
 const colors: Record<string, string> = {
@@ -66,7 +71,6 @@ const BOMB_CORE_SECONDS = 0.7;
 const BOMB_EFFECT_SECONDS = 1.5;
 const TRAJECTORY_FADE_SECONDS = 0.9;
 const SMOKE_RADIUS_GAME = 144;
-const INFERNO_RADIUS_GAME = 116;
 const SMOKE_SIDE_COLORS: Record<string, string> = {
   T: '#fb923c',
   CT: '#38bdf8',
@@ -111,6 +115,8 @@ export default function ReplayCanvas({
   copiedGrenadeId,
   onSelect,
   onCopyCoordinates,
+  onPause,
+  onSeekNote,
   killfeed,
 }: Props) {
   const { tr } = useI18n();
@@ -232,17 +238,6 @@ export default function ReplayCanvas({
     () => new Map(round.grenades.map((grenade) => [grenade.id, grenade])),
     [round],
   );
-  const fireGrenades = useMemo(
-    () =>
-      round.grenades.filter(
-        (grenade) =>
-          (grenade.data.grenade_type === 'molotov' ||
-            grenade.data.grenade_type === 'incendiary grenade') &&
-          typeof grenade.data.explode_pos_x === 'number' &&
-          typeof grenade.data.explode_pos_y === 'number',
-      ),
-    [round],
-  );
   const weaponFireEvents = useMemo(
     () => round.events.filter((event) => event.type === 'weapon_fire'),
     [round],
@@ -335,6 +330,24 @@ export default function ReplayCanvas({
     let image = cachedImage(imagePath);
     const bombImage = new Image();
     const weaponImages = new Map<string, HTMLImageElement>();
+    const grenadeImages = new Map<string, HTMLImageElement>();
+    for (const type of [
+      'smoke',
+      'flash',
+      'HE',
+      'molotov',
+      'incendiary grenade',
+      'decoy',
+    ]) {
+      const src = replayGrenadeIcon(type);
+      if (!src) continue;
+      const icon = new Image();
+      icon.onload = () => {
+        if (!disposed) draw();
+      };
+      icon.src = src;
+      grenadeImages.set(src, icon);
+    }
     bombImage.onload = draw;
     bombImage.src = c4Icon;
     let imageReady = false,
@@ -548,168 +561,7 @@ export default function ReplayCanvas({
           ctx.restore();
         }
       }
-      for (const inferno of frame.infernos ?? []) {
-        if (!inferno.hull?.length || !inferno.fires.some((f) => visible(f.z)))
-          continue;
-        const center = inferno.hull.reduce(
-          (sum, p) => ({ x: sum.x + p.x, y: sum.y + p.y }),
-          { x: 0, y: 0 },
-        );
-        center.x /= inferno.hull.length;
-        center.y /= inferno.hull.length;
-        const source = fireGrenades
-          .map((g) => ({
-            grenade: g,
-            distance: Math.hypot(
-              (g.data.explode_pos_x ?? 0) - center.x,
-              (g.data.explode_pos_y ?? 0) - center.y,
-            ),
-          }))
-          .sort((a, b) => a.distance - b.distance)[0];
-        const incendiary =
-          source && source.distance <= 260
-            ? source.grenade.data.grenade_type === 'incendiary grenade'
-            : false;
-        const palette = incendiary
-          ? {
-              edge: '#fb923c',
-              glow: '#ea580c',
-              fill: 'rgba(154,52,18,0.2)',
-              inner: '#fff7ae',
-              flame: '#fb923c',
-              hot: '#c2410c',
-            }
-          : {
-              edge: '#ef4444',
-              glow: '#f97316',
-              fill: 'rgba(194,65,12,0.24)',
-              inner: '#fff7c2',
-              flame: '#f97316',
-              hot: '#dc2626',
-            };
-        const [cx, cy] = point(center.x, center.y);
-        ctx.save();
-        ctx.beginPath();
-        inferno.hull.forEach((p, i) => {
-          const [x, y] = point(p.x, p.y);
-          if (i === 0) ctx.moveTo(x, y);
-          else ctx.lineTo(x, y);
-        });
-        ctx.closePath();
-        ctx.fillStyle = palette.fill;
-        ctx.strokeStyle = `${palette.edge}aa`;
-        ctx.lineWidth = 1.5;
-        ctx.shadowColor = palette.glow;
-        ctx.shadowBlur = 12;
-        ctx.fill();
-        ctx.stroke();
-        // Keep a visible fire core even when Windows/WebView reduces motion
-        // or throttles animation frames. The animated hotspots below are an
-        // enhancement, never the only representation of the inferno.
-        const core = ctx.createRadialGradient(
-          cx,
-          cy,
-          0,
-          cx,
-          cy,
-          (INFERNO_RADIUS_GAME / radar.scale) * unit * 0.88,
-        );
-        core.addColorStop(0, `${palette.inner}b8`);
-        core.addColorStop(0.28, `${palette.flame}72`);
-        core.addColorStop(0.7, `${palette.glow}2e`);
-        core.addColorStop(1, `${palette.glow}00`);
-        ctx.fillStyle = core;
-        ctx.beginPath();
-        ctx.arc(
-          cx,
-          cy,
-          (INFERNO_RADIUS_GAME / radar.scale) * unit * 0.88,
-          0,
-          Math.PI * 2,
-        );
-        ctx.fill();
-        inferno.fires.forEach((fire, fireIndex) => {
-          if (!visible(fire.z)) return;
-          const [x, y] = point(fire.x, fire.y);
-          const phase = (now / 260 + fireIndex * 1.73 + inferno.id.length) % 1;
-          const pulse = 0.82 + Math.sin(phase * Math.PI * 2) * 0.14;
-          const radius = Math.max(
-            3,
-            (INFERNO_RADIUS_GAME / radar.scale) *
-              unit *
-              (0.16 + (fireIndex % 3) * 0.035),
-          );
-          const glow = ctx.createRadialGradient(x, y, 0, x, y, radius * 2.5);
-          glow.addColorStop(0, `${palette.inner}a8`);
-          glow.addColorStop(0.3, `${palette.flame}88`);
-          glow.addColorStop(0.72, `${palette.glow}4d`);
-          glow.addColorStop(1, `${palette.glow}00`);
-          ctx.fillStyle = glow;
-          ctx.beginPath();
-          ctx.arc(x, y, radius * 2.3, 0, Math.PI * 2);
-          ctx.fill();
-
-          // Draw an actual flame tongue instead of a colored dot. The
-          // varying tip and lean create a readable fire silhouette at any
-          // Windows animation/reduced-motion setting.
-          const lean = Math.sin(phase * Math.PI * 2) * radius * 0.35;
-          const tongue = radius * (1.55 + pulse * 0.35);
-          const flameGradient = ctx.createLinearGradient(
-            x,
-            y + radius * 0.75,
-            x + lean,
-            y - tongue,
-          );
-          flameGradient.addColorStop(0, `${palette.hot}e6`);
-          flameGradient.addColorStop(0.42, `${palette.flame}ee`);
-          flameGradient.addColorStop(0.78, `${palette.inner}f0`);
-          flameGradient.addColorStop(1, `${palette.inner}00`);
-          ctx.fillStyle = flameGradient;
-          ctx.beginPath();
-          ctx.moveTo(x - radius * 0.72, y + radius * 0.62);
-          ctx.quadraticCurveTo(
-            x - radius * 0.52,
-            y - radius * 0.08,
-            x - radius * 0.18 + lean * 0.18,
-            y - radius * 0.72,
-          );
-          ctx.quadraticCurveTo(
-            x - radius * 0.03 + lean * 0.2,
-            y - radius * 1.18,
-            x + lean,
-            y - tongue,
-          );
-          ctx.quadraticCurveTo(
-            x + radius * 0.24 + lean * 0.2,
-            y - radius * 0.98,
-            x + radius * 0.52,
-            y - radius * 0.38,
-          );
-          ctx.quadraticCurveTo(
-            x + radius * 0.68,
-            y + radius * 0.08,
-            x + radius * 0.72,
-            y + radius * 0.62,
-          );
-          ctx.closePath();
-          ctx.fill();
-        });
-        ctx.restore();
-        ctx.save();
-        ctx.beginPath();
-        inferno.hull.forEach((p, i) => {
-          const [x, y] = point(p.x, p.y);
-          if (i === 0) ctx.moveTo(x, y);
-          else ctx.lineTo(x, y);
-        });
-        ctx.closePath();
-        ctx.strokeStyle = `${palette.edge}aa`;
-        ctx.lineWidth = 1.5;
-        ctx.shadowColor = palette.glow;
-        ctx.shadowBlur = 8;
-        ctx.stroke();
-        ctx.restore();
-      }
+      drawReplayInfernos(ctx, frame.infernos ?? [], point, visible, now);
       const drawExplosionEffects = () => {
         const events = explosionEvents.filter((event) => visible(event.z ?? 0));
         for (const event of events) {
@@ -980,13 +832,26 @@ export default function ReplayCanvas({
             (smoke) => Math.hypot(smoke.x - px, smoke.y - py) <= 36,
           );
         if (insideActiveSmoke) continue;
-        ctx.fillStyle = colors[grenade?.data.grenade_type ?? ''] ?? '#f4f6f8';
-        ctx.strokeStyle = '#101419';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.arc(x, y, 5, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
+        const type = grenade?.data.grenade_type ?? projectile.type;
+        const src = replayGrenadeIcon(type);
+        const icon = src ? grenadeImages.get(src) : undefined;
+        ctx.save();
+        ctx.shadowColor = '#080b0f';
+        ctx.shadowBlur = 4;
+        if (icon?.complete && icon.naturalWidth > 0) {
+          const scale = 22 / Math.max(icon.naturalWidth, icon.naturalHeight);
+          const w = icon.naturalWidth * scale,
+            h = icon.naturalHeight * scale;
+          ctx.drawImage(icon, x - w / 2, y - h / 2, w, h);
+        } else {
+          // Keep the projectile identifiable while its SVG is loading.
+          ctx.fillStyle = colors[type] ?? '#f4f6f8';
+          ctx.font = 'bold 12px Segoe UI';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(type.slice(0, 1).toUpperCase() || '?', x, y);
+        }
+        ctx.restore();
         if (grenade) hits.current.push({ x, y, g: grenade });
       }
       // Draw smoke timers after projectiles so the moving grenade point cannot
@@ -1456,7 +1321,6 @@ export default function ReplayCanvas({
     explosionEvents,
     bombEvents,
     grenadeById,
-    fireGrenades,
     actionEventsByPlayer,
   ]);
   return (
@@ -1551,6 +1415,16 @@ export default function ReplayCanvas({
         onBlur={() => {
           drag.current = null;
         }}
+      />
+      <ReplayAnnotations
+        key={`${detail.id}.${detail.metadata.parsed_at}`}
+        detail={detail}
+        round={round}
+        clock={clock}
+        lower={lower}
+        view={view}
+        onPause={onPause}
+        onSeek={onSeekNote}
       />
       {(!imagePath || !detail.radar || failedImagePath === imagePath) && (
         <div className="replay-map-missing">

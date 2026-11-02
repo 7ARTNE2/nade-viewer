@@ -88,7 +88,22 @@ try {
       const clearRect = window.CanvasRenderingContext2D.prototype.clearRect;
       window.CanvasRenderingContext2D.prototype.clearRect = function (...args) {
         window.__replayActionLabels = [];
+        window.__replayGrenadeIcons = [];
+        window.__replayFlameLayers = [];
         return clearRect.apply(this, args);
+      };
+      const fill = window.CanvasRenderingContext2D.prototype.fill;
+      window.CanvasRenderingContext2D.prototype.fill = function (...args) {
+        if (args[0] instanceof window.Path2D) {
+          const transform = this.getTransform();
+          window.__replayFlameLayers.push({
+            color: this.fillStyle,
+            alpha: this.globalAlpha,
+            a: transform.a,
+            d: transform.d,
+          });
+        }
+        return fill.apply(this, args);
       };
       const fillText = window.CanvasRenderingContext2D.prototype.fillText;
       window.CanvasRenderingContext2D.prototype.fillText = function (...args) {
@@ -97,6 +112,11 @@ try {
         return fillText.apply(this, args);
       };
       window.CanvasRenderingContext2D.prototype.drawImage = function (...args) {
+        if (
+          args.length === 5 &&
+          Math.abs(Math.max(args[3], args[4]) - 22) < 0.01
+        )
+          window.__replayGrenadeIcons.push(args[0].src);
         if (args[0].src?.includes('_radar_') && args[0].naturalWidth > 0) {
           window.__replayCamera = args.slice(1);
         }
@@ -445,6 +465,195 @@ try {
   await page.keyboard.press('-');
   await page.waitForTimeout(100);
   assert.deepEqual(await camera(), initialCamera, 'zoom cannot go below 1x');
+  // Notes pause playback, store text and radar-space shapes, and survive reload.
+  const noteTick = Number(await timeline.inputValue());
+  await page
+    .getByRole('button', { name: 'Воспроизвести', exact: true })
+    .click();
+  await page.getByRole('button', { name: 'Заметки', exact: true }).click();
+  await page
+    .getByRole('button', { name: 'Воспроизвести', exact: true })
+    .waitFor();
+  await seekTimeline(noteTick);
+  const noteText = page.getByRole('textbox', { name: 'Текст заметки' });
+  await noteText.fill('Занять плент после флешки');
+  await noteText.press('Space');
+  await page
+    .getByRole('button', { name: 'Воспроизвести', exact: true })
+    .waitFor();
+  const drawing = page.locator('.replay-annotations');
+  const drawShape = async (tool) => {
+    await page.getByRole('button', { name: tool, exact: true }).click();
+    await page.mouse.move(
+      bounds.x + bounds.width - 90,
+      bounds.y + bounds.height * 0.55,
+    );
+    await page.mouse.down();
+    await page.mouse.move(
+      bounds.x + bounds.width - 30,
+      bounds.y + bounds.height * 0.7,
+      { steps: 8 },
+    );
+    await page.mouse.up();
+  };
+  const paletteToggle = page.getByRole('button', {
+    name: 'Палитра цветов',
+    exact: true,
+  });
+  await paletteToggle.click();
+  await page.getByRole('button', { name: 'Красный', exact: true }).click();
+  await drawShape('Карандаш');
+  assert.equal(await drawing.locator('polyline').count(), 1);
+  assert.equal(
+    await drawing
+      .locator('polyline')
+      .evaluate((shape) => shape.parentElement.getAttribute('stroke')),
+    '#ef4444',
+  );
+  await paletteToggle.click();
+  await page.locator('input[type="color"]').fill('#123abc');
+  await page.screenshot({ path: 'dist/replay-checks/drawing-palette.png' });
+  await page.locator('input[type="color"]').press('Escape');
+  assert.equal(await paletteToggle.getAttribute('aria-expanded'), 'false');
+  await drawShape('Стрелка');
+  assert.equal(await drawing.locator('path').count(), 1);
+  assert.equal(
+    await drawing
+      .locator('path')
+      .evaluate((shape) => shape.parentElement.getAttribute('stroke')),
+    '#123abc',
+  );
+  await drawShape('Круг');
+  assert.equal(await drawing.locator('circle').count(), 1);
+  await page
+    .getByRole('button', { name: 'Отменить рисунок', exact: true })
+    .click();
+  assert.equal(await drawing.locator('circle').count(), 0);
+  const storedPoints = await drawing.locator('polyline').getAttribute('points');
+  const originalTransform = await drawing
+    .locator(':scope > g')
+    .getAttribute('transform');
+  await page.getByRole('button', { name: 'Приблизить', exact: true }).click();
+  assert.equal(
+    await drawing.locator('polyline').getAttribute('points'),
+    storedPoints,
+  );
+  assert.notEqual(
+    await drawing.locator(':scope > g').getAttribute('transform'),
+    originalTransform,
+  );
+  await page.getByRole('button', { name: 'Сбросить вид', exact: true }).click();
+  await page.screenshot({ path: 'dist/replay-checks/notes.png' });
+  await selectRound(2);
+  assert.equal(
+    await drawing.locator('polyline').count(),
+    0,
+    'drawings belong to one round',
+  );
+  assert.equal(await noteText.inputValue(), '');
+  await selectRound(1);
+  await page.locator('.replay-note-list button').first().click();
+  assert.equal(Number(await timeline.inputValue()), noteTick);
+  assert.equal(
+    await drawing.locator('polyline').getAttribute('points'),
+    storedPoints,
+  );
+  await page
+    .getByRole('button', { name: 'Новая заметка', exact: true })
+    .click();
+  await noteText.fill('Удалить эту заметку');
+  await page
+    .getByRole('button', { name: 'Удалить заметку', exact: true })
+    .click();
+  assert.equal(await page.locator('.replay-note-list button').count(), 1);
+  const freezeNoteTick = first.round.start_tick + metadata.tickrate;
+  await seekTimeline(freezeNoteTick);
+  await page
+    .getByRole('button', { name: 'Новая заметка', exact: true })
+    .click();
+  await noteText.fill('План на фризтайм');
+  await setOption('Фризтайм', false);
+  await page
+    .locator('.replay-note-list button')
+    .filter({ hasText: 'План на фризтайм' })
+    .click();
+  assert.equal(
+    Number(await timeline.inputValue()),
+    freezeNoteTick,
+    'opening a freeze-time note restores its exact tick even when freeze time was hidden',
+  );
+  await page
+    .getByRole('button', { name: 'Удалить заметку', exact: true })
+    .click();
+  await page.reload();
+  await timeline.waitFor();
+  await page.getByRole('button', { name: /^Заметки/ }).click();
+  await page.locator('.replay-note-list button').first().click();
+  assert.equal(
+    await drawing
+      .locator('path')
+      .evaluate((shape) => shape.parentElement.getAttribute('stroke')),
+    '#123abc',
+    'custom colors must survive reloading saved notes',
+  );
+  assert.equal(
+    (await noteText.inputValue()).trim(),
+    'Занять плент после флешки',
+  );
+  assert.equal(
+    await drawing.locator('polyline').getAttribute('points'),
+    storedPoints,
+  );
+  await page
+    .getByRole('button', { name: 'Закрыть заметки', exact: true })
+    .click();
+  assert.equal(await drawing.locator('polyline').count(), 0);
+  if (!records) {
+    for (const [index, file] of [
+      'smokegrenade',
+      'flashbang',
+      'hegrenade',
+      'molotov',
+    ].entries()) {
+      await seekTimeline(
+        first.grenades[index].release_tick + metadata.tickrate / 2,
+      );
+      const svg = await readFile(
+        new URL(`../src/assets/grenades_icons/${file}.svg`, import.meta.url),
+        'utf8',
+      );
+      const signature = svg.match(/<path[^>]*\bd="([^"]+)"/)[1].slice(0, 60);
+      await page.waitForFunction(
+        ({ file, signature }) =>
+          window.__replayGrenadeIcons?.some(
+            (src) =>
+              src.includes(`/${file}.svg`) ||
+              decodeURIComponent(src).includes(signature),
+          ),
+        { file, signature },
+      );
+    }
+    const fireTick = first.round.freeze_end_tick + 67 * metadata.tickrate;
+    await seekTimeline(fireTick);
+    await page.waitForFunction(() => window.__replayFlameLayers?.length === 33);
+    const firstFlames = await page.evaluate(() => window.__replayFlameLayers);
+    await page.waitForTimeout(180);
+    const nextFlames = await page.evaluate(() => window.__replayFlameLayers);
+    assert.notDeepEqual(
+      firstFlames,
+      nextFlames,
+      'NadeGrid flame layers must animate',
+    );
+    assert.equal(
+      Number(await timeline.inputValue()),
+      fireTick,
+      'fire animation must not advance a paused replay',
+    );
+    await page.screenshot({ path: 'dist/replay-checks/molotov.png' });
+    await seekTimeline(first.round.freeze_end_tick + 74 * metadata.tickrate);
+    await page.waitForFunction(() => window.__replayFlameLayers?.length === 0);
+  }
+  await seekTimeline(noteTick);
   const before = await timeline.inputValue();
   await page
     .getByRole('button', { name: 'Воспроизвести', exact: true })
