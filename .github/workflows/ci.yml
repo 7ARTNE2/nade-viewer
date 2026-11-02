@@ -38,6 +38,12 @@ jobs:
       - name: Build frontend
         run: npm run build
 
+      - name: Install browser for replay regressions
+        run: npx playwright install chromium
+
+      - name: Test replay UI
+        run: npm run test:replay
+
       - name: Set up Go
         uses: actions/setup-go@v6
         with:

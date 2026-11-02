@@ -1,37 +1,38 @@
-// Browser regression with real parser output and mocked native IPC.
-// node tests/replay-ui.mjs <playwright package directory> <replay NDJSON>
+// Browser regression with deterministic fixtures and mocked native IPC.
+// Optional real parser output: node tests/replay-ui.mjs <playwright directory> <NDJSON>
 /* global window, document, localStorage, console */
 import assert from 'node:assert/strict';
 import { readFile, mkdir } from 'node:fs/promises';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL, URL } from 'node:url';
 import process from 'node:process';
 import { createServer } from 'vite';
+import * as fixture from './fixtures/replay.mjs';
 
 const { chromium } = await import(
-  pathToFileURL(process.argv[2] + '/index.mjs').href
+  process.argv[2]
+    ? pathToFileURL(process.argv[2] + '/index.mjs').href
+    : 'playwright'
 );
-const records = (await readFile(process.argv[3], 'utf8'))
-  .trim()
-  .split('\n')
-  .map(JSON.parse);
-const metadata = records.find((r) => r.type === 'complete');
+const records = process.argv[3]
+  ? (await readFile(process.argv[3], 'utf8')).trim().split('\n').map(JSON.parse)
+  : null;
+const metadata =
+  records?.find((r) => r.type === 'complete') ?? fixture.metadata;
+const resolvedRound = records?.find(
+  (r) =>
+    r.type === 'round' &&
+    r.events.some((e) => ['bomb_defused', 'bomb_exploded'].includes(e.type)),
+);
+const testRoundNumbers = new Set([0, 1, 2, resolvedRound?.round_number ?? 3]);
 const rounds = records
-  .filter(
-    (r) => r.type === 'round' && r.round_number >= 1 && r.round_number <= 3,
-  )
-  .map((r) => ({
-    ...r,
-    grenades: [],
-    frames: r.frames.map((f) => ({
-      ...f,
-      players: f.players.map(({ weapons, buttons, ...player }) => {
-        void weapons;
-        void buttons;
-        return player;
-      }),
-    })),
-  }));
-for (const record of records.filter((r) => r.type === 'grenade')) {
+  ? records
+      .filter((r) => r.type === 'round' && testRoundNumbers.has(r.round_number))
+      .map((r) => ({
+        ...r,
+        grenades: [],
+      }))
+  : fixture.rounds;
+for (const record of (records ?? []).filter((r) => r.type === 'grenade')) {
   const round = rounds.find((r) => r.round_number === record.round_number);
   if (!round) continue;
   round.grenades.push(record.grenade);
@@ -39,6 +40,29 @@ for (const record of records.filter((r) => r.type === 'grenade')) {
 }
 for (const round of rounds) round.events.sort((a, b) => a.tick - b.tick);
 const first = rounds.find((r) => r.round_number === 1) ?? rounds[0];
+const mapKey = metadata.map.toLowerCase().replace(/^de_/, '');
+const mapImagePath =
+  '/@fs/' +
+  fileURLToPath(
+    new URL(
+      `../src-tauri/resources/maps/2d/de_${mapKey}_radar_psd.png`,
+      import.meta.url,
+    ),
+  ).replaceAll('\\', '/');
+const radarConfig = await readFile(
+  new URL(
+    `../src-tauri/resources/radar_configs/de_${mapKey}.txt`,
+    import.meta.url,
+  ),
+  'utf8',
+);
+const radar = Object.fromEntries(
+  ['pos_x', 'pos_y', 'scale'].map((key) => [
+    key,
+    Number(radarConfig.match(new RegExp(`"${key}"\\s+"([^" ]+)"`))[1]),
+  ]),
+);
+radar.split_z = null;
 const server = await createServer({ server: { port: 1428, strictPort: true } });
 await server.listen();
 let browser;
@@ -51,7 +75,7 @@ try {
     viewport: { width: 1280, height: 720 },
   });
   await context.addInitScript(
-    ({ metadata, rounds, first }) => {
+    ({ metadata, rounds, mapImagePath, radar }) => {
       localStorage.setItem('nadeviewer.locale', 'ru');
       Object.defineProperty(window.navigator, 'clipboard', {
         value: {
@@ -62,7 +86,9 @@ try {
       });
       const drawImage = window.CanvasRenderingContext2D.prototype.drawImage;
       window.CanvasRenderingContext2D.prototype.drawImage = function (...args) {
-        window.__replayCamera = args.slice(1);
+        if (args[0].src?.includes('_radar_') && args[0].naturalWidth > 0) {
+          window.__replayCamera = args.slice(1);
+        }
         return drawImage.apply(this, args);
       };
       const calls = [];
@@ -71,16 +97,18 @@ try {
         id: 1,
         metadata,
         size: 21000000,
-        round_number: first.round_number,
-        tick: first.frames[0].tick,
+        round_number: 0,
+        tick: 0,
+        score_t: 2,
+        score_ct: 1,
+        winner_side: 'T',
       };
       const map = {
-        name: 'Mirage',
-        label: 'Mirage',
+        name: metadata.map,
+        label: metadata.map,
         grenade_count: 0,
         has_lower_radar: false,
-        map_image_path:
-          '/@fs/F:/Dev/NadeViewer/src-tauri/resources/maps/2d/de_mirage_radar_psd.png',
+        map_image_path: mapImagePath,
       };
       let entries = [entry],
         capable = localStorage.getItem('replay-test-no-plugin') !== 'true';
@@ -134,12 +162,20 @@ try {
                 metadata,
                 rounds: rounds.map((r) => r.round),
                 map,
-                radar: { pos_x: -3230, pos_y: 1713, scale: 5, split_z: null },
+                radar,
                 round_number: entry.round_number,
                 tick: entry.tick,
               };
             case 'get_replay_round':
               return rounds.find((r) => r.round_number === args.number);
+            case 'get_replay_round_preview': {
+              const r = rounds.find((r) => r.round_number === args.number);
+              return {
+                ...r,
+                frames: [{ ...r.frames[0], tick: r.round.start_tick }],
+                grenades: [],
+              };
+            }
             case 'save_replay_position':
               entry.round_number = args.number;
               entry.tick = args.tick;
@@ -173,22 +209,53 @@ try {
         },
       };
     },
-    { metadata, rounds, first },
+    { metadata, rounds, first, mapImagePath, radar },
   );
   const page = await context.newPage();
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
+  // Force the first round to mount before the shared radar preload resolves.
+  await page.route('**/*_radar_psd.png', async (route) => {
+    await page.waitForTimeout(200);
+    await route.continue();
+  });
   await page.goto('http://127.0.0.1:1428/replays/1');
   await page
     .getByRole('button', { name: 'Воспроизвести', exact: true })
     .waitFor();
   const timeline = page.getByRole('slider', { name: 'Таймлайн повтора' });
   const phaseTime = page.locator('.replay-phase-time');
+  await page.waitForFunction(() => window.__replayCamera?.length === 4);
+  assert.equal(
+    await page
+      .getByRole('button', { name: 'Предыдущий раунд', exact: true })
+      .isDisabled(),
+    true,
+  );
+  assert.equal(await phaseTime.textContent(), 'Раунд 0:00');
+  const settings = page.getByRole('button', {
+    name: 'Настройки реплея',
+    exact: true,
+  });
+  const setOption = async (name, checked) => {
+    await settings.click();
+    const option = page.getByRole('menuitemcheckbox', { name, exact: true });
+    if ((await option.getAttribute('aria-checked')) !== String(checked))
+      await option.click();
+    await page.keyboard.press('Escape');
+    assert.equal(await page.getByRole('menu').count(), 0);
+    assert.equal(
+      await settings.evaluate((button) => button === document.activeElement),
+      true,
+    );
+  };
+  await setOption('Фризтайм', true);
+  await seekTimeline(first.frames[0].tick);
   assert.match(await phaseTime.textContent(), /Фризтайм/);
-  await page.locator('.replay-freeze-segment').waitFor();
+  await page.locator('.replay-phase-segment').first().waitFor();
   await mkdir('dist/replay-checks', { recursive: true });
   await page.screenshot({ path: 'dist/replay-checks/freeze.png' });
-  const seekTimeline = async (value) => {
+  async function seekTimeline(value) {
     await timeline.evaluate((slider, tick) => {
       const setter = Object.getOwnPropertyDescriptor(
         window.HTMLInputElement.prototype,
@@ -197,7 +264,7 @@ try {
       setter.call(slider, String(tick));
       slider.dispatchEvent(new window.Event('input', { bubbles: true }));
     }, value);
-  };
+  }
   const checkSliderLayers = async () => {
     const layers = await timeline.evaluate((slider) => {
       const track = document.querySelector('.replay-timeline-track');
@@ -265,13 +332,25 @@ try {
     'false',
   );
   await speeds.getByRole('button', { name: '1×', exact: true }).click();
-  const roundSelect = page.getByRole('combobox', {
-    name: 'Раунд',
-    exact: true,
-  });
-  await roundSelect.selectOption('2');
-  assert.equal(await roundSelect.inputValue(), '2');
-  await roundSelect.selectOption('1');
+  const selectRound = async (number) => {
+    await page
+      .locator('.replay-round-rail-list button')
+      .filter({
+        has: page.locator('span', { hasText: new RegExp(`^R${number}$`) }),
+      })
+      .click();
+    await page.waitForFunction(
+      (number) =>
+        document
+          .querySelector('.replay-round-clock small')
+          ?.textContent.trim()
+          .endsWith(' ' + number),
+      number,
+    );
+    await timeline.waitFor();
+  };
+  await selectRound(2);
+  await selectRound(1);
   await page.getByRole('slider', { name: 'Таймлайн повтора' }).waitFor();
   const radarCanvas = page.locator('canvas');
   const camera = () => page.evaluate(() => window.__replayCamera);
@@ -372,8 +451,11 @@ try {
   assert.ok(grenade);
   await page.locator('.replay-throw').first().click();
   await assert.doesNotReject(() =>
-    page.getByRole('button', { name: 'Копировать координаты' }).waitFor(),
+    page
+      .getByRole('button', { name: 'Копировать координаты', exact: true })
+      .waitFor(),
   );
+  await page.getByRole('button', { name: 'К броску', exact: true }).click();
   assert.equal(Number(await timeline.inputValue()), grenade.release_tick);
   const throwSeconds = Math.floor(
     (grenade.release_tick - first.round.freeze_end_tick) / metadata.tickrate,
@@ -469,7 +551,9 @@ try {
   );
   assert.ok(layout.footer.bottom <= layout.height + 1, JSON.stringify(layout));
   await page.locator('.replay-throw').first().click();
-  await page.getByRole('button', { name: 'Копировать координаты' }).waitFor();
+  await page
+    .getByRole('button', { name: 'Копировать координаты', exact: true })
+    .waitFor();
   const detailLayout = await page
     .locator('.replay-grenade-detail')
     .evaluate((panel) => ({
@@ -484,6 +568,7 @@ try {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   const copyButton = page.getByRole('button', {
     name: 'Копировать координаты',
+    exact: true,
   });
   await copyButton.click();
   await page.locator('.detail-copy-button.copied .lucide-check').waitFor();
@@ -510,12 +595,21 @@ try {
   await page.screenshot({ path: 'dist/replay-checks/copy-confirmation.png' });
   await page.locator('.detail-copy-button:not(.copied) .lucide-copy').waitFor();
   await page.emulateMedia({ reducedMotion: 'no-preference' });
-  await roundSelect.selectOption('3');
+  const bombRound = rounds.find(
+    (r) =>
+      r.events.some((e) => e.type === 'bomb_planted') &&
+      r.events.some((e) => ['bomb_defused', 'bomb_exploded'].includes(e.type)),
+  );
+  assert.ok(bombRound, 'fixture must contain a resolved bomb round');
+  await selectRound(bombRound.round_number);
   await timeline.waitFor();
-  const bombRound = rounds.find((r) => r.round_number === 3);
   const plant = bombRound.events.find((e) => e.type === 'bomb_planted');
-  const defused = bombRound.events.find((e) => e.type === 'bomb_defused');
-  assert.ok(plant && defused);
+  const resolved = bombRound.events.find((e) =>
+    ['bomb_defused', 'bomb_exploded'].includes(e.type),
+  );
+  const terminalLabel =
+    resolved.type === 'bomb_defused' ? 'Обезврежена' : 'Взорвалась';
+  assert.ok(plant && resolved);
   await seekTimeline(plant.tick - 1);
   assert.equal(await page.locator('.replay-clocks.has-bomb').count(), 0);
   await seekTimeline(plant.tick);
@@ -524,7 +618,8 @@ try {
     `Бомба ${clockLabel(plant.data.duration_seconds)}`,
   );
   const bombSegment = await page
-    .locator('.replay-bomb-segment')
+    .locator('.replay-phase-segment')
+    .nth(2)
     .evaluate((segment) => ({
       left: Number.parseFloat(segment.style.left),
       width: Number.parseFloat(segment.style.width),
@@ -537,7 +632,7 @@ try {
   );
   assert.ok(
     Math.abs(
-      bombSegment.width - ((defused.tick - plant.tick) / bombLength) * 100,
+      bombSegment.width - ((resolved.tick - plant.tick) / bombLength) * 100,
     ) < 0.01,
   );
   const bombClock = page.locator('.replay-clocks.has-bomb');
@@ -562,9 +657,9 @@ try {
   await page.screenshot({ path: 'dist/replay-checks/bomb-compact.png' });
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.screenshot({ path: 'dist/replay-checks/bomb-desktop.png' });
-  await seekTimeline(defused.tick);
-  assert.equal(await phaseTime.textContent(), 'Обезврежена');
-  assert.match(await bombClock.textContent(), /Обезврежена/);
+  await seekTimeline(resolved.tick);
+  assert.equal(await phaseTime.textContent(), terminalLabel);
+  assert.ok((await bombClock.textContent()).includes(terminalLabel));
   await seekTimeline(plant.tick + metadata.tickrate);
   assert.equal(
     await phaseTime.textContent(),
@@ -592,8 +687,177 @@ try {
       .locator('time')
       .textContent();
     assert.equal(postPlantTime, clockLabel(postPlantSeconds));
+    await page.locator('.replay-throw').nth(postPlantIndex).click();
+    const bombMetric = page
+      .locator('.replay-detail-metrics > div')
+      .filter({ hasText: 'Бомба' })
+      .locator('strong');
+    assert.equal(await bombMetric.textContent(), postPlantTime);
+    await seekTimeline(plant.tick + 2 * metadata.tickrate);
+    assert.equal(
+      await bombMetric.textContent(),
+      postPlantTime,
+      'throw timestamp must stay fixed when seeking',
+    );
   }
+  await page.locator('.replay-round-rail-list button[aria-current]').hover();
+  assert.equal(
+    await page.locator('.replay-round-rail-card-reason').textContent(),
+    'Бомба ' + terminalLabel.toLowerCase(),
+  );
+  assert.match(
+    await page.locator('.replay-round-rail-card-feed').textContent(),
+    /Бомба установлена/,
+  );
+  assert.doesNotMatch(
+    await page.locator('.replay-round-rail-card-feed').textContent(),
+    /bomb_planted/,
+  );
+  await settings.click();
+  await page.locator('.replay-heading h1').click();
+  assert.equal(
+    await page.getByRole('menu').count(),
+    0,
+    'outside click must close settings',
+  );
+
+  await selectRound(1);
+  const actionStart = first.round.freeze_end_tick;
+  const roundEnd = first.frames.at(-1).tick;
+  await seekTimeline(actionStart + 30 * metadata.tickrate);
+  await setOption('Фризтайм', false);
+  assert.equal(
+    Number(await timeline.inputValue()),
+    actionStart + 30 * metadata.tickrate,
+  );
+  await setOption('Фризтайм', true);
+  await seekTimeline(actionStart - 1);
+  await setOption('Фризтайм', false);
+  assert.equal(
+    Number(await timeline.inputValue()),
+    actionStart,
+    'hiding freeze only skips a position within freeze',
+  );
+  await page.locator('.replay-heading h1').click();
+  await page.keyboard.press('ArrowLeft');
+  assert.equal(
+    Number(await timeline.inputValue()),
+    actionStart,
+    'keyboard seek must respect hidden freeze',
+  );
+
+  const allMarkers = await page
+    .locator('.replay-timeline-grenade-marker')
+    .count();
+  await page.getByRole('button', { name: 'Увеличить', exact: true }).click();
+  await page.getByRole('button', { name: 'Увеличить', exact: true }).click();
+  assert.equal(
+    await phaseTime.textContent(),
+    'Раунд 0:00',
+    'zoom must not change the current-time label',
+  );
+  assert.equal(await timeline.getAttribute('aria-valuetext'), 'Раунд 0:00');
+  const visibleMarkers = await page
+    .locator('.replay-timeline-grenade-marker')
+    .count();
+  assert.ok(visibleMarkers < allMarkers, 'offscreen grenades must be hidden');
+  const markerWindow = await timeline.evaluate((slider) => ({
+    min: Number(slider.min),
+    max: Number(slider.max),
+    ticks: [
+      ...document.querySelectorAll(
+        '.replay-timeline-grenade-marker, .replay-event-ticks [data-tick]',
+      ),
+    ].map((m) => Number(m.dataset.tick)),
+  }));
+  assert.ok(
+    markerWindow.ticks.every(
+      (tick) => tick >= markerWindow.min && tick <= markerWindow.max,
+    ),
+    JSON.stringify(markerWindow),
+  );
+  await page
+    .getByRole('button', { name: 'Сбросить масштаб', exact: true })
+    .click();
+  assert.equal(
+    Number(await timeline.inputValue()),
+    actionStart,
+    'zoom must not seek the replay',
+  );
+
+  await seekTimeline(roundEnd);
+  await page.locator('.replay-heading h1').click();
+  await page.keyboard.press('Space');
+  await page.getByRole('button', { name: 'Пауза', exact: true }).waitFor();
+  assert.ok(
+    Number(await timeline.inputValue()) < roundEnd,
+    'space must restart a finished round',
+  );
+  await page.getByRole('button', { name: 'Пауза', exact: true }).click();
+
+  await setOption('Автоследующий раунд', true);
+  const finishRound = async () => {
+    await seekTimeline(roundEnd - 1);
+    await page
+      .getByRole('button', { name: 'Воспроизвести', exact: true })
+      .click();
+    await page
+      .getByRole('button', { name: 'Воспроизвести', exact: true })
+      .waitFor();
+  };
+  await finishRound();
+  await seekTimeline(actionStart + 10 * metadata.tickrate);
+  await page.waitForTimeout(750);
+  assert.equal(
+    await page
+      .locator('.replay-round-rail-list button[aria-current] span')
+      .textContent(),
+    'R1',
+    'manual seek must cancel pending auto-next',
+  );
+  assert.equal(
+    Number(await timeline.inputValue()),
+    actionStart + 10 * metadata.tickrate,
+  );
+  await finishRound();
+  await setOption('Автоследующий раунд', false);
+  await page.waitForTimeout(750);
+  assert.equal(
+    await page
+      .locator('.replay-round-rail-list button[aria-current] span')
+      .textContent(),
+    'R1',
+    'disabling auto-next must cancel an already scheduled transition',
+  );
+  await setOption('Автоследующий раунд', true);
+  await finishRound();
+  await page.evaluate(() => window.dispatchEvent(new window.Event('blur')));
+  await page.waitForTimeout(750);
+  assert.equal(
+    await page
+      .locator('.replay-round-rail-list button[aria-current] span')
+      .textContent(),
+    'R1',
+    'inactive windows must not auto-advance',
+  );
+  await page.evaluate(() => window.dispatchEvent(new window.Event('focus')));
+  await finishRound();
+  await page.waitForFunction(
+    () =>
+      document.querySelector(
+        '.replay-round-rail-list button[aria-current] span',
+      )?.textContent === 'R2',
+  );
+  await page.getByRole('button', { name: 'Пауза', exact: true }).click();
+  await selectRound(1);
+  await finishRound();
   await page.getByRole('button', { name: 'История матчей' }).click();
+  await page.waitForTimeout(750);
+  assert.equal(
+    new URL(page.url()).pathname,
+    '/replays',
+    'auto-next must not survive leaving the player',
+  );
   await page
     .getByRole('link')
     .filter({ has: page.locator('.replay-map-code') })
@@ -628,6 +892,14 @@ try {
   await page.getByRole('button', { name: 'Удалить матч', exact: true }).click();
   await page.getByRole('button', { name: 'Удалить', exact: true }).click();
   await page.getByRole('heading', { name: 'Нет сохранённых матчей' }).waitFor();
+  const failedRadarPage = await context.newPage();
+  failedRadarPage.on('pageerror', (e) => errors.push(e.message));
+  await failedRadarPage.route('**/*_radar_psd.png', (route) => route.abort());
+  await failedRadarPage.goto('http://127.0.0.1:1428/replays/1');
+  await failedRadarPage
+    .getByText('Радар этой карты недоступен', { exact: true })
+    .waitFor();
+  await failedRadarPage.close();
   assert.deepEqual(errors, []);
   console.log(
     JSON.stringify({
@@ -635,7 +907,7 @@ try {
       canvas: pixels,
       layout,
       rounds: rounds.length,
-      grenades: records.filter((r) => r.type === 'grenade').length,
+      grenades: rounds.reduce((count, r) => count + r.grenades.length, 0),
     }),
   );
 } finally {

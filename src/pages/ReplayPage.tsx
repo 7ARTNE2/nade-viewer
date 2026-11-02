@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
@@ -88,26 +88,39 @@ function grenadeLabel(type: string, locale: string) {
   return labels[type]?.[locale === 'ru' ? 1 : 0] ?? type;
 }
 function normalizeWeapon(name?: string) {
-  return String(name ?? '').toLowerCase().replace(/[_-]/g, ' ');
+  return String(name ?? '')
+    .toLowerCase()
+    .replace(/[_-]/g, ' ');
 }
 function weaponMatchesActive(name: string, active?: string) {
   const weapon = normalizeWeapon(name);
   const current = normalizeWeapon(active);
   if (!weapon || !current) return false;
-  return weapon === current || weapon.replace(/\s+/g, '') === current.replace(/\s+/g, '') ||
-    (weapon.includes('m4a1') && current.includes('m4a1'));
+  return (
+    weapon === current ||
+    weapon.replace(/\s+/g, '') === current.replace(/\s+/g, '') ||
+    (weapon.includes('m4a1') && current.includes('m4a1'))
+  );
 }
 function isFirearmWeapon(weapon: ReplayWeapon) {
   const name = normalizeWeapon(weapon.name);
   // Replay frames store the concrete equipment name in `type` (for example
   // "AK-47"), so classify from the name rather than expecting a class label.
-  return /glock|usp|p2000|p250|deagle|desert eagle|five seven|tec 9|cz75|dual beretta|revolver|mp7|mp9|bizon|mac 10|ump|p90|mp5|sawed off|nova|mag 7|xm1014|m249|negev|galil|famas|ak 47|m4a4|m4a1|ssg 08|sg 553|aug|awp|scar 20|g3sg1/.test(name);
+  return /glock|usp|p2000|p250|deagle|desert eagle|five seven|tec 9|cz75|dual beretta|revolver|mp7|mp9|bizon|mac 10|ump|p90|mp5|sawed off|nova|mag 7|xm1014|m249|negev|galil|famas|ak 47|m4a4|m4a1|ssg 08|sg 553|aug|awp|scar 20|g3sg1/.test(
+    name,
+  );
 }
 function weaponAmmoText(weapon: ReplayWeapon) {
   if (!isFirearmWeapon(weapon)) return '';
   const magazine = Number(weapon.ammo_in_magazine);
   const reserve = Number(weapon.ammo_reserve);
-  if (!Number.isFinite(magazine) || !Number.isFinite(reserve) || magazine < 0 || reserve < 0) return '';
+  if (
+    !Number.isFinite(magazine) ||
+    !Number.isFinite(reserve) ||
+    magazine < 0 ||
+    reserve < 0
+  )
+    return '';
   if (magazine === 0 && reserve === 0) return '';
   return `${magazine}/${reserve}`;
 }
@@ -125,8 +138,18 @@ function weaponSlot(weapon: ReplayWeapon): WeaponSlot | null {
   const name = `${normalizeWeapon(weapon.name)} ${normalizeWeapon(weapon.type)}`;
   if (isC4Weapon(weapon) || isGrenadeWeapon(weapon)) return null;
   if (/zeus|taser/.test(name)) return 'zeus';
-  if (/knife|bayonet|karambit|kukri|talon|butterfly|flip|gut|huntsman|falchion|shadow daggers|navaja|stiletto|ursus|nomad|paracord|survival/.test(name)) return 'knife';
-  if (/glock|usp|p2000|p250|deagle|desert eagle|five seven|fiveseven|tec 9|cz75|dual beretta|elite|revolver|r8/.test(name)) return 'pistol';
+  if (
+    /knife|bayonet|karambit|kukri|talon|butterfly|flip|gut|huntsman|falchion|shadow daggers|navaja|stiletto|ursus|nomad|paracord|survival/.test(
+      name,
+    )
+  )
+    return 'knife';
+  if (
+    /glock|usp|p2000|p250|deagle|desert eagle|five seven|fiveseven|tec 9|cz75|dual beretta|elite|revolver|r8/.test(
+      name,
+    )
+  )
+    return 'pistol';
   if (isFirearmWeapon(weapon)) return 'primary';
   return null;
 }
@@ -137,11 +160,12 @@ function weaponSlots(weapons: ReplayWeapon[]) {
     const slot = weaponSlot(weapon);
     if (slot && !slots.has(slot)) slots.set(slot, weapon);
   }
-  return (['primary', 'pistol', 'knife', 'zeus'] as WeaponSlot[])
-    .flatMap((slot) => {
+  return (['primary', 'pistol', 'knife', 'zeus'] as WeaponSlot[]).flatMap(
+    (slot) => {
       const weapon = slots.get(slot);
       return weapon ? [{ slot, weapon }] : [];
-    });
+    },
+  );
 }
 function groupedGrenades(weapons: ReplayWeapon[]) {
   const groups = new Map<string, { weapon: ReplayWeapon; count: number }>();
@@ -167,104 +191,202 @@ function killNotices(event: ReplayRound['events'][number]) {
     result.push('suicide');
   return result;
 }
-function roundReasonLabel(reason?: string | null, winnerSide?: string | null) {
-  const value = String(reason ?? '').trim().toLowerCase();
-  const labels: Record<string, string> = {
-    target_saved: 'Target saved',
-    bomb_defused: 'Bomb defused',
-    bomb_exploded: 'Bomb exploded',
-    terrorist_win: 'Terrorists win',
-    ct_win: 'Counter-Terrorists win',
-    time: 'Time expired',
+function roundReasonLabel(
+  reason: string | null | undefined,
+  winnerSide: string | null | undefined,
+  tr: (english: string, russian: string) => string,
+) {
+  const value = String(reason ?? '')
+    .trim()
+    .toLowerCase();
+  const labels: Record<string, [string, string]> = {
+    target_saved: ['Target saved', 'Цель сохранена'],
+    bomb_defused: ['Bomb defused', 'Бомба обезврежена'],
+    bomb_exploded: ['Bomb exploded', 'Бомба взорвалась'],
+    target_bombed: ['Bomb exploded', 'Бомба взорвалась'],
+    terrorist_win: ['Terrorists win', 'Победа террористов'],
+    t_win: ['Terrorists win', 'Победа террористов'],
+    ct_win: ['Counter-Terrorists win', 'Победа спецназа'],
+    time: ['Time expired', 'Время истекло'],
+    draw: ['Draw', 'Ничья'],
+    t_surrender: ['Terrorists surrendered', 'Террористы сдались'],
+    ct_surrender: ['Counter-Terrorists surrendered', 'Спецназ сдался'],
+    t_planted: ['Bomb planted', 'Бомба установлена'],
   };
-  return labels[value] ?? (winnerSide === 'T' ? 'Terrorists win' : winnerSide === 'CT' ? 'Counter-Terrorists win' : 'Round in progress');
+  const label =
+    labels[value] ??
+    (winnerSide === 'T'
+      ? labels.t_win
+      : winnerSide === 'CT'
+        ? labels.ct_win
+        : ['Round in progress', 'Раунд продолжается']);
+  return tr(label[0], label[1]);
 }
 function roundWinnerClass(side?: string | null) {
   return side === 'T' || side === 'CT' ? side.toLowerCase() : 'neutral';
 }
-function roundEndingScore(round: { score_t: number; score_ct: number; winner_side?: string | null }) {
+function roundEndingScore(round: {
+  score_t: number;
+  score_ct: number;
+  winner_side?: string | null;
+}) {
   return {
     t: round.score_t + (round.winner_side === 'T' ? 1 : 0),
     ct: round.score_ct + (round.winner_side === 'CT' ? 1 : 0),
   };
 }
-const Team = memo(function Team({ side, players, bombCarrier }: { side: string; players: ReplayPlayer[]; bombCarrier?: string }) {
-  const { tr } = useI18n();
-  const economy = players.reduce((sum, player) => sum + (player.equipment_value ?? 0), 0);
-  const money = players.reduce((sum, player) => sum + player.money, 0);
-  return (
-    <section className={`replay-team is-${side.toLowerCase()}`}>
-      <header>
-        <strong>{players[0]?.team_name || side}</strong>
-        <span className="replay-team-economy">${money.toLocaleString()} · ${economy.toLocaleString()}</span>
-      </header>
-      {players.map((p) => (
-        <div className={`replay-player ${p.alive ? '' : 'is-dead'}`} key={p.id}>
-          <div className="replay-player-head">
-            <strong title={p.name}>{p.name}</strong>
-            <span className="replay-player-stats">
-              <b>{p.health} HP</b>
-              <span className="replay-player-armor-inline" title={p.has_helmet ? 'Kevlar + helmet' : 'Kevlar'}>
-                {p.armor > 0 && <img src={p.has_helmet ? armorHelmetIcon : armorIcon} alt="" />}
-                {p.armor} AP
+const Team = memo(
+  function Team({
+    side,
+    players,
+    bombCarrier,
+  }: {
+    side: string;
+    players: ReplayPlayer[];
+    bombCarrier?: string;
+  }) {
+    const { tr } = useI18n();
+    const economy = players.reduce(
+      (sum, player) => sum + (player.equipment_value ?? 0),
+      0,
+    );
+    const money = players.reduce((sum, player) => sum + player.money, 0);
+    return (
+      <section className={`replay-team is-${side.toLowerCase()}`}>
+        <header>
+          <strong>{players[0]?.team_name || side}</strong>
+          <span className="replay-team-economy">
+            ${money.toLocaleString()} · ${economy.toLocaleString()}
+          </span>
+        </header>
+        {players.map((p) => (
+          <div
+            className={`replay-player ${p.alive ? '' : 'is-dead'}`}
+            key={p.id}
+          >
+            <div className="replay-player-head">
+              <strong title={p.name}>{p.name}</strong>
+              <span className="replay-player-stats">
+                <b>{p.health} HP</b>
+                <span
+                  className="replay-player-armor-inline"
+                  title={p.has_helmet ? 'Kevlar + helmet' : 'Kevlar'}
+                >
+                  {p.armor > 0 && (
+                    <img
+                      src={p.has_helmet ? armorHelmetIcon : armorIcon}
+                      alt=""
+                    />
+                  )}
+                  {p.armor} AP
+                </span>
+                <span>${p.money.toLocaleString()}</span>
               </span>
-              <span>${p.money.toLocaleString()}</span>
-            </span>
-          </div>
-          <meter
-            min={0}
-            max={100}
-            value={p.alive ? p.health : 0}
-            aria-label={`${p.name} ${tr('health', 'здоровье')}`}
-          />
-          <div className="replay-player-loadout">
-            <div className="replay-player-icons">
-              <div className="replay-player-group replay-player-weapons">
-              {weaponSlots(p.weapons ?? []).map(({ weapon: w }) => {
-                const active = weaponMatchesActive(w.name, p.active_weapon);
-                const ammo = weaponAmmoText(w);
-                return (
-                  <span className={`replay-player-item replay-player-weapon-item ${active ? 'active' : ''}`} key={w.name} title={ammo ? `${w.name} · ${ammo}` : w.name}>
-                    <img src={weaponIcon(w.name)} alt="" />
-                    {ammo && <small className="replay-player-ammo">{ammo}</small>}
-                  </span>
-                );
-              })}
-              </div>
-              <div className="replay-player-group replay-player-grenades">
-              {groupedGrenades(p.weapons ?? []).map(({ weapon, count }) => {
-                const active = weaponMatchesActive(weapon.name, p.active_weapon);
-                return (
-                  <span className={`replay-player-item ${active ? 'active' : ''}`} key={normalizeWeapon(weapon.name)} title={`${weapon.name}${count > 1 ? ` ×${count}` : ''}`}>
-                    <img src={weaponIcon(weapon.name)} alt="" />
-                    {count > 1 && <small className="replay-player-count">×{count}</small>}
-                  </span>
-                );
-              })}
-              </div>
-              <div className="replay-player-group replay-player-specials">
-                {p.has_defuse_kit && <span className="replay-player-item" title={tr('Defuse kit', 'Дефьюз-кит')}><img src={defuserIcon} alt={tr('Defuse kit', 'Дефьюз-кит')} /></span>}
-                {(p.id === bombCarrier || (p.weapons ?? []).some(isC4Weapon)) && <span className={`replay-player-item ${p.id === bombCarrier ? 'active' : ''}`} title={tr('Bomb', 'Бомба')}><img className="replay-player-c4" src={c4Icon} alt={tr('Bomb', 'Бомба')} /></span>}
+            </div>
+            <meter
+              min={0}
+              max={100}
+              value={p.alive ? p.health : 0}
+              aria-label={`${p.name} ${tr('health', 'здоровье')}`}
+            />
+            <div className="replay-player-loadout">
+              <div className="replay-player-icons">
+                <div className="replay-player-group replay-player-weapons">
+                  {weaponSlots(p.weapons ?? []).map(({ weapon: w }) => {
+                    const active = weaponMatchesActive(w.name, p.active_weapon);
+                    const ammo = weaponAmmoText(w);
+                    return (
+                      <span
+                        className={`replay-player-item replay-player-weapon-item ${active ? 'active' : ''}`}
+                        key={w.name}
+                        title={ammo ? `${w.name} · ${ammo}` : w.name}
+                      >
+                        <img src={weaponIcon(w.name)} alt="" />
+                        {ammo && (
+                          <small className="replay-player-ammo">{ammo}</small>
+                        )}
+                      </span>
+                    );
+                  })}
+                </div>
+                <div className="replay-player-group replay-player-grenades">
+                  {groupedGrenades(p.weapons ?? []).map(({ weapon, count }) => {
+                    const active = weaponMatchesActive(
+                      weapon.name,
+                      p.active_weapon,
+                    );
+                    return (
+                      <span
+                        className={`replay-player-item ${active ? 'active' : ''}`}
+                        key={normalizeWeapon(weapon.name)}
+                        title={`${weapon.name}${count > 1 ? ` ×${count}` : ''}`}
+                      >
+                        <img src={weaponIcon(weapon.name)} alt="" />
+                        {count > 1 && (
+                          <small className="replay-player-count">
+                            ×{count}
+                          </small>
+                        )}
+                      </span>
+                    );
+                  })}
+                </div>
+                <div className="replay-player-group replay-player-specials">
+                  {p.has_defuse_kit && (
+                    <span
+                      className="replay-player-item"
+                      title={tr('Defuse kit', 'Дефьюз-кит')}
+                    >
+                      <img
+                        src={defuserIcon}
+                        alt={tr('Defuse kit', 'Дефьюз-кит')}
+                      />
+                    </span>
+                  )}
+                  {(p.id === bombCarrier ||
+                    (p.weapons ?? []).some(isC4Weapon)) && (
+                    <span
+                      className={`replay-player-item ${p.id === bombCarrier ? 'active' : ''}`}
+                      title={tr('Bomb', 'Бомба')}
+                    >
+                      <img
+                        className="replay-player-c4"
+                        src={c4Icon}
+                        alt={tr('Bomb', 'Бомба')}
+                      />
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      ))}
-    </section>
-  );
-}, (previous, next) => {
-  if (previous.side !== next.side || previous.bombCarrier !== next.bombCarrier || previous.players.length !== next.players.length) {
-    return false;
-  }
-  return previous.players.every((player, index) => {
-    const nextPlayer = next.players[index];
-    return nextPlayer && player.id === nextPlayer.id &&
-      player.alive === nextPlayer.alive && player.health === nextPlayer.health &&
-      player.armor === nextPlayer.armor && player.money === nextPlayer.money &&
-      player.active_weapon === nextPlayer.active_weapon &&
-      player.weapons === nextPlayer.weapons;
-  });
-});
+        ))}
+      </section>
+    );
+  },
+  (previous, next) => {
+    if (
+      previous.side !== next.side ||
+      previous.bombCarrier !== next.bombCarrier ||
+      previous.players.length !== next.players.length
+    ) {
+      return false;
+    }
+    return previous.players.every((player, index) => {
+      const nextPlayer = next.players[index];
+      return (
+        nextPlayer &&
+        player.id === nextPlayer.id &&
+        player.alive === nextPlayer.alive &&
+        player.health === nextPlayer.health &&
+        player.armor === nextPlayer.armor &&
+        player.money === nextPlayer.money &&
+        player.active_weapon === nextPlayer.active_weapon &&
+        player.weapons === nextPlayer.weapons
+      );
+    });
+  },
+);
 export default function ReplayPage() {
   const { id: routeId } = useParams<{ id: string }>();
   const id = routeId ? Number(routeId) : null;
@@ -284,6 +406,8 @@ export default function ReplayPage() {
   const [showFreezeTime, setShowFreezeTime] = useState(false);
   const [autoNextRound, setAutoNextRound] = useState(false);
   const [replayOptionsOpen, setReplayOptionsOpen] = useState(false);
+  const replayOptionsRef = useRef<HTMLDivElement>(null);
+  const replayOptionsTrigger = useRef<HTMLButtonElement>(null);
   const [tick, setTick] = useState(0);
   const [lower, setLower] = useState(false);
   const [selected, setSelected] = useState<ReplayGrenade | null>(null);
@@ -294,8 +418,11 @@ export default function ReplayPage() {
     top: number;
     align: 'start' | 'center' | 'end';
   } | null>(null);
-  const [roundPreviews, setRoundPreviews] = useState<Record<number, ReplayRound>>({});
-  const [timelineZoomTarget, setTimelineZoomTarget] = useState<HTMLDivElement | null>(null);
+  const [roundPreviews, setRoundPreviews] = useState<
+    Record<number, ReplayRound>
+  >({});
+  const [timelineZoomTarget, setTimelineZoomTarget] =
+    useState<HTMLDivElement | null>(null);
   const roundRailRef = useRef<HTMLDivElement | null>(null);
   const roundPreviewCache = useRef(new Map<number, Promise<ReplayRound>>());
   const [roundRailCanScrollPrev, setRoundRailCanScrollPrev] = useState(false);
@@ -317,7 +444,16 @@ export default function ReplayPage() {
   const autoNextRoundRef = useRef(false);
   const autoPlayNextRound = useRef(false);
   const autoNextTimer = useRef<number>();
+  const cancelAutoNext = useCallback(() => {
+    window.clearTimeout(autoNextTimer.current);
+    autoNextTimer.current = undefined;
+    autoPlayNextRound.current = false;
+  }, []);
   const showFreezeTimeRef = useRef(false);
+  const replayRounds = useMemo(
+    () => detail?.rounds.filter((item) => item.number > 0) ?? [],
+    [detail],
+  );
   const killTicks = useMemo(() => {
     const ticks = new Map<string, number>();
     if (!round) return ticks;
@@ -331,10 +467,35 @@ export default function ReplayPage() {
   }, [round]);
   useEffect(() => {
     autoNextRoundRef.current = autoNextRound;
-  }, [autoNextRound]);
+    if (!autoNextRound) cancelAutoNext();
+  }, [autoNextRound, cancelAutoNext]);
   useEffect(() => {
     showFreezeTimeRef.current = showFreezeTime;
   }, [showFreezeTime]);
+  useEffect(() => {
+    if (!replayOptionsOpen) return;
+    const closeOutside = (event: PointerEvent) => {
+      if (
+        event.target instanceof Node &&
+        !replayOptionsRef.current?.contains(event.target)
+      ) {
+        setReplayOptionsOpen(false);
+      }
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      event.stopPropagation();
+      setReplayOptionsOpen(false);
+      replayOptionsTrigger.current?.focus();
+    };
+    document.addEventListener('pointerdown', closeOutside);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('pointerdown', closeOutside);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [replayOptionsOpen]);
   const cache = useRef(new Map<number, Promise<ReplayRound>>());
   const loadedRounds = useRef(new Map<number, ReplayRound>());
   const jobOwned = useRef(false),
@@ -406,6 +567,8 @@ export default function ReplayPage() {
   }, [navigate]);
   useEffect(() => {
     let alive = true;
+    cancelAutoNext();
+    setReplayOptionsOpen(false);
     setPlaying(false);
     setDetail(null);
     setRound(null);
@@ -432,9 +595,9 @@ export default function ReplayPage() {
         setDetail(v);
         resume.current = v.tick;
         setNumber(
-          v.rounds.some((r) => r.number === v.round_number)
+          v.rounds.some((r) => r.number > 0 && r.number === v.round_number)
             ? v.round_number
-            : (v.rounds[0]?.number ?? null),
+            : (v.rounds.find((r) => r.number > 0)?.number ?? null),
         );
       },
       (e) => {
@@ -443,8 +606,9 @@ export default function ReplayPage() {
     );
     return () => {
       alive = false;
+      cancelAutoNext();
     };
-  }, [id]);
+  }, [id, cancelAutoNext]);
   useEffect(() => {
     if (!detail) return;
     void Promise.allSettled([
@@ -501,9 +665,9 @@ export default function ReplayPage() {
         setTick(next);
         setRound(v);
         if (continuePlaying) setPlaying(true);
-        const index = detail.rounds.findIndex((r) => r.number === number);
+        const index = replayRounds.findIndex((r) => r.number === number);
         const keep = new Set(
-          detail.rounds
+          replayRounds
             .slice(Math.max(0, index - 1), index + 2)
             .map((r) => r.number),
         );
@@ -525,13 +689,43 @@ export default function ReplayPage() {
     return () => {
       alive = false;
     };
-  }, [detail, number]);
+  }, [detail, number, replayRounds]);
+  const changeRound = useCallback(
+    (next: number, autoplay = false) => {
+      if (!replayRounds.some((item) => item.number === next)) return;
+      cancelAutoNext();
+      autoPlayNextRound.current = autoplay;
+      resume.current = null;
+      const p = position.current;
+      if (p)
+        void saveReplayPosition(p.id, p.number, clock.current).catch(
+          () => undefined,
+        );
+      const cached = loadedRounds.current.get(next);
+      if (cached) {
+        const [a, b] = roundBounds(cached);
+        const start = showFreezeTimeRef.current
+          ? a
+          : (cached.round.freeze_end_tick ?? a);
+        clock.current = clamp(start, a, b);
+        setTick(clock.current);
+        setRound(cached);
+      }
+      setSelected(null);
+      setPlaying(false);
+      setNumber(next);
+    },
+    [cancelAutoNext, replayRounds],
+  );
   useEffect(() => {
     const stop = onWindowActiveChange((active) => {
-      if (!active) setPlaying(false);
+      if (!active) {
+        cancelAutoNext();
+        setPlaying(false);
+      }
     });
     return stop;
-  }, []);
+  }, [cancelAutoNext]);
   useEffect(() => {
     if (!playing || !round || !detail) return;
     let raf = 0,
@@ -562,20 +756,19 @@ export default function ReplayPage() {
         lastUi = now;
       }
       if (clock.current >= end) {
-        const currentIndex = detail.rounds.findIndex(
+        const currentIndex = replayRounds.findIndex(
           (item) => item.number === round.round.number,
         );
-        const nextRound = detail.rounds[currentIndex + 1];
+        const nextRound = replayRounds[currentIndex + 1];
         if (autoNextRound && nextRound) {
           setPlaying(false);
-          autoPlayNextRound.current = true;
           autoNextTimer.current = window.setTimeout(() => {
             autoNextTimer.current = undefined;
-            if (!autoNextRoundRef.current) {
+            if (!autoNextRoundRef.current || !isWindowActive()) {
               autoPlayNextRound.current = false;
               return;
             }
-            changeRound(nextRound.number);
+            changeRound(nextRound.number, true);
           }, 650);
           return;
         }
@@ -586,7 +779,7 @@ export default function ReplayPage() {
     };
     raf = requestAnimationFrame(run);
     return () => cancelAnimationFrame(raf);
-  }, [autoNextRound, playing, round, detail, speed]);
+  }, [autoNextRound, playing, round, detail, speed, replayRounds, changeRound]);
   useEffect(() => {
     if (id === null || !round) return;
     position.current = { id, number: round.round.number, tick };
@@ -603,12 +796,26 @@ export default function ReplayPage() {
       save();
     };
   }, []);
-  const seek = (value: number) => {
+  const seek = useCallback(
+    (value: number) => {
+      cancelAutoNext();
+      if (!round) return;
+      const [a, b] = roundBounds(round);
+      const start = showFreezeTime
+        ? a
+        : clamp(round.round.freeze_end_tick ?? a, a, b);
+      clock.current = clamp(value, start, b);
+      setTick(clock.current);
+    },
+    [cancelAutoNext, round, showFreezeTime],
+  );
+  const togglePlayback = useCallback(() => {
     if (!round) return;
-    const [a, b] = roundBounds(round);
-    clock.current = clamp(value, a, b);
-    setTick(clock.current);
-  };
+    cancelAutoNext();
+    const [start, end] = roundBounds(round);
+    if (!playing && clock.current >= end) seek(start);
+    setPlaying((value) => !value);
+  }, [cancelAutoNext, playing, round, seek]);
   useEffect(() => {
     if (!round || !detail) return;
     const key = (e: KeyboardEvent) => {
@@ -621,23 +828,19 @@ export default function ReplayPage() {
         return;
       if (e.code === 'Space') {
         e.preventDefault();
-        setPlaying((v) => !v);
+        if (!e.repeat) togglePlayback();
       }
       if (e.code === 'ArrowLeft' || e.code === 'ArrowRight') {
         e.preventDefault();
-        const [a, b] = roundBounds(round);
-        clock.current = clamp(
+        seek(
           clock.current +
             (e.code === 'ArrowRight' ? 5 : -5) * detail.metadata.tickrate,
-          a,
-          b,
         );
-        setTick(clock.current);
       }
     };
     window.addEventListener('keydown', key);
     return () => window.removeEventListener('keydown', key);
-  }, [round, detail]);
+  }, [round, detail, seek, togglePlayback]);
   const open = async () => {
     setStarting(true);
     setError('');
@@ -683,44 +886,22 @@ export default function ReplayPage() {
   const copy = () => {
     if (selected) void copyGrenadeCoordinates(selected);
   };
-  const changeRound = (next: number) => {
-    window.clearTimeout(autoNextTimer.current);
-    autoNextTimer.current = undefined;
-    const p = position.current;
-    if (p)
-      void saveReplayPosition(p.id, p.number, clock.current).catch(
-        () => undefined,
-      );
-    const cached = loadedRounds.current.get(next);
-    if (cached) {
-      const [a, b] = roundBounds(cached);
-      const start = showFreezeTimeRef.current
-        ? a
-        : (cached.round.freeze_end_tick ?? a);
-      clock.current = clamp(start, a, b);
-      setTick(clock.current);
-      setRound(cached);
-    }
-    setPlaying(false);
-    setNumber(next);
-  };
   const frame = round ? framePair(round, tick)[0] : undefined;
   const players = round ? playersAt(round, tick, round.events, killTicks) : [];
-  const bombCarrier = frame?.bomb?.state === 'carried' ? frame.bomb.carrier_id : '';
-  const index = detail?.rounds.findIndex((r) => r.number === number) ?? -1;
+  const bombCarrier =
+    frame?.bomb?.state === 'carried' ? frame.bomb.carrier_id : '';
+  const index = replayRounds.findIndex((r) => r.number === number);
   const bounds = round ? roundBounds(round) : [0, 1];
   const roundFinished = Boolean(round && tick >= bounds[1]);
-  const replayRounds = useMemo(
-    () => detail?.rounds.filter((item) => item.number > 0) ?? [],
-    [detail],
-  );
-  const currentScore = round ? {
-    t: round.round.score_t,
-    ct: round.round.score_ct,
-  } : { t: 0, ct: 0 };
+  const currentScore = round
+    ? {
+        t: round.round.score_t,
+        ct: round.round.score_ct,
+      }
+    : { t: 0, ct: 0 };
   const finishedScore = round ? roundEndingScore(round.round) : currentScore;
   const score = roundFinished ? finishedScore : currentScore;
-  const winnerSide = roundFinished ? round?.round.winner_side ?? '' : '';
+  const winnerSide = roundFinished ? (round?.round.winner_side ?? '') : '';
   const events = useMemo(
     () =>
       round?.events.filter((e) =>
@@ -751,6 +932,20 @@ export default function ReplayPage() {
       detail.metadata.tickrate,
     );
     return timers.bomb?.time ?? formatClock(grenade.data.round_time_seconds);
+  };
+  const grenadeHasBombTimer = (grenade: ReplayGrenade) =>
+    round?.events.some(
+      (event) =>
+        event.type === 'bomb_planted' && event.tick <= grenade.release_tick,
+    ) ?? false;
+  const replayEventLabel = (type: string) => {
+    const labels: Record<string, [string, string]> = {
+      bomb_planted: ['Bomb planted', 'Бомба установлена'],
+      bomb_defused: ['Bomb defused', 'Бомба обезврежена'],
+      bomb_exploded: ['Bomb exploded', 'Бомба взорвалась'],
+    };
+    const label = labels[type];
+    return label ? tr(label[0], label[1]) : type.replace(/_/g, ' ');
   };
   const grenadeTrajectoryTick = (grenade: ReplayGrenade) => {
     if (!round || !detail?.radar) return grenade.release_tick;
@@ -783,11 +978,13 @@ export default function ReplayPage() {
       request = getReplayRoundPreview(detail.id, roundNumber);
       roundPreviewCache.current.set(roundNumber, request);
     }
-    void request.then((value) => {
-      setRoundPreviews((current) => ({ ...current, [roundNumber]: value }));
-    }).catch(() => {
-      roundPreviewCache.current.delete(roundNumber);
-    });
+    void request
+      .then((value) => {
+        setRoundPreviews((current) => ({ ...current, [roundNumber]: value }));
+      })
+      .catch(() => {
+        roundPreviewCache.current.delete(roundNumber);
+      });
   };
   useEffect(() => {
     if (!detail) return;
@@ -827,7 +1024,9 @@ export default function ReplayPage() {
   }, [detail, number]);
   const scrollRoundRail = (direction: -1 | 1) => {
     roundRailRef.current?.scrollBy({
-      left: direction * Math.max(160, (roundRailRef.current.clientWidth || 320) * 0.7),
+      left:
+        direction *
+        Math.max(160, (roundRailRef.current.clientWidth || 320) * 0.7),
       behavior: 'smooth',
     });
   };
@@ -997,7 +1196,9 @@ export default function ReplayPage() {
                         {entry.metadata.team_ct || 'CT'}
                       </strong>
                       <div className="replay-match-result">
-                        <b>{entry.score_t}:{entry.score_ct}</b>
+                        <b>
+                          {entry.score_t}:{entry.score_ct}
+                        </b>
                         {entry.winner_side ? (
                           <span>
                             {tr('Winner', 'Победитель')}:{' '}
@@ -1072,9 +1273,18 @@ export default function ReplayPage() {
                 </button>
               </div>
             )}
-            <div className="replay-round-rail" aria-label={tr('Round navigation', 'Навигация по раундам')}>
+            <div
+              className="replay-round-rail"
+              aria-label={tr('Round navigation', 'Навигация по раундам')}
+            >
               <div className="replay-round-rail-track">
-                <button type="button" className="replay-round-rail-arrow" disabled={!roundRailCanScrollPrev} onClick={() => scrollRoundRail(-1)} aria-label={tr('Previous rounds', 'Предыдущие раунды')}>
+                <button
+                  type="button"
+                  className="replay-round-rail-arrow"
+                  disabled={!roundRailCanScrollPrev}
+                  onClick={() => scrollRoundRail(-1)}
+                  aria-label={tr('Previous rounds', 'Предыдущие раунды')}
+                >
                   <ChevronLeft size={14} />
                 </button>
                 <div className="replay-round-rail-list" ref={roundRailRef}>
@@ -1091,12 +1301,19 @@ export default function ReplayPage() {
                         className={`${item.number === number ? 'active' : ''} ${winner}`}
                         onClick={() => changeRound(item.number)}
                         onMouseEnter={(event) => {
-                          const rect = event.currentTarget.getBoundingClientRect();
+                          const rect =
+                            event.currentTarget.getBoundingClientRect();
                           setHoveredRound(item.number);
                           const first = item.number === replayRounds[0]?.number;
-                          const last = item.number === replayRounds[replayRounds.length - 1]?.number;
+                          const last =
+                            item.number ===
+                            replayRounds[replayRounds.length - 1]?.number;
                           setHoveredRoundRect({
-                            left: first ? rect.left : last ? rect.right : rect.left + rect.width / 2,
+                            left: first
+                              ? rect.left
+                              : last
+                                ? rect.right
+                                : rect.left + rect.width / 2,
                             top: rect.top,
                             align: first ? 'start' : last ? 'end' : 'center',
                           });
@@ -1104,34 +1321,55 @@ export default function ReplayPage() {
                         }}
                         onMouseLeave={() => setHoveredRound(null)}
                         onFocus={(event) => {
-                          const rect = event.currentTarget.getBoundingClientRect();
+                          const rect =
+                            event.currentTarget.getBoundingClientRect();
                           setHoveredRound(item.number);
                           const first = item.number === replayRounds[0]?.number;
-                          const last = item.number === replayRounds[replayRounds.length - 1]?.number;
+                          const last =
+                            item.number ===
+                            replayRounds[replayRounds.length - 1]?.number;
                           setHoveredRoundRect({
-                            left: first ? rect.left : last ? rect.right : rect.left + rect.width / 2,
+                            left: first
+                              ? rect.left
+                              : last
+                                ? rect.right
+                                : rect.left + rect.width / 2,
                             top: rect.top,
                             align: first ? 'start' : last ? 'end' : 'center',
                           });
                           loadRoundPreview(item.number);
                         }}
                         onBlur={() => setHoveredRound(null)}
-                        aria-current={item.number === number ? 'true' : undefined}
+                        aria-current={
+                          item.number === number ? 'true' : undefined
+                        }
                         aria-label={`${tr('Round', 'Раунд')} ${item.number}, ${endingScore.t}:${endingScore.ct}`}
                       >
                         <span>R{item.number}</span>
-                        <strong>{endingScore.t}:{endingScore.ct}</strong>
+                        <strong>
+                          {endingScore.t}:{endingScore.ct}
+                        </strong>
                       </button>
                     );
                   })}
                 </div>
-                <button type="button" className="replay-round-rail-arrow" disabled={!roundRailCanScrollNext} onClick={() => scrollRoundRail(1)} aria-label={tr('Next rounds', 'Следующие раунды')}>
+                <button
+                  type="button"
+                  className="replay-round-rail-arrow"
+                  disabled={!roundRailCanScrollNext}
+                  onClick={() => scrollRoundRail(1)}
+                  aria-label={tr('Next rounds', 'Следующие раунды')}
+                >
                   <ChevronRight size={14} />
                 </button>
               </div>
             </div>
-            <div className="replay-options replay-round-options">
+            <div
+              ref={replayOptionsRef}
+              className="replay-options replay-round-options"
+            >
               <button
+                ref={replayOptionsTrigger}
                 type="button"
                 className="icon-btn replay-options-trigger"
                 aria-haspopup="menu"
@@ -1151,12 +1389,16 @@ export default function ReplayPage() {
                     className={`replay-timeline-toggle ${showFreezeTime ? 'is-active' : ''}`}
                     onClick={() => {
                       const next = !showFreezeTime;
+                      cancelAutoNext();
                       setShowFreezeTime(next);
                       if (!next && round) {
                         const [start, end] = roundBounds(round);
-                        const actionStart = round.round.freeze_end_tick ?? start;
-                        clock.current = clamp(actionStart, start, end);
-                        setTick(clock.current);
+                        const actionStart =
+                          round.round.freeze_end_tick ?? start;
+                        if (clock.current < actionStart) {
+                          clock.current = clamp(actionStart, start, end);
+                          setTick(clock.current);
+                        }
                       }
                     }}
                   >
@@ -1168,7 +1410,10 @@ export default function ReplayPage() {
                     role="menuitemcheckbox"
                     aria-checked={autoNextRound}
                     className={`replay-timeline-toggle ${autoNextRound ? 'is-active' : ''}`}
-                    onClick={() => setAutoNextRound((value) => !value)}
+                    onClick={() => {
+                      cancelAutoNext();
+                      setAutoNextRound((value) => !value);
+                    }}
                   >
                     <Repeat2 size={14} />
                     <span>{tr('Auto next round', 'Автоследующий раунд')}</span>
@@ -1177,82 +1422,178 @@ export default function ReplayPage() {
               )}
             </div>
           </div>
-          {hoveredRound !== null && hoveredRoundRect && (() => {
-            const preview = replayRounds.find((item) => item.number === hoveredRound);
-            if (!preview) return null;
-            const previewScore = replayEndScores[preview.number] ?? {
-              t: preview.score_t,
-              ct: preview.score_ct,
-            };
-            const previewData = preview.number === number ? round : roundPreviews[preview.number];
-            const previewEvents = previewData?.events.filter((event) =>
-              ['kill', 'bomb_planted', 'bomb_defused', 'bomb_exploded'].includes(event.type),
-            ) ?? [];
-            const previewKillTicks = new Map<string, number>();
-            for (const event of previewData?.events ?? []) {
-              if (event.type !== 'kill' || !event.target_id) continue;
-              const previous = previewKillTicks.get(event.target_id);
-              if (previous === undefined || event.tick < previous) previewKillTicks.set(event.target_id, event.tick);
-            }
-            const previewEventTime = (value: number) => previewData && detail
-              ? (() => {
-                  const phase = roundPhaseTime(previewData.round, value, detail.metadata.tickrate);
-                  return `${phase.freezing ? '-' : ''}${phase.label}`;
-                })()
-              : '';
-            return (
-              <div
-                className={`replay-round-rail-card is-${hoveredRoundRect.align}`}
-                role="tooltip"
-                style={{ left: hoveredRoundRect.left, top: hoveredRoundRect.top + 52 }}
-              >
-                <div className="replay-round-rail-card-head">
-                  <span className="replay-round-rail-card-title">{tr('Round', 'Раунд')} {preview.number}</span>
-                  <span className="replay-round-rail-card-score">{previewScore.t}:{previewScore.ct}</span>
-                  {preview.winner_side && <span className={`replay-round-rail-card-winner ${roundWinnerClass(preview.winner_side)}`}>{preview.winner_side} {tr('win', 'победа')}</span>}
-                </div>
-                <div className="replay-round-rail-card-reason">{roundReasonLabel(preview.reason, preview.winner_side)}</div>
-                <div className="replay-round-rail-card-feed">
-                  {!previewData ? (
-                    <span className="replay-round-rail-card-empty">{tr('Loading preview...', 'Загрузка превью...')}</span>
-                  ) : previewEvents.length === 0 ? (
-                    <span className="replay-round-rail-card-empty">{tr('No kills', 'Нет убийств')}</span>
-                  ) : previewEvents.map((event, eventIndex) => {
-                    if (event.type !== 'kill' || !previewData) {
-                      return (
-                        <span className="replay-round-rail-card-row" key={`${event.type}-${event.tick}-${eventIndex}`}>
-                          <time>{previewEventTime(event.tick)}</time>
-                          <span>{tr(event.type.replace(/_/g, ' '), event.type)}</span>
-                        </span>
+          {hoveredRound !== null &&
+            hoveredRoundRect &&
+            (() => {
+              const preview = replayRounds.find(
+                (item) => item.number === hoveredRound,
+              );
+              if (!preview) return null;
+              const previewScore = replayEndScores[preview.number] ?? {
+                t: preview.score_t,
+                ct: preview.score_ct,
+              };
+              const previewData =
+                preview.number === number
+                  ? round
+                  : roundPreviews[preview.number];
+              const previewEvents =
+                previewData?.events.filter((event) =>
+                  [
+                    'kill',
+                    'bomb_planted',
+                    'bomb_defused',
+                    'bomb_exploded',
+                  ].includes(event.type),
+                ) ?? [];
+              const previewKillTicks = new Map<string, number>();
+              for (const event of previewData?.events ?? []) {
+                if (event.type !== 'kill' || !event.target_id) continue;
+                const previous = previewKillTicks.get(event.target_id);
+                if (previous === undefined || event.tick < previous)
+                  previewKillTicks.set(event.target_id, event.tick);
+              }
+              const previewEventTime = (value: number) =>
+                previewData && detail
+                  ? (() => {
+                      const phase = roundPhaseTime(
+                        previewData.round,
+                        value,
+                        detail.metadata.tickrate,
                       );
-                    }
-                    const eventPlayers = playersAt(previewData, event.tick, previewData.events, previewKillTicks);
-                    const killer = eventPlayers.find((player) => player.id === event.player_id);
-                    const victim = eventPlayers.find((player) => player.id === event.target_id);
-                    const flashId = String(event.data?.flash_assister_id ?? '');
-                    const assisterId = String(event.data?.assister_id ?? '');
-                    const flashAssister = eventPlayers.find((player) => player.id === flashId);
-                    const assister = eventPlayers.find((player) => player.id === assisterId);
-                    const weapon = String(event.data?.weapon ?? '');
-                    const notices = killNotices(event).map((id) => ({ id, icon: deathNoticeIcon(id) })).filter((item) => item.icon);
-                    return (
-                      <span className="replay-round-rail-card-row replay-round-rail-card-kill" key={`${event.type}-${event.tick}-${eventIndex}`}>
-                        <time>{previewEventTime(event.tick)}</time>
-                        <span className="replay-round-rail-card-kill-main">
-                          <b className={`replay-killfeed-name ${String(killer?.side ?? 'world').toLowerCase()}`}>{killer?.name ?? event.player_id ?? 'World'}</b>
-                          {event.data?.assisted_flash === true && flashAssister && <span className="replay-round-rail-card-assist flash"><img src={flashbangAssistIcon} alt="" />+{flashAssister.name}</span>}
-                          {assister && <span className="replay-round-rail-card-assist">+{assister.name}</span>}
-                          {weapon && <img className="replay-round-rail-card-weapon" src={weaponIcon(weapon)} alt="" />}
-                          {notices.map((notice) => <img className="replay-round-rail-card-notice" key={notice.id} src={notice.icon} alt="" />)}
-                          <b className={`replay-killfeed-name ${String(victim?.side ?? 'world').toLowerCase()}`}>{victim?.name ?? event.target_id ?? '—'}</b>
-                        </span>
+                      return `${phase.freezing ? '-' : ''}${phase.label}`;
+                    })()
+                  : '';
+              return (
+                <div
+                  className={`replay-round-rail-card is-${hoveredRoundRect.align}`}
+                  role="tooltip"
+                  style={{
+                    left: hoveredRoundRect.left,
+                    top: hoveredRoundRect.top + 52,
+                  }}
+                >
+                  <div className="replay-round-rail-card-head">
+                    <span className="replay-round-rail-card-title">
+                      {tr('Round', 'Раунд')} {preview.number}
+                    </span>
+                    <span className="replay-round-rail-card-score">
+                      {previewScore.t}:{previewScore.ct}
+                    </span>
+                    {preview.winner_side && (
+                      <span
+                        className={`replay-round-rail-card-winner ${roundWinnerClass(preview.winner_side)}`}
+                      >
+                        {preview.winner_side} {tr('win', 'победа')}
                       </span>
-                    );
-                  })}
+                    )}
+                  </div>
+                  <div className="replay-round-rail-card-reason">
+                    {roundReasonLabel(preview.reason, preview.winner_side, tr)}
+                  </div>
+                  <div className="replay-round-rail-card-feed">
+                    {!previewData ? (
+                      <span className="replay-round-rail-card-empty">
+                        {tr('Loading preview...', 'Загрузка превью...')}
+                      </span>
+                    ) : previewEvents.length === 0 ? (
+                      <span className="replay-round-rail-card-empty">
+                        {tr('No kills', 'Нет убийств')}
+                      </span>
+                    ) : (
+                      previewEvents.map((event, eventIndex) => {
+                        if (event.type !== 'kill' || !previewData) {
+                          return (
+                            <span
+                              className="replay-round-rail-card-row"
+                              key={`${event.type}-${event.tick}-${eventIndex}`}
+                            >
+                              <time>{previewEventTime(event.tick)}</time>
+                              <span>{replayEventLabel(event.type)}</span>
+                            </span>
+                          );
+                        }
+                        const eventPlayers = playersAt(
+                          previewData,
+                          event.tick,
+                          previewData.events,
+                          previewKillTicks,
+                        );
+                        const killer = eventPlayers.find(
+                          (player) => player.id === event.player_id,
+                        );
+                        const victim = eventPlayers.find(
+                          (player) => player.id === event.target_id,
+                        );
+                        const flashId = String(
+                          event.data?.flash_assister_id ?? '',
+                        );
+                        const assisterId = String(
+                          event.data?.assister_id ?? '',
+                        );
+                        const flashAssister = eventPlayers.find(
+                          (player) => player.id === flashId,
+                        );
+                        const assister = eventPlayers.find(
+                          (player) => player.id === assisterId,
+                        );
+                        const weapon = String(event.data?.weapon ?? '');
+                        const notices = killNotices(event)
+                          .map((id) => ({ id, icon: deathNoticeIcon(id) }))
+                          .filter((item) => item.icon);
+                        return (
+                          <span
+                            className="replay-round-rail-card-row replay-round-rail-card-kill"
+                            key={`${event.type}-${event.tick}-${eventIndex}`}
+                          >
+                            <time>{previewEventTime(event.tick)}</time>
+                            <span className="replay-round-rail-card-kill-main">
+                              <b
+                                className={`replay-killfeed-name ${String(killer?.side ?? 'world').toLowerCase()}`}
+                              >
+                                {killer?.name ?? event.player_id ?? 'World'}
+                              </b>
+                              {event.data?.assisted_flash === true &&
+                                flashAssister && (
+                                  <span className="replay-round-rail-card-assist flash">
+                                    <img src={flashbangAssistIcon} alt="" />+
+                                    {flashAssister.name}
+                                  </span>
+                                )}
+                              {assister && (
+                                <span className="replay-round-rail-card-assist">
+                                  +{assister.name}
+                                </span>
+                              )}
+                              {weapon && (
+                                <img
+                                  className="replay-round-rail-card-weapon"
+                                  src={weaponIcon(weapon)}
+                                  alt=""
+                                />
+                              )}
+                              {notices.map((notice) => (
+                                <img
+                                  className="replay-round-rail-card-notice"
+                                  key={notice.id}
+                                  src={notice.icon}
+                                  alt=""
+                                />
+                              ))}
+                              <b
+                                className={`replay-killfeed-name ${String(victim?.side ?? 'world').toLowerCase()}`}
+                              >
+                                {victim?.name ?? event.target_id ?? '—'}
+                              </b>
+                            </span>
+                          </span>
+                        );
+                      })
+                    )}
+                  </div>
                 </div>
-              </div>
-            );
-          })()}
+              );
+            })()}
           {round ? (
             <>
               <div className="replay-stage">
@@ -1276,42 +1617,139 @@ export default function ReplayPage() {
                   lower={lower}
                   selected={selected}
                   copiedGrenadeId={copiedId}
-                  onSelect={setSelected}
+                  onSelect={(grenade) => {
+                    cancelAutoNext();
+                    setSelected(grenade);
+                  }}
                   onCopyCoordinates={(grenade) => {
                     void copyGrenadeCoordinates(grenade);
                   }}
 
                   killfeed={
-                    <div className="replay-killfeed" aria-label={tr('Kill feed', 'Киллчат')}>
+                    <div
+                      className="replay-killfeed"
+                      aria-label={tr('Kill feed', 'Киллчат')}
+                    >
                       {killEvents
                         .filter((event) => event.tick <= tick)
                         .slice(-2)
                         .map((event) => {
                           const weapon = String(event.data?.weapon ?? '');
-                          const playersAtEvent = playersAt(round, event.tick, round.events, killTicks);
-                          const killer = playersAtEvent.find((player) => player.id === event.player_id);
-                          const victim = playersAtEvent.find((player) => player.id === event.target_id);
-                          const assisterId = typeof event.data?.assister_id === 'string' || typeof event.data?.assister_id === 'number' ? String(event.data.assister_id) : '';
-                          const assister = playersAtEvent.find((player) => player.id === assisterId);
-                          const storedFlashAssisterId = typeof event.data?.flash_assister_id === 'string' || typeof event.data?.flash_assister_id === 'number' ? String(event.data.flash_assister_id) : '';
-                          const flashAssister = playersAtEvent.find((player) => player.id === storedFlashAssisterId);
-                          const isFlashAssist = event.data?.assisted_flash === true;
+                          const playersAtEvent = playersAt(
+                            round,
+                            event.tick,
+                            round.events,
+                            killTicks,
+                          );
+                          const killer = playersAtEvent.find(
+                            (player) => player.id === event.player_id,
+                          );
+                          const victim = playersAtEvent.find(
+                            (player) => player.id === event.target_id,
+                          );
+                          const assisterId =
+                            typeof event.data?.assister_id === 'string' ||
+                            typeof event.data?.assister_id === 'number'
+                              ? String(event.data.assister_id)
+                              : '';
+                          const assister = playersAtEvent.find(
+                            (player) => player.id === assisterId,
+                          );
+                          const storedFlashAssisterId =
+                            typeof event.data?.flash_assister_id === 'string' ||
+                            typeof event.data?.flash_assister_id === 'number'
+                              ? String(event.data.flash_assister_id)
+                              : '';
+                          const flashAssister = playersAtEvent.find(
+                            (player) => player.id === storedFlashAssisterId,
+                          );
+                          const isFlashAssist =
+                            event.data?.assisted_flash === true;
                           const damageAssistEvent = damageEvents
-                            .filter((candidate) => candidate.target_id === event.target_id && candidate.player_id && candidate.player_id !== event.player_id && candidate.player_id !== storedFlashAssisterId && candidate.tick <= event.tick && candidate.tick >= event.tick - detail.metadata.tickrate * 5)
+                            .filter(
+                              (candidate) =>
+                                candidate.target_id === event.target_id &&
+                                candidate.player_id &&
+                                candidate.player_id !== event.player_id &&
+                                candidate.player_id !== storedFlashAssisterId &&
+                                candidate.tick <= event.tick &&
+                                candidate.tick >=
+                                  event.tick - detail.metadata.tickrate * 5,
+                            )
                             .sort((a, b) => b.tick - a.tick)[0];
-                          const damageAssister = damageAssistEvent ? playersAtEvent.find((player) => player.id === damageAssistEvent.player_id) : undefined;
-                          const flashAssisterId = storedFlashAssisterId || flashAssister?.id;
+                          const damageAssister = damageAssistEvent
+                            ? playersAtEvent.find(
+                                (player) =>
+                                  player.id === damageAssistEvent.player_id,
+                              )
+                            : undefined;
+                          const flashAssisterId =
+                            storedFlashAssisterId || flashAssister?.id;
                           const damageAssisterId = damageAssister?.id;
-                          const notices = killNotices(event).map((id) => ({ id, icon: deathNoticeIcon(id) })).filter((item) => item.icon);
+                          const notices = killNotices(event)
+                            .map((id) => ({ id, icon: deathNoticeIcon(id) }))
+                            .filter((item) => item.icon);
                           return (
-                            <div className="replay-killfeed-row" key={`${event.tick}-${event.target_id}`}>
-                              <span className={`replay-killfeed-name ${String(killer?.side ?? 'world').toLowerCase()}`}>{killer?.name ?? event.player_id ?? 'World'}</span>
-                              {assister && assister.id !== flashAssisterId && <span className={`replay-killfeed-assist damage ${String(assister.side).toLowerCase()}`}>+{assister.name}</span>}
-                              {damageAssister && damageAssisterId !== assister?.id && damageAssisterId !== flashAssisterId && <span className={`replay-killfeed-assist damage ${String(damageAssister.side).toLowerCase()}`}>+{damageAssister.name}</span>}
-                              {isFlashAssist && <span className={`replay-killfeed-assist flash ${String(flashAssister?.side ?? 'world').toLowerCase()}`} title={tr('Flash assist', 'Ассист флешкой')}><img className="replay-killfeed-assist-icon" src={flashbangAssistIcon} alt="" />{flashAssister ? `+${flashAssister.name}` : ''}</span>}
-                              {weapon && <img src={weaponIcon(weapon)} alt={weapon} title={weapon} />}
-                              {notices.map((item) => <img key={item.id} src={item.icon} alt={item.id} title={item.id} />)}
-                              <span className={`replay-killfeed-name ${String(victim?.side ?? 'world').toLowerCase()}`}>{victim?.name ?? event.target_id ?? '—'}</span>
+                            <div
+                              className="replay-killfeed-row"
+                              key={`${event.tick}-${event.target_id}`}
+                            >
+                              <span
+                                className={`replay-killfeed-name ${String(killer?.side ?? 'world').toLowerCase()}`}
+                              >
+                                {killer?.name ?? event.player_id ?? 'World'}
+                              </span>
+                              {assister && assister.id !== flashAssisterId && (
+                                <span
+                                  className={`replay-killfeed-assist damage ${String(assister.side).toLowerCase()}`}
+                                >
+                                  +{assister.name}
+                                </span>
+                              )}
+                              {damageAssister &&
+                                damageAssisterId !== assister?.id &&
+                                damageAssisterId !== flashAssisterId && (
+                                  <span
+                                    className={`replay-killfeed-assist damage ${String(damageAssister.side).toLowerCase()}`}
+                                  >
+                                    +{damageAssister.name}
+                                  </span>
+                                )}
+                              {isFlashAssist && (
+                                <span
+                                  className={`replay-killfeed-assist flash ${String(flashAssister?.side ?? 'world').toLowerCase()}`}
+                                  title={tr('Flash assist', 'Ассист флешкой')}
+                                >
+                                  <img
+                                    className="replay-killfeed-assist-icon"
+                                    src={flashbangAssistIcon}
+                                    alt=""
+                                  />
+                                  {flashAssister
+                                    ? `+${flashAssister.name}`
+                                    : ''}
+                                </span>
+                              )}
+                              {weapon && (
+                                <img
+                                  src={weaponIcon(weapon)}
+                                  alt={weapon}
+                                  title={weapon}
+                                />
+                              )}
+                              {notices.map((item) => (
+                                <img
+                                  key={item.id}
+                                  src={item.icon}
+                                  alt={item.id}
+                                  title={item.id}
+                                />
+                              ))}
+                              <span
+                                className={`replay-killfeed-name ${String(victim?.side ?? 'world').toLowerCase()}`}
+                              >
+                                {victim?.name ?? event.target_id ?? '—'}
+                              </span>
                             </div>
                           );
                         })}
@@ -1369,12 +1807,21 @@ export default function ReplayPage() {
                         </div>
                         <div>
                           <Clock size={13} aria-hidden="true" />
-                          <span title={tr('Round time', 'Время раунда')}>
-                            {tr('Round', 'Раунд')}
+                          <span
+                            title={
+                              grenadeHasBombTimer(selected)
+                                ? tr(
+                                    'Bomb timer at throw',
+                                    'Таймер бомбы при броске',
+                                  )
+                                : tr('Round time', 'Время раунда')
+                            }
+                          >
+                            {grenadeHasBombTimer(selected)
+                              ? tr('Bomb', 'Бомба')
+                              : tr('Round', 'Раунд')}
                           </span>
-                          <strong>
-                            {formatClock(selected.data.round_time_seconds)}
-                          </strong>
+                          <strong>{grenadeTime(selected)}</strong>
                         </div>
                       </div>
                       <div className="info-block replay-detail-keys">
@@ -1497,7 +1944,18 @@ export default function ReplayPage() {
                               {grenadeLabel(g.data.grenade_type, locale)}
                             </small>
                           </span>
-                          <time>{grenadeTime(g)}</time>
+                          <time
+                            title={
+                              grenadeHasBombTimer(g)
+                                ? tr(
+                                    'Bomb timer at throw',
+                                    'Таймер бомбы при броске',
+                                  )
+                                : tr('Round time', 'Время раунда')
+                            }
+                          >
+                            {grenadeTime(g)}
+                          </time>
                         </button>
                         <button
                           type="button"
@@ -1554,16 +2012,7 @@ export default function ReplayPage() {
                         <span>
                           {e.type === 'kill'
                             ? e.message
-                            : tr(
-                                e.type.replace(/_/g, ' '),
-                                (
-                                  {
-                                    bomb_planted: 'Бомба установлена',
-                                    bomb_defused: 'Бомба обезврежена',
-                                    bomb_exploded: 'Бомба взорвалась',
-                                  } as Record<string, string>
-                                )[e.type] || e.type,
-                              )}
+                            : replayEventLabel(e.type)}
                         </span>
                       </button>
                     ))}
@@ -1575,7 +2024,7 @@ export default function ReplayPage() {
                   <button
                     className="icon-btn"
                     disabled={index <= 0}
-                    onClick={() => changeRound(detail.rounds[index - 1].number)}
+                    onClick={() => changeRound(replayRounds[index - 1].number)}
                     aria-label={tr('Previous round', 'Предыдущий раунд')}
                     data-tip={tr('Previous round', 'Предыдущий раунд')}
                   >
@@ -1583,10 +2032,7 @@ export default function ReplayPage() {
                   </button>
                   <button
                     className="btn primary replay-play"
-                    onClick={() => {
-                      if (tick >= bounds[1]) seek(bounds[0]);
-                      setPlaying((v) => !v);
-                    }}
+                    onClick={togglePlayback}
                     aria-label={
                       playing
                         ? tr('Pause', 'Пауза')
@@ -1602,8 +2048,8 @@ export default function ReplayPage() {
                   </button>
                   <button
                     className="icon-btn"
-                    disabled={index < 0 || index >= detail.rounds.length - 1}
-                    onClick={() => changeRound(detail.rounds[index + 1].number)}
+                    disabled={index < 0 || index >= replayRounds.length - 1}
+                    onClick={() => changeRound(replayRounds[index + 1].number)}
                     aria-label={tr('Next round', 'Следующий раунд')}
                     data-tip={tr('Next round', 'Следующий раунд')}
                   >
@@ -1629,11 +2075,17 @@ export default function ReplayPage() {
                   showFreezeTime={showFreezeTime}
                 />
                 <div className="replay-speed-stack">
-                  <div ref={setTimelineZoomTarget} className="replay-zoom-slot" />
+                  <div
+                    ref={setTimelineZoomTarget}
+                    className="replay-zoom-slot"
+                  />
                   <div
                     className="replay-speeds"
                     role="group"
-                    aria-label={tr('Playback speed', 'Скорость воспроизведения')}
+                    aria-label={tr(
+                      'Playback speed',
+                      'Скорость воспроизведения',
+                    )}
                   >
                     {[0.25, 0.5, 1, 2, 4].map((value) => (
                       <button

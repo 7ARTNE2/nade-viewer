@@ -13,7 +13,12 @@ import {
 import { isWindowActive, onWindowActiveChange } from '../lib/windowActive';
 import { weaponIcon } from '../lib/weaponIcons';
 import { useI18n } from '../i18n';
-import type { ReplayDetail, ReplayFrame, ReplayGrenade, ReplayRound } from '../types/replay';
+import type {
+  ReplayDetail,
+  ReplayFrame,
+  ReplayGrenade,
+  ReplayRound,
+} from '../types/replay';
 
 type Props = {
   detail: ReplayDetail;
@@ -65,10 +70,7 @@ const SMOKE_SIDE_COLORS: Record<string, string> = {
   T: '#fb923c',
   CT: '#38bdf8',
 };
-function lowerBoundTick(
-  events: ReplayRound['events'],
-  tick: number,
-): number {
+function lowerBoundTick(events: ReplayRound['events'], tick: number): number {
   let lo = 0;
   let hi = events.length;
   while (lo < hi) {
@@ -86,7 +88,11 @@ function weaponEffect(name: unknown): WeaponEffect {
     .toLowerCase()
     .replace(/[_-]/g, ' ')
     .trim();
-  if (/knife|bayonet|karambit|kukri|talon|butterfly|flip|gut|huntsman|falchion|shadow daggers|navaja|stiletto|ursus|nomad|paracord|survival/.test(weapon))
+  if (
+    /knife|bayonet|karambit|kukri|talon|butterfly|flip|gut|huntsman|falchion|shadow daggers|navaja|stiletto|ursus|nomad|paracord|survival/.test(
+      weapon,
+    )
+  )
     return 'knife';
   if (/taser|zeus/.test(weapon)) return 'zeus';
   if (/grenade|flashbang|smoke|molotov|incendiary|decoy|c4|bomb/.test(weapon))
@@ -109,6 +115,7 @@ export default function ReplayCanvas({
   const { tr } = useI18n();
   const canvas = useRef<HTMLCanvasElement>(null);
   const [view, setView] = useState({ s: 1, x: 0, y: 0 });
+  const [failedImagePath, setFailedImagePath] = useState<string | null>(null);
   const viewRef = useRef(view);
   useEffect(() => {
     viewRef.current = view;
@@ -202,27 +209,24 @@ export default function ReplayCanvas({
       ),
     [round],
   );
-  const bombEvents = useMemo(
-    () => {
-      const seen = new Set<string>();
-      return round.events.filter((event) => {
-        if (
-          event.type !== 'bomb_exploded' ||
-          event.x === null ||
-          event.y === null
-        )
-          return false;
-        // Some replay streams can contain the detonation callback twice at
-        // different ticks. There is only one C4 explosion per round, so the
-        // round itself is the identity of the visual effect.
-        const key = String(event.round_number);
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      });
-    },
-    [round],
-  );
+  const bombEvents = useMemo(() => {
+    const seen = new Set<string>();
+    return round.events.filter((event) => {
+      if (
+        event.type !== 'bomb_exploded' ||
+        event.x === null ||
+        event.y === null
+      )
+        return false;
+      // Some replay streams can contain the detonation callback twice at
+      // different ticks. There is only one C4 explosion per round, so the
+      // round itself is the identity of the visual effect.
+      const key = String(event.round_number);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [round]);
   const grenadeById = useMemo(
     () => new Map(round.grenades.map((grenade) => [grenade.id, grenade])),
     [round],
@@ -252,7 +256,11 @@ export default function ReplayCanvas({
   const actionEventsByPlayer = useMemo(() => {
     const actions = new Map<string, ReplayRound['events']>();
     for (const event of round.events) {
-      if (event.type !== 'bomb_plant_begin' && event.type !== 'bomb_defuse_start') continue;
+      if (
+        event.type !== 'bomb_plant_begin' &&
+        event.type !== 'bomb_defuse_start'
+      )
+        continue;
       if (!event.player_id) continue;
       const list = actions.get(event.player_id) ?? [];
       list.push(event);
@@ -307,7 +315,8 @@ export default function ReplayCanvas({
       const track = tracks.get(grenade.id);
       if (!track || !grenade.data.trajectory?.length) continue;
       track.points = grenade.data.trajectory.map(
-        (point) => [point[0], point[1], point[2] ?? 0] as [number, number, number],
+        (point) =>
+          [point[0], point[1], point[2] ?? 0] as [number, number, number],
       );
     }
     return tracks;
@@ -320,7 +329,7 @@ export default function ReplayCanvas({
       desynchronized: true,
     });
     if (!ctx) return;
-    const image = cachedImage(imagePath) ?? new Image();
+    let image = cachedImage(imagePath);
     const bombImage = new Image();
     const weaponImages = new Map<string, HTMLImageElement>();
     bombImage.onload = draw;
@@ -328,19 +337,20 @@ export default function ReplayCanvas({
     let imageReady = false,
       disposed = false,
       animation = 0;
-    image.onload = () => {
-      imageReady = true;
-      draw();
-    };
-    if (image.complete && image.naturalWidth > 0) {
+    setFailedImagePath(null);
+    if (image?.complete && image.naturalWidth > 0) {
       imageReady = true;
     } else if (imagePath) {
-      void preloadImage(imagePath).then((loaded) => {
-        if (loaded) {
+      void preloadImage(imagePath)
+        .then((loaded) => {
+          if (disposed || !loaded) return;
+          image = loaded;
           imageReady = true;
           draw();
-        }
-      });
+        })
+        .catch(() => {
+          if (!disposed) setFailedImagePath(imagePath);
+        });
     }
     const activeWeaponImage = (name: string) => {
       const key = name.trim();
@@ -404,7 +414,10 @@ export default function ReplayCanvas({
         const maxWidth = 132;
         let label = name;
         if (ctx.measureText(label).width > maxWidth) {
-          while (label.length > 3 && ctx.measureText(`${label}…`).width > maxWidth)
+          while (
+            label.length > 3 &&
+            ctx.measureText(`${label}…`).width > maxWidth
+          )
             label = label.slice(0, -1);
           label += '…';
         }
@@ -430,7 +443,8 @@ export default function ReplayCanvas({
         radar!.split_z === null ||
         !detail.map.has_lower_radar ||
         (lower ? z < radar!.split_z : z >= radar!.split_z);
-      if (imageReady) ctx.drawImage(image, ox, oy, 1024 * unit, 1024 * unit);
+      if (imageReady && image)
+        ctx.drawImage(image, ox, oy, 1024 * unit, 1024 * unit);
       ctx.lineWidth = 1;
       const tick = clock.current,
         [frame, next, t] = framePair(round, tick);
@@ -445,7 +459,13 @@ export default function ReplayCanvas({
         (next?.players ?? []).map((player) => [player.id, player]),
       );
       const now = performance.now();
-      const replayPlayers = playersAt(round, tick, killEvents, killTicks, frame);
+      const replayPlayers = playersAt(
+        round,
+        tick,
+        killEvents,
+        killTicks,
+        frame,
+      );
       // Dead players belong to the lowest replay layer: draw their marker and
       // name before utility, bomb, tracer, and live-player overlays.
       for (const raw of replayPlayers) {
@@ -786,7 +806,9 @@ export default function ReplayCanvas({
           const age = (tick - event.tick) / tickrate;
           if (age < 0 || age > BOMB_EFFECT_SECONDS) continue;
           const [x, y] = point(event.x!, event.y!);
-          const mapKey = String(detail.map.name ?? '').toLowerCase().startsWith('de_')
+          const mapKey = String(detail.map.name ?? '')
+            .toLowerCase()
+            .startsWith('de_')
             ? String(detail.map.name).toLowerCase()
             : `de_${String(detail.map.name ?? '').toLowerCase()}`;
           const fullRadius = Math.max(
@@ -801,14 +823,12 @@ export default function ReplayCanvas({
           // Keep the ring on the same single pulse as the fireball.  A
           // delayed opacity ramp makes the ring look like a second flash
           // when the canvas is sampled at replay frame boundaries.
-          const shockScale = 0.05 +
-            (1 - Math.pow(1 - shockProgress, 3)) * 0.95;
+          const shockScale = 0.05 + (1 - Math.pow(1 - shockProgress, 3)) * 0.95;
           const shockOpacity = 0.9 * (1 - shockProgress);
 
           // Nadegrid's bright core grows faster than the outer ring and uses
           // the same warm white/orange fireball gradient.
-          const coreScale = 0.05 +
-            (1 - Math.pow(1 - coreProgress, 2)) * 0.95;
+          const coreScale = 0.05 + (1 - Math.pow(1 - coreProgress, 2)) * 0.95;
           const coreOpacity = 1 - coreProgress;
 
           ctx.save();
@@ -847,10 +867,22 @@ export default function ReplayCanvas({
             y,
             coreRadius,
           );
-          coreGradient.addColorStop(0, `rgba(255,245,205,${0.98 * coreOpacity})`);
-          coreGradient.addColorStop(0.08, `rgba(255,190,80,${0.92 * coreOpacity})`);
-          coreGradient.addColorStop(0.2, `rgba(255,110,30,${0.75 * coreOpacity})`);
-          coreGradient.addColorStop(0.36, `rgba(170,45,15,${0.45 * coreOpacity})`);
+          coreGradient.addColorStop(
+            0,
+            `rgba(255,245,205,${0.98 * coreOpacity})`,
+          );
+          coreGradient.addColorStop(
+            0.08,
+            `rgba(255,190,80,${0.92 * coreOpacity})`,
+          );
+          coreGradient.addColorStop(
+            0.2,
+            `rgba(255,110,30,${0.75 * coreOpacity})`,
+          );
+          coreGradient.addColorStop(
+            0.36,
+            `rgba(170,45,15,${0.45 * coreOpacity})`,
+          );
           coreGradient.addColorStop(0.62, 'rgba(170,45,15,0)');
           ctx.globalAlpha = 1;
           ctx.fillStyle = coreGradient;
@@ -903,7 +935,11 @@ export default function ReplayCanvas({
         // line segments.
         const pointCount = trajectory.points.length;
         const stride = pointCount > 180 ? 3 : pointCount > 90 ? 2 : 1;
-        for (let pointIndex = 0; pointIndex < pointCount; pointIndex += stride) {
+        for (
+          let pointIndex = 0;
+          pointIndex < pointCount;
+          pointIndex += stride
+        ) {
           const p = trajectory.points[pointIndex];
           if (!visible(p[2])) {
             previous = null;
@@ -983,8 +1019,11 @@ export default function ReplayCanvas({
       // Short-lived shot tracers and hit markers, matching the compact visual
       // treatment used by Nadegrid. Weapon-fire events use the shooter's view
       // direction; damage/kill events terminate at the victim position.
-      const playerById = new Map(frame.players.map((player) => [player.id, player]));
-      const tracerAge = (event: ReplayRound['events'][number]) => tick - event.tick;
+      const playerById = new Map(
+        frame.players.map((player) => [player.id, player]),
+      );
+      const tracerAge = (event: ReplayRound['events'][number]) =>
+        tick - event.tick;
       const drawTracer = (
         event: ReplayRound['events'][number],
         shooter: ReplayFrame['players'][number],
@@ -1023,7 +1062,10 @@ export default function ReplayCanvas({
         ctx.save();
         ctx.globalAlpha = opacity;
         ctx.strokeStyle = color;
-        ctx.lineWidth = hit && ['damage', 'bullet_damage', 'kill'].includes(event.type) ? 4 : 1.5;
+        ctx.lineWidth =
+          hit && ['damage', 'bullet_damage', 'kill'].includes(event.type)
+            ? 4
+            : 1.5;
         ctx.lineCap = 'round';
         ctx.shadowColor = color;
         ctx.shadowBlur = hit ? 12 : 10;
@@ -1088,30 +1130,51 @@ export default function ReplayCanvas({
           ctx.strokeStyle = '#94a3b8';
           ctx.lineWidth = 0.9;
           ctx.beginPath();
-          ctx.moveTo(start[0] + ux * bladeStart + px * 2.2, start[1] + uy * bladeStart + py * 2.2);
-          ctx.lineTo(start[0] + ux * (bladeEnd - 4) + px * 2.2, start[1] + uy * (bladeEnd - 4) + py * 2.2);
+          ctx.moveTo(
+            start[0] + ux * bladeStart + px * 2.2,
+            start[1] + uy * bladeStart + py * 2.2,
+          );
+          ctx.lineTo(
+            start[0] + ux * (bladeEnd - 4) + px * 2.2,
+            start[1] + uy * (bladeEnd - 4) + py * 2.2,
+          );
           ctx.lineTo(start[0] + ux * bladeEnd, start[1] + uy * bladeEnd);
-          ctx.lineTo(start[0] + ux * (bladeEnd - 4) - px * 1.2, start[1] + uy * (bladeEnd - 4) - py * 1.2);
-          ctx.lineTo(start[0] + ux * bladeStart - px * 1.2, start[1] + uy * bladeStart - py * 1.2);
+          ctx.lineTo(
+            start[0] + ux * (bladeEnd - 4) - px * 1.2,
+            start[1] + uy * (bladeEnd - 4) - py * 1.2,
+          );
+          ctx.lineTo(
+            start[0] + ux * bladeStart - px * 1.2,
+            start[1] + uy * bladeStart - py * 1.2,
+          );
           ctx.closePath();
           ctx.fill();
           ctx.stroke();
         } else {
           const end = target
             ? point(target.x, target.y)
-            : [
+            : ([
                 start[0] + Math.cos(angle) * (36 + progress * 20),
                 start[1] + Math.sin(angle) * (36 + progress * 20),
-              ] as [number, number];
+              ] as [number, number]);
           ctx.lineWidth = 2.2;
           ctx.beginPath();
-          ctx.moveTo(start[0] + Math.cos(angle) * 8, start[1] + Math.sin(angle) * 8);
+          ctx.moveTo(
+            start[0] + Math.cos(angle) * 8,
+            start[1] + Math.sin(angle) * 8,
+          );
           ctx.lineTo(end[0], end[1]);
           ctx.stroke();
           for (const offset of [-0.28, 0.28]) {
             ctx.beginPath();
-            ctx.moveTo(start[0] + Math.cos(angle + offset) * 8, start[1] + Math.sin(angle + offset) * 8);
-            ctx.lineTo(end[0] + Math.cos(angle + offset) * 8, end[1] + Math.sin(angle + offset) * 8);
+            ctx.moveTo(
+              start[0] + Math.cos(angle + offset) * 8,
+              start[1] + Math.sin(angle + offset) * 8,
+            );
+            ctx.lineTo(
+              end[0] + Math.cos(angle + offset) * 8,
+              end[1] + Math.sin(angle + offset) * 8,
+            );
             ctx.stroke();
           }
           if (target) {
@@ -1124,214 +1187,251 @@ export default function ReplayCanvas({
       };
       const fireWindow = Math.max(3, Math.round(tickrate * 0.14));
       const fireStart = lowerBoundTick(weaponFireEvents, tick - fireWindow);
-      for (let eventIndex = fireStart; eventIndex < weaponFireEvents.length; eventIndex += 1) {
+      for (
+        let eventIndex = fireStart;
+        eventIndex < weaponFireEvents.length;
+        eventIndex += 1
+      ) {
         const event = weaponFireEvents[eventIndex];
         if (event.tick > tick) break;
-        const shooter = event.player_id ? playerById.get(event.player_id) : undefined;
+        const shooter = event.player_id
+          ? playerById.get(event.player_id)
+          : undefined;
         if (!shooter) continue;
         const effect = weaponEffect(event.data?.weapon);
-        if (effect === 'firearm') drawTracer(event, shooter, null, false, fireWindow);
+        if (effect === 'firearm')
+          drawTracer(event, shooter, null, false, fireWindow);
         else if (effect === 'knife' || effect === 'zeus')
           drawSpecialEffect(event, shooter, null, effect, fireWindow);
       }
       const hitWindow = Math.max(3, Math.round(tickrate * 0.28));
       const hitStart = lowerBoundTick(hitEvents, tick - hitWindow);
-      for (let eventIndex = hitStart; eventIndex < hitEvents.length; eventIndex += 1) {
+      for (
+        let eventIndex = hitStart;
+        eventIndex < hitEvents.length;
+        eventIndex += 1
+      ) {
         const event = hitEvents[eventIndex];
         if (event.tick > tick) break;
-        const shooter = event.player_id ? playerById.get(event.player_id) : undefined;
+        const shooter = event.player_id
+          ? playerById.get(event.player_id)
+          : undefined;
         if (!shooter) continue;
         const effect = weaponEffect(event.data?.weapon);
         if (effect === 'none') continue;
-        const victim = event.target_id ? playerById.get(event.target_id) : undefined;
+        const victim = event.target_id
+          ? playerById.get(event.target_id)
+          : undefined;
         const target = victim
           ? { x: victim.x, y: victim.y }
           : typeof event.x === 'number' && typeof event.y === 'number'
             ? { x: event.x, y: event.y }
             : null;
-        if (effect === 'firearm') drawTracer(event, shooter, target, true, hitWindow);
+        if (effect === 'firearm')
+          drawTracer(event, shooter, target, true, hitWindow);
         else if (effect === 'knife' || effect === 'zeus')
           drawSpecialEffect(event, shooter, target, effect, hitWindow);
       }
       // Draw dead players first so their dim markers and names stay beneath
       // live players when the two labels overlap.
-      replayPlayers.filter((player) => player.alive).forEach((raw) => {
-        const player = interpolatePlayer(
-          raw,
-          nextPlayers.get(raw.id),
-          t,
-        );
-        const previous = damageState.current.get(player.id);
-        const health = Math.max(0, Math.round(player.health));
-        if (previous && health < previous.health) {
-          damageState.current.set(player.id, {
-            health,
-            damage: previous.health - health,
-            started: now,
-          });
-        } else if (!previous || health > previous.health) {
-          damageState.current.set(player.id, {
-            health,
-            damage: 0,
-            started: previous?.started ?? now,
-          });
-        } else {
-          previous.health = health;
-        }
-        if (!visible(player.z)) return;
-        const [x, y] = point(player.x, player.y),
-          color = player.side === 'CT' ? '#8dbdff' : '#ff986b';
-        ctx.globalAlpha = player.alive ? 1 : 0.4;
-        if (player.alive) {
-          const angle = (-player.yaw * Math.PI) / 180;
-          ctx.fillStyle = color;
-          ctx.beginPath();
-          ctx.moveTo(x + Math.cos(angle) * 18, y + Math.sin(angle) * 18);
-          ctx.lineTo(
-            x + Math.cos(angle + 2.3) * 8,
-            y + Math.sin(angle + 2.3) * 8,
-          );
-          ctx.lineTo(
-            x + Math.cos(angle - 2.3) * 8,
-            y + Math.sin(angle - 2.3) * 8,
-          );
-          ctx.closePath();
-          ctx.fill();
-          // Nadegrid keeps the team-colored player base and paints the blind
-          // indicator as a clipped white conic sector over the circle.
-          if (player.flashed) {
-            ctx.shadowColor = 'rgba(251,191,36,0.55)';
-            ctx.shadowBlur = 10;
+      replayPlayers
+        .filter((player) => player.alive)
+        .forEach((raw) => {
+          const player = interpolatePlayer(raw, nextPlayers.get(raw.id), t);
+          const previous = damageState.current.get(player.id);
+          const health = Math.max(0, Math.round(player.health));
+          if (previous && health < previous.health) {
+            damageState.current.set(player.id, {
+              health,
+              damage: previous.health - health,
+              started: now,
+            });
+          } else if (!previous || health > previous.health) {
+            damageState.current.set(player.id, {
+              health,
+              damage: 0,
+              started: previous?.started ?? now,
+            });
+          } else {
+            previous.health = health;
           }
-          ctx.fillStyle = color;
-          ctx.strokeStyle = '#101419';
-          ctx.lineWidth = 2;
-          ctx.beginPath();
-          ctx.arc(x, y, 8, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.stroke();
-          ctx.shadowBlur = 0;
-          // Show the item currently held by the player, matching the compact
-          // weapon badge used by Nadegrid. Keep it outside the player circle
-          // so it remains readable without changing the player marker size.
-          const activeName = String(player.active_weapon ?? '').trim();
-          const activeImage = activeWeaponImage(activeName);
-          if (activeImage?.complete && activeImage.naturalWidth > 0) {
-            const activeLower = activeName.toLowerCase();
-            const utility = activeLower.includes('grenade') ||
-              activeLower.includes('flashbang') ||
-              activeLower.includes('smoke') ||
-              activeLower.includes('molotov') ||
-              activeLower.includes('incendiary') ||
-              activeLower.includes('decoy') ||
-              activeLower.includes('knife') ||
-              activeLower === 'c4' || activeLower.includes('bomb');
-            const maxWidth = utility ? 16 : 25;
-            const maxHeight = utility ? 16 : 13;
-            const scale = Math.min(maxWidth / Math.max(1, activeImage.naturalWidth), maxHeight / Math.max(1, activeImage.naturalHeight));
-            const iconWidth = activeImage.naturalWidth * scale;
-            const iconHeight = activeImage.naturalHeight * scale;
-            ctx.save();
-            ctx.globalAlpha = player.alive ? 0.94 : 0.45;
-            ctx.shadowColor = '#05070a';
-            ctx.shadowBlur = 3;
-            ctx.shadowOffsetY = 1;
-            ctx.drawImage(activeImage, x + 11, y - iconHeight / 2, iconWidth, iconHeight);
-            ctx.restore();
-          }
-          // Keep the carried C4 on the player's left side. The badge sits
-          // outside the marker, leaving the HP value in the centre and the
-          // active weapon icon on the right unobstructed.
-          if (frame.bomb?.state === 'carried' && frame.bomb.carrier_id === player.id) {
-            ctx.save();
-            ctx.globalAlpha = 0.98;
-            ctx.fillStyle = 'rgba(9, 12, 16, 0.9)';
-            ctx.strokeStyle = '#ff5e68';
-            ctx.lineWidth = 1;
+          if (!visible(player.z)) return;
+          const [x, y] = point(player.x, player.y),
+            color = player.side === 'CT' ? '#8dbdff' : '#ff986b';
+          ctx.globalAlpha = player.alive ? 1 : 0.4;
+          if (player.alive) {
+            const angle = (-player.yaw * Math.PI) / 180;
+            ctx.fillStyle = color;
             ctx.beginPath();
-            ctx.roundRect(x - 24, y - 7, 14, 14, 4);
-            ctx.fill();
-            ctx.stroke();
-            if (bombImage.complete && bombImage.naturalWidth > 0) {
-              ctx.drawImage(bombImage, x - 22.5, y - 5.5, 11, 11);
-            }
-            ctx.restore();
-          }
-          if (player.flashed) {
-            const flashProgress = clamp((player.flash_ms ?? 0) / 2000, 0, 1);
-            const flashArcDegrees = Math.min(
-              180,
-              Math.max(5, flashProgress * 180),
+            ctx.moveTo(x + Math.cos(angle) * 18, y + Math.sin(angle) * 18);
+            ctx.lineTo(
+              x + Math.cos(angle + 2.3) * 8,
+              y + Math.sin(angle + 2.3) * 8,
             );
-            const flashArc = (flashArcDegrees * Math.PI) / 180;
-            // CSS conic-gradient(180deg - arc/2) in Nadegrid points down
-            // because CSS angles start at 12 o'clock. Convert that exact
-            // angle to canvas coordinates and clip the sector to the marker.
-            const flashStart = Math.PI / 2 - flashArc * 0.5;
-            const flashRadius = 8;
-            ctx.save();
-            ctx.globalAlpha = 0.88;
-            ctx.fillStyle = 'rgba(255,255,255,0.88)';
-            ctx.beginPath();
-            ctx.moveTo(x, y);
-            ctx.arc(x, y, flashRadius, flashStart, flashStart + flashArc);
+            ctx.lineTo(
+              x + Math.cos(angle - 2.3) * 8,
+              y + Math.sin(angle - 2.3) * 8,
+            );
             ctx.closePath();
             ctx.fill();
-            ctx.restore();
-          }
-          const action = player.planting || player.defusing ? player : null;
-          if (action) {
-            const actionType = player.defusing ? 'bomb_defuse_start' : 'bomb_plant_begin';
-            const actionEvents = actionEventsByPlayer.get(player.id) ?? [];
-            let actionLo = 0;
-            let actionHi = actionEvents.length;
-            while (actionLo < actionHi) {
-              const mid = (actionLo + actionHi) >>> 1;
-              if (actionEvents[mid].tick <= tick) actionLo = mid + 1;
-              else actionHi = mid;
+            // Nadegrid keeps the team-colored player base and paints the blind
+            // indicator as a clipped white conic sector over the circle.
+            if (player.flashed) {
+              ctx.shadowColor = 'rgba(251,191,36,0.55)';
+              ctx.shadowBlur = 10;
             }
-            const startEvent = actionEvents[actionLo - 1]?.type === actionType
-              ? actionEvents[actionLo - 1]
-              : undefined;
-            const duration = player.defusing ? (player.has_defuse_kit ? 5 : 10) : 3.2;
-            const progress = startEvent ? clamp((tick - startEvent.tick) / (tickrate * duration), 0, 1) : 0;
-            ctx.fillStyle = 'rgba(8,12,16,.82)';
-            ctx.fillRect(x - 22, y - 28, 44, 5);
-            ctx.fillStyle = player.defusing ? '#8fd8ff' : '#ffbd70';
-            ctx.fillRect(x - 21, y - 27, 42 * progress, 3);
-            ctx.fillStyle = '#f8fafc';
-            ctx.font = '700 8px Segoe UI';
+            ctx.fillStyle = color;
+            ctx.strokeStyle = '#101419';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(x, y, 8, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+            // Show the item currently held by the player, matching the compact
+            // weapon badge used by Nadegrid. Keep it outside the player circle
+            // so it remains readable without changing the player marker size.
+            const activeName = String(player.active_weapon ?? '').trim();
+            const activeImage = activeWeaponImage(activeName);
+            if (activeImage?.complete && activeImage.naturalWidth > 0) {
+              const activeLower = activeName.toLowerCase();
+              const utility =
+                activeLower.includes('grenade') ||
+                activeLower.includes('flashbang') ||
+                activeLower.includes('smoke') ||
+                activeLower.includes('molotov') ||
+                activeLower.includes('incendiary') ||
+                activeLower.includes('decoy') ||
+                activeLower.includes('knife') ||
+                activeLower === 'c4' ||
+                activeLower.includes('bomb');
+              const maxWidth = utility ? 16 : 25;
+              const maxHeight = utility ? 16 : 13;
+              const scale = Math.min(
+                maxWidth / Math.max(1, activeImage.naturalWidth),
+                maxHeight / Math.max(1, activeImage.naturalHeight),
+              );
+              const iconWidth = activeImage.naturalWidth * scale;
+              const iconHeight = activeImage.naturalHeight * scale;
+              ctx.save();
+              ctx.globalAlpha = player.alive ? 0.94 : 0.45;
+              ctx.shadowColor = '#05070a';
+              ctx.shadowBlur = 3;
+              ctx.shadowOffsetY = 1;
+              ctx.drawImage(
+                activeImage,
+                x + 11,
+                y - iconHeight / 2,
+                iconWidth,
+                iconHeight,
+              );
+              ctx.restore();
+            }
+            // Keep the carried C4 on the player's left side. The badge sits
+            // outside the marker, leaving the HP value in the centre and the
+            // active weapon icon on the right unobstructed.
+            if (
+              frame.bomb?.state === 'carried' &&
+              frame.bomb.carrier_id === player.id
+            ) {
+              ctx.save();
+              ctx.globalAlpha = 0.98;
+              ctx.fillStyle = 'rgba(9, 12, 16, 0.9)';
+              ctx.strokeStyle = '#ff5e68';
+              ctx.lineWidth = 1;
+              ctx.beginPath();
+              ctx.roundRect(x - 24, y - 7, 14, 14, 4);
+              ctx.fill();
+              ctx.stroke();
+              if (bombImage.complete && bombImage.naturalWidth > 0) {
+                ctx.drawImage(bombImage, x - 22.5, y - 5.5, 11, 11);
+              }
+              ctx.restore();
+            }
+            if (player.flashed) {
+              const flashProgress = clamp((player.flash_ms ?? 0) / 2000, 0, 1);
+              const flashArcDegrees = Math.min(
+                180,
+                Math.max(5, flashProgress * 180),
+              );
+              const flashArc = (flashArcDegrees * Math.PI) / 180;
+              // CSS conic-gradient(180deg - arc/2) in Nadegrid points down
+              // because CSS angles start at 12 o'clock. Convert that exact
+              // angle to canvas coordinates and clip the sector to the marker.
+              const flashStart = Math.PI / 2 - flashArc * 0.5;
+              const flashRadius = 8;
+              ctx.save();
+              ctx.globalAlpha = 0.88;
+              ctx.fillStyle = 'rgba(255,255,255,0.88)';
+              ctx.beginPath();
+              ctx.moveTo(x, y);
+              ctx.arc(x, y, flashRadius, flashStart, flashStart + flashArc);
+              ctx.closePath();
+              ctx.fill();
+              ctx.restore();
+            }
+            const action = player.planting || player.defusing ? player : null;
+            if (action) {
+              const actionType = player.defusing
+                ? 'bomb_defuse_start'
+                : 'bomb_plant_begin';
+              const actionEvents = actionEventsByPlayer.get(player.id) ?? [];
+              let actionLo = 0;
+              let actionHi = actionEvents.length;
+              while (actionLo < actionHi) {
+                const mid = (actionLo + actionHi) >>> 1;
+                if (actionEvents[mid].tick <= tick) actionLo = mid + 1;
+                else actionHi = mid;
+              }
+              const startEvent =
+                actionEvents[actionLo - 1]?.type === actionType
+                  ? actionEvents[actionLo - 1]
+                  : undefined;
+              const duration = player.defusing
+                ? player.has_defuse_kit
+                  ? 5
+                  : 10
+                : 3.2;
+              const progress = startEvent
+                ? clamp((tick - startEvent.tick) / (tickrate * duration), 0, 1)
+                : 0;
+              ctx.fillStyle = 'rgba(8,12,16,.82)';
+              ctx.fillRect(x - 22, y - 28, 44, 5);
+              ctx.fillStyle = player.defusing ? '#8fd8ff' : '#ffbd70';
+              ctx.fillRect(x - 21, y - 27, 42 * progress, 3);
+              ctx.fillStyle = '#f8fafc';
+              ctx.font = '700 8px Segoe UI';
+              ctx.textAlign = 'center';
+              ctx.textBaseline = 'bottom';
+              ctx.fillText(
+                `${player.defusing ? 'DEFUSE' : 'PLANT'} ${Math.max(0, duration - (tick - (startEvent?.tick ?? tick)) / tickrate).toFixed(1)}s`,
+                x,
+                y - 30,
+              );
+            }
+            const damage = damageState.current.get(player.id);
+            const popupAge = damage ? now - damage.started : Infinity;
+            const showDamage = Boolean(damage?.damage && popupAge < 800);
+            ctx.fillStyle = '#111419';
             ctx.textAlign = 'center';
-            ctx.textBaseline = 'bottom';
-            ctx.fillText(
-              `${player.defusing ? 'DEFUSE' : 'PLANT'} ${Math.max(0, duration - (tick - (startEvent?.tick ?? tick)) / tickrate).toFixed(1)}s`,
-              x,
-              y - 30,
-            );
+            const healthLabel = String(health);
+            const healthSize =
+              healthLabel.length >= 3 ? 7 : healthLabel.length === 2 ? 8 : 9;
+            ctx.font = `bold ${healthSize}px Segoe UI`;
+            ctx.fillText(healthLabel, x, y + 3);
+            if (showDamage) {
+              const damageLabel = `-${damage!.damage}`;
+              const damageSize = damageLabel.length >= 4 ? 7 : 8;
+              ctx.fillStyle = '#ff8e96';
+              ctx.font = `bold ${damageSize}px Segoe UI`;
+              ctx.globalAlpha = Math.max(0, 1 - popupAge / 800);
+              ctx.fillText(damageLabel, x, y - 11 - popupAge / 100);
+              ctx.globalAlpha = player.alive ? 1 : 0.4;
+            }
           }
-          const damage = damageState.current.get(player.id);
-          const popupAge = damage ? now - damage.started : Infinity;
-          const showDamage = Boolean(damage?.damage && popupAge < 800);
-          ctx.fillStyle = '#111419';
-          ctx.textAlign = 'center';
-          const healthLabel = String(health);
-          const healthSize =
-            healthLabel.length >= 3 ? 7 : healthLabel.length === 2 ? 8 : 9;
-          ctx.font = `bold ${healthSize}px Segoe UI`;
-          ctx.fillText(healthLabel, x, y + 3);
-          if (showDamage) {
-            const damageLabel = `-${damage!.damage}`;
-            const damageSize = damageLabel.length >= 4 ? 7 : 8;
-            ctx.fillStyle = '#ff8e96';
-            ctx.font = `bold ${damageSize}px Segoe UI`;
-            ctx.globalAlpha = Math.max(0, 1 - popupAge / 800);
-            ctx.fillText(damageLabel, x, y - 11 - popupAge / 100);
-            ctx.globalAlpha = player.alive ? 1 : 0.4;
-          }
-        }
-        drawPlayerName(player, x, y, player.alive ? 1 : 0.4);
-        ctx.globalAlpha = 1;
-      });
+          drawPlayerName(player, x, y, player.alive ? 1 : 0.4);
+          ctx.globalAlpha = 1;
+        });
     }
     function loop(now = performance.now()) {
       if (now - lastDrawAt >= 1000 / 60) {
@@ -1354,7 +1454,6 @@ export default function ReplayCanvas({
       cancelAnimationFrame(animation);
       observer.disconnect();
       unlisten();
-      image.onload = null;
     };
   }, [
     detail,
@@ -1468,7 +1567,7 @@ export default function ReplayCanvas({
           drag.current = null;
         }}
       />
-      {(!imagePath || !detail.radar) && (
+      {(!imagePath || !detail.radar || failedImagePath === imagePath) && (
         <div className="replay-map-missing">
           {tr('Radar unavailable for this map', 'Радар этой карты недоступен')}
         </div>

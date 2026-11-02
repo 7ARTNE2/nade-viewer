@@ -413,6 +413,11 @@ Run the same check through the test aggregator:
 npm test
 ```
 
+`npm test` also runs the replay browser regressions with deterministic fixtures
+and mocked Tauri IPC. Install the test browser once with `npx playwright install chromium`.
+Run just these regressions with `npm run test:replay`; an existing Chromium binary
+can be selected with `NADE_VIEWER_TEST_BROWSER_PATH`.
+
 Individual quality commands are also available:
 
 ```powershell
