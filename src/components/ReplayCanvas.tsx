@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Minus, Plus, RotateCcw } from 'lucide-react';
 import c4Icon from '../assets/equipment_icons/c4.svg';
-import { assetUrl } from '../lib/tauri';
+import { preloadImage, cachedImage } from '../lib/imageCache';
 import {
   activeSmokes,
   buildSmokeTimeline,
@@ -320,7 +320,7 @@ export default function ReplayCanvas({
       desynchronized: true,
     });
     if (!ctx) return;
-    const image = new Image();
+    const image = cachedImage(imagePath) ?? new Image();
     const bombImage = new Image();
     const weaponImages = new Map<string, HTMLImageElement>();
     bombImage.onload = draw;
@@ -332,7 +332,16 @@ export default function ReplayCanvas({
       imageReady = true;
       draw();
     };
-    if (imagePath) image.src = assetUrl(imagePath);
+    if (image.complete && image.naturalWidth > 0) {
+      imageReady = true;
+    } else if (imagePath) {
+      void preloadImage(imagePath).then((loaded) => {
+        if (loaded) {
+          imageReady = true;
+          draw();
+        }
+      });
+    }
     const activeWeaponImage = (name: string) => {
       const key = name.trim();
       if (!key) return null;

@@ -5,6 +5,15 @@ description = "Compact desktop grenade lineup explorer"
 authors = ["Nade Viewer"]
 edition = "2021"
 
+# Keep `tauri dev` responsive on large replay files. The default debug profile
+# leaves all Rust dependencies unoptimised, which makes replay I/O and JSON/
+# zstd handling noticeably slower than the production build.
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 2
+
 [lib]
 name = "nade_viewer_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]

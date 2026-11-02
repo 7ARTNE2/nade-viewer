@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
@@ -59,6 +59,7 @@ import {
 import { isWindowActive, onWindowActiveChange } from '../lib/windowActive';
 import { weaponIcon } from '../lib/weaponIcons';
 import { deathNoticeIcon } from '../lib/deathNoticeIcons';
+import { preloadImage } from '../lib/imageCache';
 import type {
   ReplayDetail,
   ReplayEntry,
@@ -187,7 +188,7 @@ function roundEndingScore(round: { score_t: number; score_ct: number; winner_sid
     ct: round.score_ct + (round.winner_side === 'CT' ? 1 : 0),
   };
 }
-function Team({ side, players, bombCarrier }: { side: string; players: ReplayPlayer[]; bombCarrier?: string }) {
+const Team = memo(function Team({ side, players, bombCarrier }: { side: string; players: ReplayPlayer[]; bombCarrier?: string }) {
   const { tr } = useI18n();
   const economy = players.reduce((sum, player) => sum + (player.equipment_value ?? 0), 0);
   const money = players.reduce((sum, player) => sum + player.money, 0);
@@ -251,7 +252,19 @@ function Team({ side, players, bombCarrier }: { side: string; players: ReplayPla
       ))}
     </section>
   );
-}
+}, (previous, next) => {
+  if (previous.side !== next.side || previous.bombCarrier !== next.bombCarrier || previous.players.length !== next.players.length) {
+    return false;
+  }
+  return previous.players.every((player, index) => {
+    const nextPlayer = next.players[index];
+    return nextPlayer && player.id === nextPlayer.id &&
+      player.alive === nextPlayer.alive && player.health === nextPlayer.health &&
+      player.armor === nextPlayer.armor && player.money === nextPlayer.money &&
+      player.active_weapon === nextPlayer.active_weapon &&
+      player.weapons === nextPlayer.weapons;
+  });
+});
 export default function ReplayPage() {
   const { id: routeId } = useParams<{ id: string }>();
   const id = routeId ? Number(routeId) : null;
@@ -433,6 +446,13 @@ export default function ReplayPage() {
     };
   }, [id]);
   useEffect(() => {
+    if (!detail) return;
+    void Promise.allSettled([
+      preloadImage(detail.map.map_image_path),
+      preloadImage(detail.map.lower_map_image_path),
+    ]);
+  }, [detail]);
+  useEffect(() => {
     if (!detail || number === null) return;
     let alive = true;
     const cachedRound = loadedRounds.current.get(number);
@@ -453,6 +473,12 @@ export default function ReplayPage() {
     if (cachedRound) {
       // The next round is commonly prefetched. Put it on screen immediately
       // while the promise below still refreshes the normal loading path.
+      const [cachedStart, cachedEnd] = roundBounds(cachedRound);
+      const cachedPlaybackStart = showFreezeTimeRef.current
+        ? cachedStart
+        : (cachedRound.round.freeze_end_tick ?? cachedStart);
+      clock.current = clamp(cachedPlaybackStart, cachedStart, cachedEnd);
+      setTick(clock.current);
       setRound(cachedRound);
     }
     void load(number).then(
@@ -511,7 +537,14 @@ export default function ReplayPage() {
     let raf = 0,
       last = 0,
       lastUi = 0;
-    const [, end] = roundBounds(round);
+    const [start, end] = roundBounds(round);
+    const playbackStart = showFreezeTimeRef.current
+      ? start
+      : (round.round.freeze_end_tick ?? start);
+    if (clock.current < playbackStart) {
+      clock.current = clamp(playbackStart, start, end);
+      setTick(clock.current);
+    }
     const run = (now: number) => {
       if (!isWindowActive()) {
         setPlaying(false);
@@ -1120,9 +1153,10 @@ export default function ReplayPage() {
                       const next = !showFreezeTime;
                       setShowFreezeTime(next);
                       if (!next && round) {
-                        seek(
-                          round.round.freeze_end_tick ?? round.round.start_tick,
-                        );
+                        const [start, end] = roundBounds(round);
+                        const actionStart = round.round.freeze_end_tick ?? start;
+                        clock.current = clamp(actionStart, start, end);
+                        setTick(clock.current);
                       }
                     }}
                   >

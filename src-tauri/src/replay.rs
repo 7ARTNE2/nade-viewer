@@ -105,84 +105,32 @@ pub(crate) fn list_replays(app: AppHandle) -> Result<Vec<ReplayEntry>> {
         .map(|(id, metadata, size, round_number, tick)| {
             let metadata_value: Value =
                 serde_json::from_str(&metadata).map_err(|e| e.to_string())?;
-            let team_t = metadata_value["team_t"]
-                .as_str()
-                .unwrap_or_default()
-                .trim()
-                .to_string();
-            let team_ct = metadata_value["team_ct"]
-                .as_str()
-                .unwrap_or_default()
-                .trim()
-                .to_string();
             // The last round summary contains the score at its start. Add
             // that round's winner to get the final score. Unlike a cumulative
             // winner count this remains valid when T/CT sides switch at half.
             let mut final_score_t = 0_i64;
             let mut final_score_ct = 0_i64;
-            let mut final_team_t = String::new();
-            let mut final_team_ct = String::new();
-            let mut rounds = conn
-                .prepare("SELECT number,summary,data FROM rounds WHERE match_id=?1 ORDER BY number")
+            let final_summary_raw: Option<String> = conn
+                .query_row(
+                    "SELECT summary FROM rounds WHERE match_id=?1 AND number>0 ORDER BY number DESC LIMIT 1",
+                    [id],
+                    |row| row.get(0),
+                )
+                .optional()
                 .map_err(|e| e.to_string())?;
-            let summaries = rounds
-                .query_map([id], |row| {
-                    Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?, row.get::<_, Vec<u8>>(2)?))
-                })
-                .map_err(|e| e.to_string())?;
-            for record in summaries {
-                let (number, summary_raw, data_raw) = record.map_err(|e| e.to_string())?;
-                if number <= 0 {
-                    continue;
-                }
+            if let Some(summary_raw) = final_summary_raw {
                 let summary: Value =
                     serde_json::from_str(&summary_raw).map_err(|e| e.to_string())?;
-                let winner_side = summary["winner_side"].as_str().unwrap_or_default();
-                let data = decode(&data_raw)?;
-                let mut round_t = String::new();
-                let mut round_ct = String::new();
-                if let Some(frames) = data["frames"].as_array() {
-                    for frame in frames {
-                        if let Some(players) = frame["players"].as_array() {
-                            for player in players {
-                                let name = player["team_name"].as_str().unwrap_or_default().trim();
-                                match player["side"].as_str() {
-                                    Some("T") if round_t.is_empty() && !name.is_empty() => round_t = name.to_string(),
-                                    Some("CT") if round_ct.is_empty() && !name.is_empty() => round_ct = name.to_string(),
-                                    _ => {}
-                                }
-                            }
-                        }
-                        if !round_t.is_empty() && !round_ct.is_empty() { break; }
-                    }
-                }
-                if !round_t.is_empty() {
-                    final_team_t = round_t.clone();
-                }
-                if !round_ct.is_empty() {
-                    final_team_ct = round_ct.clone();
-                }
-                if round_t.is_empty() && round_ct == team_t { round_t = team_ct.clone(); }
-                if round_ct.is_empty() && round_t == team_t { round_ct = team_ct.clone(); }
-                if round_t.is_empty() && round_ct == team_ct { round_t = team_t.clone(); }
-                if round_ct.is_empty() && round_t == team_ct { round_ct = team_t.clone(); }
-                final_score_t = summary["score_t"].as_i64().unwrap_or(final_score_t);
-                final_score_ct = summary["score_ct"].as_i64().unwrap_or(final_score_ct);
-                if winner_side == "T" {
-                    final_score_t += 1;
-                } else if winner_side == "CT" {
-                    final_score_ct += 1;
+                final_score_t = summary["score_t"].as_i64().unwrap_or(0);
+                final_score_ct = summary["score_ct"].as_i64().unwrap_or(0);
+                match summary["winner_side"].as_str().unwrap_or_default() {
+                    "T" => final_score_t += 1,
+                    "CT" => final_score_ct += 1,
+                    _ => {}
                 }
             }
             let score_t = final_score_t;
             let score_ct = final_score_ct;
-            let mut display_metadata = metadata_value;
-            if !final_team_t.is_empty() {
-                display_metadata["team_t"] = Value::String(final_team_t);
-            }
-            if !final_team_ct.is_empty() {
-                display_metadata["team_ct"] = Value::String(final_team_ct);
-            }
             let winner_side = if score_t > score_ct {
                 "T".to_string()
             } else if score_ct > score_t {
@@ -192,7 +140,7 @@ pub(crate) fn list_replays(app: AppHandle) -> Result<Vec<ReplayEntry>> {
             };
             Ok(ReplayEntry {
                 id,
-                metadata: display_metadata,
+                metadata: metadata_value,
                 size,
                 round_number,
                 tick,
