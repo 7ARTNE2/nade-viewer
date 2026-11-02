@@ -28,7 +28,7 @@ export default function ReplayClock({
       <span
         className="replay-round-clock"
         aria-label={clockLabel}
-        title={clockLabel}
+        data-tip={clockLabel}
       >
         <small>
           {bombActive

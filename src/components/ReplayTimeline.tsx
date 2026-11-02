@@ -305,7 +305,7 @@ export default function ReplayTimeline({
         onClick={() => zoomAt(zoom / 1.35)}
         disabled={zoom <= 1.001}
         aria-label={tr('Zoom out', 'Уменьшить')}
-        title={tr('Zoom out', 'Уменьшить')}
+        data-tip={tr('Zoom out', 'Уменьшить')}
       >
         <Minus size={12} />
       </button>
@@ -315,7 +315,7 @@ export default function ReplayTimeline({
         onClick={() => zoomAt(zoom * 1.35)}
         disabled={zoom >= 7.99}
         aria-label={tr('Zoom in', 'Увеличить')}
-        title={tr('Zoom in', 'Увеличить')}
+        data-tip={tr('Zoom in', 'Увеличить')}
       >
         <Plus size={12} />
       </button>
@@ -324,7 +324,7 @@ export default function ReplayTimeline({
         onClick={() => zoomAt(1)}
         disabled={zoom <= 1.001}
         aria-label={tr('Reset timeline zoom', 'Сбросить масштаб')}
-        title={tr('Reset timeline zoom', 'Сбросить масштаб')}
+        data-tip={tr('Reset timeline zoom', 'Сбросить масштаб')}
       >
         <RotateCcw size={11} />
       </button>
@@ -373,7 +373,6 @@ export default function ReplayTimeline({
                     key={grenade.id}
                     data-tick={markerTick}
                     style={{ left: `${progress(markerTick)}%` }}
-                    title={`${grenade.data.thrower} · ${grenade.data.grenade_type} · ${labelAt(markerTick)}`}
                     onMouseEnter={() => setHoveredGrenade(grenade.id)}
                     onMouseLeave={() => setHoveredGrenade(null)}
                     onFocus={() => setHoveredGrenade(grenade.id)}

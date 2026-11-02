@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Circle,
   MoveUpRight,
@@ -13,21 +14,15 @@ import {
 import { useI18n } from '../i18n';
 import type { ReplayDetail, ReplayRound } from '../types/replay';
 import './ReplayAnnotations.css';
+import {
+  loadReplayNotes,
+  replayNotesKey,
+  saveReplayNotes,
+  type ReplayNote as Note,
+  type ReplayStroke as Stroke,
+} from '../lib/replayNotes';
 
 type Point = [number, number];
-type Stroke = {
-  tool: 'pen' | 'arrow' | 'circle';
-  color: string;
-  points: Point[];
-};
-type Note = {
-  id: string;
-  round: number;
-  tick: number;
-  lower: boolean;
-  text: string;
-  strokes: Stroke[];
-};
 type Props = {
   detail: ReplayDetail;
   round: ReplayRound;
@@ -51,40 +46,6 @@ const colors = [
   ['#94a3b8', 'Gray', 'Серый'],
   ['#111827', 'Black', 'Чёрный'],
 ] as const;
-
-function loadNotes(key: string): Note[] {
-  try {
-    const data: unknown = JSON.parse(localStorage.getItem(key) ?? '[]');
-    if (!Array.isArray(data)) return [];
-    return data.filter(
-      (note): note is Note =>
-        note &&
-        typeof note.id === 'string' &&
-        Number.isFinite(note.round) &&
-        Number.isFinite(note.tick) &&
-        typeof note.lower === 'boolean' &&
-        typeof note.text === 'string' &&
-        Array.isArray(note.strokes) &&
-        note.strokes.every(
-          (stroke: Stroke) =>
-            stroke &&
-            ['pen', 'arrow', 'circle'].includes(stroke.tool) &&
-            typeof stroke.color === 'string' &&
-            /^#[0-9a-f]{6}$/i.test(stroke.color) &&
-            Array.isArray(stroke.points) &&
-            stroke.points.length > 0 &&
-            stroke.points.every(
-              (point) =>
-                Array.isArray(point) &&
-                point.length === 2 &&
-                point.every(Number.isFinite),
-            ),
-        ),
-    );
-  } catch {
-    return [];
-  }
-}
 
 function Shape({ stroke }: { stroke: Stroke }) {
   const [start] = stroke.points;
@@ -122,10 +83,12 @@ export default function ReplayAnnotations({
   onSeek,
 }: Props) {
   const { tr } = useI18n();
-  const storageKey = `nadeviewer.replay-notes.v1.${detail.id}.${detail.metadata.parsed_at}`;
-  const [notes, setNotes] = useState<Note[]>(() => loadNotes(storageKey));
+  const storageKey = replayNotesKey(detail);
+  const [notes, setNotes] = useState<Note[]>(() => loadReplayNotes(storageKey));
   const [open, setOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [searchParams] = useSearchParams();
+  const requestedNoteId = searchParams.get('note');
   const [tool, setTool] = useState<Stroke['tool']>('pen');
   const [color, setColor] = useState<string>(colors[0][0]);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -144,8 +107,16 @@ export default function ReplayAnnotations({
   const ox = (size.width - 1024 * unit) / 2 + view.x;
   const oy = (size.height - 1024 * unit) / 2 + view.y;
   useEffect(() => {
+    const note = loadReplayNotes(storageKey).find(
+      (item) => item.id === requestedNoteId,
+    );
+    if (note?.round !== round.round_number || note.lower !== lower) return;
+    setSelectedId(note.id);
+    setOpen(true);
+  }, [requestedNoteId, storageKey, round.round_number, lower]);
+  useEffect(() => {
     try {
-      localStorage.setItem(storageKey, JSON.stringify(notes));
+      saveReplayNotes(storageKey, notes);
       setSaveError(false);
     } catch {
       setSaveError(true);
@@ -305,6 +276,7 @@ export default function ReplayAnnotations({
             </strong>
             <button
               aria-label={tr('Close notes', 'Закрыть заметки')}
+              data-tip={tr('Close notes', 'Закрыть заметки')}
               onClick={() => setOpen(false)}
             >
               <X size={15} />
@@ -325,7 +297,7 @@ export default function ReplayAnnotations({
               <button
                 key={value}
                 aria-label={label}
-                title={label}
+                data-tip={label}
                 aria-pressed={tool === value}
                 onClick={() => setTool(value)}
               >
@@ -334,7 +306,7 @@ export default function ReplayAnnotations({
             ))}
             <button
               aria-label={tr('Undo drawing', 'Отменить рисунок')}
-              title={tr('Undo drawing', 'Отменить рисунок')}
+              data-tip={tr('Undo drawing', 'Отменить рисунок')}
               disabled={!visibleStrokes.length}
               onClick={() =>
                 updateNote((n) => ({ ...n, strokes: n.strokes.slice(0, -1) }))
@@ -346,7 +318,7 @@ export default function ReplayAnnotations({
               <button
                 className="replay-palette-toggle"
                 aria-label={tr('Color palette', 'Палитра цветов')}
-                title={tr('Color palette', 'Палитра цветов')}
+                data-tip={tr('Color palette', 'Палитра цветов')}
                 aria-expanded={paletteOpen}
                 onClick={() => setPaletteOpen((value) => !value)}
               >
@@ -379,7 +351,7 @@ export default function ReplayAnnotations({
                         key={value}
                         className="replay-drawing-color"
                         aria-label={tr(english, russian)}
-                        title={tr(english, russian)}
+                        data-tip={tr(english, russian)}
                         aria-pressed={color.toLowerCase() === value}
                         onClick={() => {
                           setColor(value);
@@ -398,6 +370,7 @@ export default function ReplayAnnotations({
                       type="color"
                       value={color}
                       aria-label={tr('Custom color', 'Свой цвет')}
+                      data-tip={tr('Custom color', 'Свой цвет')}
                       onChange={(e) => setColor(e.target.value.toLowerCase())}
                     />
                     <span>{tr('Custom color', 'Свой цвет')}</span>
@@ -427,7 +400,7 @@ export default function ReplayAnnotations({
             {selected && (
               <button
                 aria-label={tr('Delete note', 'Удалить заметку')}
-                title={tr('Delete note', 'Удалить заметку')}
+                data-tip={tr('Delete note', 'Удалить заметку')}
                 onClick={() => {
                   setNotes((all) => all.filter((n) => n.id !== selected.id));
                   setSelectedId(null);

@@ -1,6 +1,11 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import {
+  Link,
+  useNavigate,
+  useParams,
+  useSearchParams,
+} from 'react-router-dom';
 import {
   ArrowLeft,
   Activity,
@@ -19,7 +24,7 @@ import {
   Repeat2,
   SkipBack,
   SkipForward,
-  Trash2,
+  StickyNote,
   Timer,
   X,
 } from 'lucide-react';
@@ -29,6 +34,13 @@ import defuserIcon from '../assets/equipment_icons/defuser.svg';
 import armorIcon from '../assets/equipment_icons/armor.svg';
 import armorHelmetIcon from '../assets/equipment_icons/armor_helmet.svg';
 import ReplayCanvas from '../components/ReplayCanvas';
+import ReplayHistory from '../components/ReplayHistory';
+import {
+  deleteReplayNotes,
+  loadReplayNotes,
+  replayNotesKey,
+  useReplayNotes,
+} from '../lib/replayNotes';
 import ReplayTimeline from '../components/ReplayTimeline';
 import ReplayClock from '../components/ReplayClock';
 import DestructiveConfirmDialog from '../components/DestructiveConfirmDialog';
@@ -265,12 +277,12 @@ const Team = memo(
             key={p.id}
           >
             <div className="replay-player-head">
-              <strong title={p.name}>{p.name}</strong>
+              <strong data-tip={p.name}>{p.name}</strong>
               <span className="replay-player-stats">
                 <b>{p.health} HP</b>
                 <span
                   className="replay-player-armor-inline"
-                  title={p.has_helmet ? 'Kevlar + helmet' : 'Kevlar'}
+                  data-tip={p.has_helmet ? 'Kevlar + helmet' : 'Kevlar'}
                 >
                   {p.armor > 0 && (
                     <img
@@ -299,7 +311,7 @@ const Team = memo(
                       <span
                         className={`replay-player-item replay-player-weapon-item ${active ? 'active' : ''}`}
                         key={w.name}
-                        title={ammo ? `${w.name} · ${ammo}` : w.name}
+                        data-tip={ammo ? `${w.name} · ${ammo}` : w.name}
                       >
                         <img src={weaponIcon(w.name)} alt="" />
                         {ammo && (
@@ -319,7 +331,7 @@ const Team = memo(
                       <span
                         className={`replay-player-item ${active ? 'active' : ''}`}
                         key={normalizeWeapon(weapon.name)}
-                        title={`${weapon.name}${count > 1 ? ` ×${count}` : ''}`}
+                        data-tip={`${weapon.name}${count > 1 ? ` ×${count}` : ''}`}
                       >
                         <img src={weaponIcon(weapon.name)} alt="" />
                         {count > 1 && (
@@ -335,7 +347,7 @@ const Team = memo(
                   {p.has_defuse_kit && (
                     <span
                       className="replay-player-item"
-                      title={tr('Defuse kit', 'Дефьюз-кит')}
+                      data-tip={tr('Defuse kit', 'Дефьюз-кит')}
                     >
                       <img
                         src={defuserIcon}
@@ -347,7 +359,7 @@ const Team = memo(
                     (p.weapons ?? []).some(isC4Weapon)) && (
                     <span
                       className={`replay-player-item ${p.id === bombCarrier ? 'active' : ''}`}
-                      title={tr('Bomb', 'Бомба')}
+                      data-tip={tr('Bomb', 'Бомба')}
                     >
                       <img
                         className="replay-player-c4"
@@ -390,11 +402,14 @@ const Team = memo(
 export default function ReplayPage() {
   const { id: routeId } = useParams<{ id: string }>();
   const id = routeId ? Number(routeId) : null;
+  const [searchParams] = useSearchParams();
+  const requestedNoteId = searchParams.get('note');
   const navigate = useNavigate(),
     { tr, locale } = useI18n(),
     { showToast } = useToast();
   const [entries, setEntries] = useState<ReplayEntry[]>([]);
   const [detail, setDetail] = useState<ReplayDetail | null>(null);
+  const replayNotes = useReplayNotes(detail);
   const [round, setRound] = useState<ReplayRound | null>(null);
   const [number, setNumber] = useState<number | null>(null);
   const [error, setError] = useState('');
@@ -593,11 +608,22 @@ export default function ReplayPage() {
       (v) => {
         if (!alive) return;
         setDetail(v);
-        resume.current = v.tick;
+        const note = loadReplayNotes(replayNotesKey(v)).find(
+          (item) =>
+            item.id === requestedNoteId &&
+            v.rounds.some((r) => r.number === item.round),
+        );
+        resume.current = note?.tick ?? v.tick;
+        if (note) {
+          setShowFreezeTime(true);
+          setLower(note.lower);
+        }
         setNumber(
-          v.rounds.some((r) => r.number > 0 && r.number === v.round_number)
-            ? v.round_number
-            : (v.rounds.find((r) => r.number > 0)?.number ?? null),
+          note
+            ? note.round
+            : v.rounds.some((r) => r.number > 0 && r.number === v.round_number)
+              ? v.round_number
+              : (v.rounds.find((r) => r.number > 0)?.number ?? null),
         );
       },
       (e) => {
@@ -608,7 +634,7 @@ export default function ReplayPage() {
       alive = false;
       cancelAutoNext();
     };
-  }, [id, cancelAutoNext]);
+  }, [id, cancelAutoNext, requestedNoteId]);
   useEffect(() => {
     if (!detail) return;
     void Promise.allSettled([
@@ -1079,7 +1105,7 @@ export default function ReplayPage() {
             {detail && (
               <small
                 className="replay-source-name"
-                title={detail.metadata.demo_filename}
+                data-tip={detail.metadata.demo_filename}
               >
                 {detail.metadata.demo_filename}
               </small>
@@ -1164,86 +1190,11 @@ export default function ReplayPage() {
         </div>
       )}
       {id === null ? (
-        <div className="replay-history">
-          <div className="replay-section-title">
-            <h2>{tr('Matches', 'Матчи')}</h2>
-            <span className="replay-count">{entries.length}</span>
-          </div>
-          {!entries.length ? (
-            <div className="replay-empty">
-              <FolderOpen size={30} />
-              <h2>{tr('No saved matches', 'Нет сохранённых матчей')}</h2>
-              <span>
-                {capability
-                  ? tr('Select a .dem file', 'Выберите файл .dem')
-                  : tr(
-                      'Nade Parser with replay support is required',
-                      'Нужен Nade Parser с поддержкой replay',
-                    )}
-              </span>
-            </div>
-          ) : (
-            <div className="replay-match-list">
-              {entries.map((entry) => (
-                <article className="replay-match-row" key={entry.id}>
-                  <Link
-                    to={`/replays/${entry.id}`}
-                    className="replay-match-open"
-                  >
-                    <span className="replay-map-code">
-                      {entry.metadata.map.replace('de_', '')}
-                    </span>
-                    <div>
-                      <strong>
-                        {entry.metadata.team_t || 'T'} <span>vs</span>{' '}
-                        {entry.metadata.team_ct || 'CT'}
-                      </strong>
-                      <div className="replay-match-result">
-                        <b>
-                          {entry.score_t}:{entry.score_ct}
-                        </b>
-                        {entry.winner_side ? (
-                          <span>
-                            {tr('Winner', 'Победитель')}:{' '}
-                            {entry.winner_side === 'T'
-                              ? entry.metadata.team_t || 'T'
-                              : entry.metadata.team_ct || 'CT'}
-                          </span>
-                        ) : null}
-                      </div>
-                      <small title={entry.metadata.demo_filename}>
-                        {entry.metadata.demo_filename}
-                      </small>
-                    </div>
-                    <div className="replay-match-meta">
-                      <span>
-                        {entry.metadata.round_count} {tr('rounds', 'раундов')}
-                        {entry.metadata.incomplete
-                          ? ' · ' + tr('Incomplete', 'Неполный')
-                          : ''}
-                      </span>
-                      <small>
-                        {new Date(entry.metadata.parsed_at).toLocaleDateString(
-                          locale,
-                        )}{' '}
-                        · {(entry.size / 1048576).toFixed(1)} MB
-                      </small>
-                    </div>
-                    <Play size={17} />
-                  </Link>
-                  <button
-                    className="icon-btn"
-                    aria-label={tr('Delete match', 'Удалить матч')}
-                    data-tip={tr('Delete match', 'Удалить матч')}
-                    onClick={() => setDeleting(entry)}
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                </article>
-              ))}
-            </div>
-          )}
-        </div>
+        <ReplayHistory
+          entries={entries}
+          capability={capability}
+          onDelete={setDeleting}
+        />
       ) : detail ? (
         <div className="replay-workspace">
           <div className="replay-round-bar">
@@ -1292,6 +1243,9 @@ export default function ReplayPage() {
                 </button>
                 <div className="replay-round-rail-list" ref={roundRailRef}>
                   {replayRounds.map((item) => {
+                    const noteCount = replayNotes.filter(
+                      (note) => note.round === item.number,
+                    ).length;
                     const winner = roundWinnerClass(item.winner_side);
                     const endingScore = replayEndScores[item.number] ?? {
                       t: item.score_t,
@@ -1346,9 +1300,17 @@ export default function ReplayPage() {
                         aria-current={
                           item.number === number ? 'true' : undefined
                         }
-                        aria-label={`${tr('Round', 'Раунд')} ${item.number}, ${endingScore.t}:${endingScore.ct}`}
+                        aria-label={`${tr('Round', 'Раунд')} ${item.number}, ${endingScore.t}:${endingScore.ct}${noteCount ? `, ${tr('Notes', 'Заметки')}: ${noteCount}` : ''}`}
                       >
                         <span>R{item.number}</span>
+                        {noteCount > 0 && (
+                          <StickyNote
+                            className="replay-round-note-badge"
+                            size={10}
+                            aria-hidden="true"
+                            data-tip={`${tr('Notes', 'Заметки')}: ${noteCount}`}
+                          />
+                        )}
                         <strong>
                           {endingScore.t}:{endingScore.ct}
                         </strong>
@@ -1729,7 +1691,10 @@ export default function ReplayPage() {
                               {isFlashAssist && (
                                 <span
                                   className={`replay-killfeed-assist flash ${String(flashAssister?.side ?? 'world').toLowerCase()}`}
-                                  title={tr('Flash assist', 'Ассист флешкой')}
+                                  data-tip={tr(
+                                    'Flash assist',
+                                    'Ассист флешкой',
+                                  )}
                                 >
                                   <img
                                     className="replay-killfeed-assist-icon"
@@ -1745,7 +1710,7 @@ export default function ReplayPage() {
                                 <img
                                   src={weaponIcon(weapon)}
                                   alt={weapon}
-                                  title={weapon}
+                                  data-tip={weapon}
                                 />
                               )}
                               {notices.map((item) => (
@@ -1753,7 +1718,7 @@ export default function ReplayPage() {
                                   key={item.id}
                                   src={item.icon}
                                   alt={item.id}
-                                  title={item.id}
+                                  data-tip={item.id}
                                 />
                               ))}
                               <span
@@ -1800,7 +1765,7 @@ export default function ReplayPage() {
                         {selected.data.thrower_team && (
                           <span
                             className={`detail-thrower-team side-accent-${selected.data.side.toLowerCase()}`}
-                            title={selected.data.thrower_team}
+                            data-tip={selected.data.thrower_team}
                           >
                             {selected.data.thrower_team}
                           </span>
@@ -1809,7 +1774,7 @@ export default function ReplayPage() {
                       <div className="metric-grid replay-detail-metrics">
                         <div>
                           <Timer size={13} aria-hidden="true" />
-                          <span title={tr('Airtime', 'Время полёта')}>
+                          <span data-tip={tr('Airtime', 'Время полёта')}>
                             {tr('Airtime', 'Полёт')}
                           </span>
                           <strong>
@@ -1819,7 +1784,7 @@ export default function ReplayPage() {
                         <div>
                           <Clock size={13} aria-hidden="true" />
                           <span
-                            title={
+                            data-tip={
                               grenadeHasBombTimer(selected)
                                 ? tr(
                                     'Bomb timer at throw',
@@ -1956,7 +1921,7 @@ export default function ReplayPage() {
                             </small>
                           </span>
                           <time
-                            title={
+                            data-tip={
                               grenadeHasBombTimer(g)
                                 ? tr(
                                     'Bomb timer at throw',
@@ -2151,6 +2116,11 @@ export default function ReplayPage() {
             setDeleteBusy(true);
             void deleteReplay(deleting.id)
               .then(() => {
+                try {
+                  deleteReplayNotes(deleting);
+                } catch {
+                  /* The match has already been deleted. */
+                }
                 setEntries((old) => old.filter((e) => e.id !== deleting.id));
                 setDeleting(null);
               }, fail)

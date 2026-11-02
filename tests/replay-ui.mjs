@@ -143,6 +143,22 @@ try {
       };
       let entries = [entry],
         capable = localStorage.getItem('replay-test-no-plugin') !== 'true';
+      window.__setSecondReplay = (enabled) => {
+        localStorage.setItem('replay-test-second-match', String(enabled));
+        entries = enabled
+          ? [
+              entry,
+              {
+                ...entry,
+                id: 2,
+                metadata: { ...metadata, demo_filename: 'second-replay.dem' },
+              },
+            ]
+          : [entry];
+      };
+      window.__setSecondReplay(
+        localStorage.getItem('replay-test-second-match') === 'true',
+      );
       window.__setReplayCapability = (v) => {
         capable = v;
         localStorage.setItem('replay-test-no-plugin', String(!v));
@@ -189,7 +205,7 @@ try {
               return entries;
             case 'get_replay':
               return {
-                id: 1,
+                id: args.id,
                 metadata,
                 rounds: rounds.map((r) => r.round),
                 map,
@@ -477,6 +493,13 @@ try {
   await seekTimeline(noteTick);
   const noteText = page.getByRole('textbox', { name: 'Текст заметки' });
   await noteText.fill('Занять плент после флешки');
+  assert.equal(
+    await page
+      .locator('.replay-round-rail-list button.active .replay-round-note-badge')
+      .count(),
+    1,
+    'round badges update immediately when notes are added',
+  );
   await noteText.press('Space');
   await page
     .getByRole('button', { name: 'Воспроизвести', exact: true })
@@ -551,6 +574,20 @@ try {
     'drawings belong to one round',
   );
   assert.equal(await noteText.inputValue(), '');
+  assert.equal(
+    await page
+      .locator('.replay-round-rail-list button.active .replay-round-note-badge')
+      .count(),
+    0,
+  );
+  const secondRoundNoteTick = Number(await timeline.inputValue());
+  await noteText.fill('Проверить выход на B');
+  assert.equal(
+    await page
+      .locator('.replay-round-rail-list button.active .replay-round-note-badge')
+      .count(),
+    1,
+  );
   await selectRound(1);
   await page.locator('.replay-note-list button').first().click();
   assert.equal(Number(await timeline.inputValue()), noteTick);
@@ -1163,6 +1200,97 @@ try {
     .filter({ has: page.locator('.replay-map-code') })
     .waitFor();
   await page.screenshot({ path: 'dist/replay-checks/history.png' });
+  const notesPanel = page.getByRole('complementary', {
+    name: 'Заметки матча',
+    exact: true,
+  });
+  await notesPanel
+    .getByRole('heading', { name: 'Раунд 1', exact: true })
+    .waitFor();
+  await notesPanel
+    .getByRole('heading', { name: 'Раунд 2', exact: true })
+    .waitFor();
+  assert.equal(await notesPanel.locator('.replay-history-note').count(), 2);
+  const searchNotes = page.getByRole('textbox', {
+    name: 'Поиск заметок',
+    exact: true,
+  });
+  await searchNotes.fill('выход на B');
+  assert.equal(await notesPanel.locator('.replay-history-note').count(), 1);
+  await searchNotes.fill('ничего не найдено');
+  await notesPanel.getByText('Заметки не найдены', { exact: true }).waitFor();
+  await searchNotes.fill('');
+  await notesPanel
+    .getByRole('link', { name: /^Открыть заметку: Раунд 2/ })
+    .click();
+  await page.waitForFunction(
+    () =>
+      document.querySelector(
+        '.replay-round-rail-list button[aria-current] span',
+      )?.textContent === 'R2',
+  );
+  await noteText.waitFor();
+  assert.equal(await noteText.inputValue(), 'Проверить выход на B');
+  assert.equal(Number(await timeline.inputValue()), secondRoundNoteTick);
+  await page.getByRole('button', { name: 'История матчей' }).click();
+  await notesPanel
+    .getByRole('link', { name: /^Открыть заметку: Раунд 1/ })
+    .click();
+  await noteText.waitFor();
+  assert.equal(
+    (await noteText.inputValue()).trim(),
+    'Занять плент после флешки',
+  );
+  assert.equal(
+    await drawing.locator('polyline').getAttribute('points'),
+    storedPoints,
+  );
+  assert.equal(Number(await timeline.inputValue()), noteTick);
+  await page
+    .getByRole('button', { name: 'Удалить заметку', exact: true })
+    .click();
+  assert.equal(
+    await page
+      .locator('.replay-round-rail-list button.active .replay-round-note-badge')
+      .count(),
+    0,
+    'deleting the last note removes its round badge',
+  );
+  await page.getByRole('button', { name: 'История матчей' }).click();
+  assert.equal(await notesPanel.locator('.replay-history-note').count(), 1);
+  await page.setViewportSize({ width: 760, height: 560 });
+  await page.screenshot({
+    path: 'dist/replay-checks/history-notes-compact.png',
+  });
+  assert.equal(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth > window.innerWidth,
+    ),
+    false,
+  );
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.evaluate(() => window.__setSecondReplay(true));
+  await page.reload();
+  await page
+    .getByRole('button', {
+      name: 'Заметки матча second-replay.dem: 0',
+      exact: true,
+    })
+    .click();
+  await notesPanel.getByText('Пока нет заметок', { exact: true }).waitFor();
+  await page
+    .getByRole('button', {
+      name: `Заметки матча ${metadata.demo_filename}: 1`,
+      exact: true,
+    })
+    .click();
+  assert.equal(
+    await notesPanel.locator('.replay-history-note').count(),
+    1,
+    'notes from another replay must not leak into the selected match',
+  );
+  await page.screenshot({ path: 'dist/replay-checks/history-notes.png' });
+  await page.evaluate(() => window.__setSecondReplay(false));
   await page.evaluate(() => window.__setReplayCapability(false));
   await page.reload();
   await page
