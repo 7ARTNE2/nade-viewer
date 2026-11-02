@@ -110,6 +110,41 @@ try {
   await context.addInitScript(
     ({ metadata, rounds, mapImagePath, radar }) => {
       localStorage.setItem('nadeviewer.locale', 'ru');
+      const testMap = localStorage.getItem('replay-test-map');
+      if (testMap === 'nuke' || testMap === 'vertigo') {
+        metadata.map = `de_${testMap}`;
+        mapImagePath = mapImagePath.replace(
+          /de_[a-z0-9]+_radar/,
+          `de_${testMap}_radar`,
+        );
+        radar =
+          testMap === 'nuke'
+            ? { pos_x: -3453, pos_y: 2887, scale: 7, split_z: -495 }
+            : { ...radar, split_z: 11700 };
+        for (const round of rounds) {
+          for (const frame of round.frames) {
+            frame.players = frame.players.map((player, index) => ({
+              ...player,
+              z: index < 5 ? 0 : -700,
+            }));
+          }
+        }
+        if (testMap === 'nuke') {
+          const round = rounds.find((item) => item.round_number === 1);
+          const kill = round.events.find((event) => event.type === 'kill');
+          round.events.push(
+            ...Array.from({ length: 7 }, (_, index) => ({
+              ...kill,
+              tick:
+                round.round.freeze_end_tick +
+                metadata.tickrate * (30 + index / 8),
+              target_id: String(index + 2),
+              data: { weapon: 'ak47', headshot: index === 6 },
+            })),
+          );
+          round.events.sort((a, b) => a.tick - b.tick);
+        }
+      }
       Object.defineProperty(window.navigator, 'clipboard', {
         value: {
           async writeText(text) {
@@ -123,6 +158,7 @@ try {
         window.__replayActionLabels = [];
         window.__replayGrenadeIcons = [];
         window.__replayFlameLayers = [];
+        this.canvas.dataset.playerNames = '[]';
         return clearRect.apply(this, args);
       };
       const fill = window.CanvasRenderingContext2D.prototype.fill;
@@ -142,6 +178,11 @@ try {
       window.CanvasRenderingContext2D.prototype.fillText = function (...args) {
         if (/^(PLANT|DEFUSE) /.test(args[0]))
           window.__replayActionLabels.push(args[0]);
+        if (/^Player \d+$/.test(args[0])) {
+          const names = JSON.parse(this.canvas.dataset.playerNames || '[]');
+          names.push(args[0]);
+          this.canvas.dataset.playerNames = JSON.stringify(names);
+        }
         return fillText.apply(this, args);
       };
       window.CanvasRenderingContext2D.prototype.drawImage = function (...args) {
@@ -152,6 +193,7 @@ try {
           window.__replayGrenadeIcons.push(args[0].src);
         if (args[0].src?.includes('_radar_') && args[0].naturalWidth > 0) {
           window.__replayCamera = args.slice(1);
+          this.canvas.dataset.camera = JSON.stringify(args.slice(1));
         }
         return drawImage.apply(this, args);
       };
@@ -171,8 +213,11 @@ try {
         name: metadata.map,
         label: metadata.map,
         grenade_count: 0,
-        has_lower_radar: false,
+        has_lower_radar: testMap === 'nuke' || testMap === 'vertigo',
         map_image_path: mapImagePath,
+        lower_map_image_path: testMap
+          ? mapImagePath.replace('_radar_', '_lower_radar_')
+          : null,
       };
       let entries = [entry],
         capable = localStorage.getItem('replay-test-no-plugin') !== 'true';
@@ -587,6 +632,53 @@ try {
   await selectRound(2);
   await selectRound(1);
   await page.getByRole('slider', { name: 'Таймлайн повтора' }).waitFor();
+  const firstKill = first.events.find((event) => event.type === 'kill');
+  if (firstKill) {
+    const feedRow = page.locator(
+      `.replay-killfeed-row[data-tick="${firstKill.tick}"]`,
+    );
+    await seekTimeline(firstKill.tick - 1);
+    assert.equal(await feedRow.count(), 0, 'future kills must be hidden');
+    await seekTimeline(firstKill.tick);
+    assert.equal(await feedRow.count(), 1);
+    assert.equal(Number(await feedRow.evaluate((row) => row.style.opacity)), 1);
+    await seekTimeline(firstKill.tick + metadata.tickrate * 5.85);
+    const pausedOpacity = Number(
+      await feedRow.evaluate((row) => row.style.opacity),
+    );
+    assert.ok(
+      Math.abs(pausedOpacity - 0.5) < 0.001,
+      `fade opacity: ${pausedOpacity}`,
+    );
+    await page.waitForTimeout(350);
+    assert.equal(
+      Number(await feedRow.evaluate((row) => row.style.opacity)),
+      pausedOpacity,
+      'killfeed fade must stop on pause',
+    );
+    await seekTimeline(firstKill.tick + metadata.tickrate * 6);
+    assert.equal(await feedRow.count(), 0, 'kills expire at six demo seconds');
+    await seekTimeline(firstKill.tick);
+    assert.equal(
+      Number(await feedRow.evaluate((row) => row.style.opacity)),
+      1,
+      'seeking backwards restores the killfeed',
+    );
+    await speeds.getByRole('button', { name: '2×', exact: true }).click();
+    await seekTimeline(firstKill.tick + metadata.tickrate * 5);
+    const started = Date.now();
+    await page
+      .getByRole('button', { name: 'Воспроизвести', exact: true })
+      .click();
+    await feedRow.waitFor({ state: 'detached', timeout: 2000 });
+    assert.ok(
+      Date.now() - started < 1500,
+      'killfeed lifetime must follow playback speed',
+    );
+    await page.getByRole('button', { name: 'Пауза', exact: true }).click();
+    await speeds.getByRole('button', { name: '1×', exact: true }).click();
+    await seekTimeline(first.frames[0].tick);
+  }
   const radarCanvas = page.locator('canvas');
   const camera = () => page.evaluate(() => window.__replayCamera);
   const initialCamera = await camera();
@@ -605,13 +697,76 @@ try {
   );
   await radarCanvas.focus();
   const cameraTick = await timeline.inputValue();
+  const seekStep = 5 * metadata.tickrate;
   await page.keyboard.press('ArrowRight');
   await page.waitForTimeout(100);
   assert.equal(
-    await timeline.inputValue(),
-    cameraTick,
-    'map arrows must pan without seeking',
+    Number(await timeline.inputValue()),
+    Number(cameraTick) + seekStep,
+    'map arrows must seek by five demo seconds',
   );
+  assert.deepEqual(await camera(), zoomed, 'arrows must not pan the map');
+  await page.keyboard.press('ArrowLeft');
+  assert.equal(Number(await timeline.inputValue()), Number(cameraTick));
+  await seekTimeline(Number(cameraTick) + seekStep + 0.5);
+  await radarCanvas.focus();
+  await page.keyboard.press('ArrowRight');
+  assert.equal(
+    Number(await timeline.inputValue()),
+    Number(cameraTick) + 2 * seekStep + 0.5,
+  );
+  await seekTimeline(Number(cameraTick) + seekStep + 0.5);
+  await radarCanvas.focus();
+  await page.keyboard.press('ArrowLeft');
+  assert.equal(Number(await timeline.inputValue()), Number(cameraTick) + 0.5);
+  await page.keyboard.press('ArrowUp');
+  assert.equal(
+    await speeds
+      .getByRole('button', { name: '2×', exact: true })
+      .getAttribute('aria-pressed'),
+    'true',
+  );
+  await page.keyboard.press('ArrowUp');
+  await page.keyboard.press('ArrowUp');
+  assert.equal(
+    await speeds
+      .getByRole('button', { name: '4×', exact: true })
+      .getAttribute('aria-pressed'),
+    'true',
+  );
+  for (let i = 0; i < 5; i++) await page.keyboard.press('ArrowDown');
+  assert.equal(
+    await speeds
+      .getByRole('button', { name: '0.25×', exact: true })
+      .getAttribute('aria-pressed'),
+    'true',
+  );
+  await page.keyboard.press('ArrowUp');
+  await page.keyboard.press('ArrowUp');
+  assert.equal(
+    await speeds
+      .getByRole('button', { name: '1×', exact: true })
+      .getAttribute('aria-pressed'),
+    'true',
+  );
+  await page.keyboard.press('Space');
+  await page.getByRole('button', { name: 'Пауза', exact: true }).waitFor();
+  await page.keyboard.press('ArrowUp');
+  await page.getByRole('button', { name: 'Пауза', exact: true }).waitFor();
+  await page.keyboard.press('ArrowLeft');
+  await page
+    .getByRole('button', { name: 'Воспроизвести', exact: true })
+    .waitFor();
+  const steppedTick = Number(await timeline.inputValue());
+  await page.waitForTimeout(100);
+  assert.equal(
+    Number(await timeline.inputValue()),
+    steppedTick,
+    'keyboard seeking pauses playback',
+  );
+  await page.keyboard.press('ArrowDown');
+  await seekTimeline(Number(cameraTick));
+  await radarCanvas.focus();
   for (let i = 0; i < 20; i++) await page.keyboard.press('+');
   await page.waitForTimeout(100);
   assert.ok(Math.abs((await camera())[2] / initialCamera[2] - 6) < 0.001);
@@ -700,6 +855,20 @@ try {
     'round badges update immediately when notes are added',
   );
   await noteText.press('Space');
+  const textTick = await timeline.inputValue();
+  await noteText.press('ArrowUp');
+  await noteText.press('ArrowLeft');
+  assert.equal(
+    await timeline.inputValue(),
+    textTick,
+    'text arrows must not seek',
+  );
+  assert.equal(
+    await speeds
+      .getByRole('button', { name: '1×', exact: true })
+      .getAttribute('aria-pressed'),
+    'true',
+  );
   await page
     .getByRole('button', { name: 'Воспроизвести', exact: true })
     .waitFor();
@@ -755,6 +924,55 @@ try {
   const originalTransform = await drawing
     .locator(':scope > g')
     .getAttribute('transform');
+  await page.mouse.move(
+    bounds.x + bounds.width - 45,
+    bounds.y + bounds.height * 0.5,
+  );
+  await page.mouse.wheel(0, -100);
+  await page.waitForFunction(
+    (original) =>
+      document
+        .querySelector('.replay-annotations > g')
+        ?.getAttribute('transform') !== original,
+    originalTransform,
+  );
+  assert.equal(
+    await drawing.locator('polyline').getAttribute('points'),
+    storedPoints,
+  );
+  await page.getByRole('button', { name: 'Сбросить вид', exact: true }).click();
+  // An unfinished stroke is discarded when the view changes with the wheel.
+  await page.mouse.move(
+    bounds.x + bounds.width - 90,
+    bounds.y + bounds.height * 0.55,
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    bounds.x + bounds.width - 30,
+    bounds.y + bounds.height * 0.7,
+    { steps: 4 },
+  );
+  assert.equal(await drawing.locator('circle').count(), 1);
+  await page.mouse.wheel(0, -100);
+  await page.waitForFunction(
+    () => !document.querySelector('.replay-annotations circle'),
+  );
+  await page.mouse.up();
+  assert.equal(
+    await drawing.locator('polyline').getAttribute('points'),
+    storedPoints,
+  );
+  await page.waitForTimeout(100);
+  const panelCamera = await camera();
+  await noteText.hover();
+  await page.mouse.wheel(0, 100);
+  await page.waitForTimeout(100);
+  assert.deepEqual(
+    await camera(),
+    panelCamera,
+    'scrolling notes must not zoom the map',
+  );
+  await page.getByRole('button', { name: 'Сбросить вид', exact: true }).click();
   await page.getByRole('button', { name: 'Приблизить', exact: true }).click();
   assert.equal(
     await drawing.locator('polyline').getAttribute('points'),
@@ -1662,6 +1880,290 @@ try {
     .getByText('Радар этой карты недоступен', { exact: true })
     .waitFor();
   await failedRadarPage.close();
+  if (!records) {
+    // Two Nuke views share a clock while keeping cameras and note editors separate.
+    const nukePage = await context.newPage();
+    nukePage.on('pageerror', (error) => errors.push(error.message));
+    await nukePage.goto('http://127.0.0.1:1428/replays');
+    await nukePage.evaluate(() =>
+      localStorage.setItem('replay-test-map', 'nuke'),
+    );
+    await nukePage.goto('http://127.0.0.1:1428/replays/1');
+    const mainRadar = nukePage.getByRole('region', {
+      name: 'Основной радар',
+      exact: true,
+    });
+    const lowerRadar = nukePage.getByRole('region', {
+      name: 'Нижний радар',
+      exact: true,
+    });
+    const mainCanvas = mainRadar.locator('canvas');
+    const lowerCanvas = lowerRadar.locator('canvas');
+    await nukePage.waitForFunction(
+      () =>
+        [...document.querySelectorAll('canvas')].length === 2 &&
+        [...document.querySelectorAll('canvas')].every(
+          (canvas) => canvas.dataset.camera,
+        ),
+    );
+    assert.equal(
+      await nukePage.getByRole('group', { name: 'Этаж', exact: true }).count(),
+      0,
+    );
+    assert.equal(await nukePage.locator('.replay-killfeed').count(), 1);
+    const paneCamera = (canvas) =>
+      canvas.evaluate((element) => JSON.parse(element.dataset.camera));
+    const mainBefore = await paneCamera(mainCanvas);
+    const lowerBefore = await paneCamera(lowerCanvas);
+    assert.deepEqual(
+      await mainCanvas.evaluate((canvas) =>
+        JSON.parse(canvas.dataset.playerNames),
+      ),
+      ['Player 1', 'Player 2', 'Player 3', 'Player 4', 'Player 5'],
+    );
+    assert.deepEqual(
+      await lowerCanvas.evaluate((canvas) =>
+        JSON.parse(canvas.dataset.playerNames),
+      ),
+      ['Player 6', 'Player 7', 'Player 8', 'Player 9', 'Player 10'],
+    );
+    await mainCanvas.hover();
+    await nukePage.mouse.wheel(0, -100);
+    await nukePage.waitForTimeout(100);
+    assert.ok((await paneCamera(mainCanvas))[2] > mainBefore[2]);
+    assert.deepEqual(await paneCamera(lowerCanvas), lowerBefore);
+    const mainZoomed = await paneCamera(mainCanvas);
+    await lowerCanvas.hover();
+    await nukePage.mouse.wheel(0, -100);
+    await nukePage.waitForTimeout(100);
+    assert.ok((await paneCamera(lowerCanvas))[2] > lowerBefore[2]);
+    assert.deepEqual(await paneCamera(mainCanvas), mainZoomed);
+    const nukeTimeline = nukePage.getByRole('slider', {
+      name: 'Таймлайн повтора',
+    });
+    const seekNuke = async (tick) => {
+      await nukeTimeline.evaluate((slider, value) => {
+        Object.getOwnPropertyDescriptor(
+          window.HTMLInputElement.prototype,
+          'value',
+        ).set.call(slider, String(value));
+        slider.dispatchEvent(new window.Event('input', { bubbles: true }));
+      }, tick);
+    };
+    const nukeTick = Number(await nukeTimeline.inputValue());
+    await lowerCanvas.focus();
+    await nukePage.keyboard.press('ArrowRight');
+    assert.equal(Number(await nukeTimeline.inputValue()), nukeTick + seekStep);
+    await mainCanvas.focus();
+    await nukePage.keyboard.press('ArrowRight');
+    await nukePage.keyboard.down('ArrowRight');
+    await nukePage.keyboard.down('ArrowRight');
+    await nukePage.keyboard.up('ArrowRight');
+    assert.equal(
+      Number(await nukeTimeline.inputValue()),
+      nukeTick + 4 * seekStep,
+      'holding an arrow repeats five-second seeks',
+    );
+    await seekNuke(Number(await nukeTimeline.getAttribute('max')));
+    const endTick = Number(await nukeTimeline.inputValue());
+    await mainCanvas.focus();
+    await nukePage.keyboard.press('ArrowRight');
+    assert.equal(Number(await nukeTimeline.inputValue()), endTick);
+    assert.equal(
+      await nukePage
+        .locator('.replay-round-rail-list button[aria-current] > span')
+        .first()
+        .textContent(),
+      'R1',
+    );
+    await seekNuke(nukeTick);
+
+    assert.equal(
+      await nukePage.locator('.replay-notes-toggle').count(),
+      1,
+      'both Nuke floors use one shared notes button',
+    );
+    await nukePage
+      .getByRole('button', { name: 'Заметки', exact: true })
+      .click();
+    const nukeNoteText = nukePage.getByRole('textbox', {
+      name: 'Текст заметки',
+    });
+    const commonNotesList = nukePage.locator('.replay-note-list');
+    for (const [pane, text] of [
+      [mainRadar, 'Верхний этаж Nuke'],
+      [lowerRadar, 'Нижний этаж Nuke'],
+    ]) {
+      await pane
+        .getByRole('button', { name: 'Сбросить вид', exact: true })
+        .click();
+      const rect = await pane.locator('canvas').boundingBox();
+      await nukePage.mouse.move(
+        rect.x + rect.width - 45,
+        rect.y + rect.height * 0.55,
+      );
+      await nukePage.mouse.down();
+      await nukePage.mouse.move(
+        rect.x + rect.width - 15,
+        rect.y + rect.height * 0.7,
+        { steps: 5 },
+      );
+      await nukePage.mouse.up();
+      await nukeNoteText.fill(text);
+      assert.equal(
+        await pane.locator('.replay-annotations polyline').count(),
+        1,
+      );
+    }
+    assert.equal(await nukePage.locator('.replay-notes-panel').count(), 1);
+    assert.match(await commonNotesList.textContent(), /Верхний этаж Nuke/);
+    assert.match(await commonNotesList.textContent(), /Нижний этаж Nuke/);
+    assert.equal(
+      await mainRadar.locator('.replay-annotations polyline').count(),
+      0,
+      'a selected lower-floor drawing must not be duplicated on the main radar',
+    );
+    await nukePage
+      .getByRole('button', { name: 'Отменить рисунок', exact: true })
+      .click();
+    assert.equal(
+      await lowerRadar.locator('.replay-annotations polyline').count(),
+      0,
+      'the shared undo button edits the selected floor',
+    );
+    // Restore a lower-floor stroke with the same shared toolbar.
+    const lowerRect = await lowerCanvas.boundingBox();
+    await nukePage.mouse.move(
+      lowerRect.x + lowerRect.width - 45,
+      lowerRect.y + lowerRect.height * 0.55,
+    );
+    await nukePage.mouse.down();
+    await nukePage.mouse.move(
+      lowerRect.x + lowerRect.width - 15,
+      lowerRect.y + lowerRect.height * 0.7,
+      { steps: 5 },
+    );
+    await nukePage.mouse.up();
+    await nukePage.waitForFunction(
+      () => !document.querySelector('.replay-notes-panel [role="status"]'),
+    );
+    assert.equal(storedNotes.length, 2);
+    const lowerNote = storedNotes.find((item) => item.note.lower).note;
+    assert.equal(
+      storedNotes.find((item) => !item.note.lower).note.text,
+      'Верхний этаж Nuke',
+    );
+    await nukePage.goto(`http://127.0.0.1:1428/replays/1?note=${lowerNote.id}`);
+    await nukeNoteText.waitFor();
+    assert.equal(await nukeNoteText.inputValue(), 'Нижний этаж Nuke');
+    assert.equal(
+      await lowerRadar.locator('.replay-annotations polyline').count(),
+      1,
+    );
+    assert.equal(
+      await nukePage.locator('.replay-notes-panel').count(),
+      1,
+      'note links open the common editor',
+    );
+    await commonNotesList
+      .getByRole('button', { name: /Верхний этаж Nuke/ })
+      .click();
+    assert.equal(await nukeNoteText.inputValue(), 'Верхний этаж Nuke');
+    assert.equal(
+      await mainRadar.locator('.replay-annotations polyline').count(),
+      1,
+    );
+    assert.equal(
+      await lowerRadar.locator('.replay-annotations polyline').count(),
+      0,
+    );
+    await nukePage
+      .getByRole('button', { name: 'Закрыть заметки', exact: true })
+      .click();
+    assert.equal(
+      await nukePage.locator('.replay-annotations.is-drawing').count(),
+      0,
+      'closing shared notes stops drawing on both floors',
+    );
+    const burstStart = first.round.freeze_end_tick + metadata.tickrate * 30;
+    await seekNuke(burstStart + metadata.tickrate);
+    const burstRows = nukePage.locator('.replay-killfeed-row');
+    assert.equal(await burstRows.count(), 5);
+    assert.deepEqual(
+      await burstRows.evaluateAll((rows) =>
+        rows.map((row) => Number(row.dataset.tick)),
+      ),
+      Array.from(
+        { length: 5 },
+        (_, index) => burstStart + metadata.tickrate * ((index + 2) / 8),
+      ),
+      'overflow retains the latest five kills in chronological order',
+    );
+    await nukePage
+      .getByRole('button', { name: 'Настройки реплея', exact: true })
+      .click();
+    const speedBeforeMenu = await nukePage
+      .locator('.replay-speeds [aria-pressed="true"]')
+      .textContent();
+    await nukePage.keyboard.press('ArrowUp');
+    assert.equal(
+      await nukePage
+        .locator('.replay-speeds [aria-pressed="true"]')
+        .textContent(),
+      speedBeforeMenu,
+    );
+    await nukePage.keyboard.press('Escape');
+    for (const width of [1920, 1280, 860]) {
+      await nukePage.setViewportSize({ width, height: 900 });
+      const upper = await mainRadar.boundingBox();
+      const lower = await lowerRadar.boundingBox();
+      assert.ok(Math.abs(upper.width - lower.width) <= 1);
+      assert.ok(Math.abs(upper.y - lower.y) <= 1 && upper.x < lower.x);
+      assert.ok(upper.width > 100 && upper.height > 200);
+      for (const pane of [mainRadar, lowerRadar]) {
+        const notesButton = await nukePage
+          .locator('.replay-notes-toggle')
+          .boundingBox();
+        const zoomTools = await pane.locator('.replay-map-tools').boundingBox();
+        const feed = await nukePage.locator('.replay-killfeed').boundingBox();
+        assert.ok(
+          notesButton.y >= feed.y + feed.height,
+          'notes controls must clear the killfeed',
+        );
+        assert.ok(
+          notesButton.x + notesButton.width <= zoomTools.x,
+          'notes and zoom controls must not overlap',
+        );
+      }
+      assert.equal(
+        await nukePage.evaluate(
+          () => document.documentElement.scrollWidth > window.innerWidth,
+        ),
+        false,
+      );
+      await nukePage.screenshot({
+        path: `dist/replay-checks/nuke-${width}.png`,
+      });
+    }
+    await nukePage.route('**/*_lower_radar_psd.png', (route) => route.abort());
+    await nukePage.reload();
+    await lowerRadar
+      .getByText('Радар этой карты недоступен', { exact: true })
+      .waitFor();
+    assert.equal(await mainRadar.locator('.replay-map-missing').count(), 0);
+    await nukePage.evaluate(() =>
+      localStorage.setItem('replay-test-map', 'vertigo'),
+    );
+    await nukePage.goto('http://127.0.0.1:1428/replays/1');
+    await nukePage.getByRole('group', { name: 'Этаж', exact: true }).waitFor();
+    assert.equal(
+      await nukePage.locator('canvas').count(),
+      1,
+      'Vertigo keeps its floor switch',
+    );
+    await nukePage.evaluate(() => localStorage.removeItem('replay-test-map'));
+    await nukePage.close();
+  }
   assert.deepEqual(errors, []);
   console.log(
     JSON.stringify({

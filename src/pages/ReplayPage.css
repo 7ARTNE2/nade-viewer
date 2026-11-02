@@ -889,9 +889,9 @@
   right: 10px;
   display: flex;
   width: min(420px, calc(100% - 20px));
-  max-height: 120px;
+  max-height: 180px;
   flex-direction: column;
-  align-items: stretch;
+  align-items: flex-end;
   gap: 4px;
   overflow: hidden;
   pointer-events: none;
@@ -901,15 +901,30 @@
   align-items: center;
   justify-content: flex-end;
   gap: 7px;
-  min-height: 20px;
-  padding: 1px 4px;
-  border: 0;
-  background: transparent;
+  max-width: 100%;
+  min-height: 28px;
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  border: 1px solid #ffffff18;
+  border-radius: 3px;
+  background: #080b10cc;
   color: var(--text);
-  font-size: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 18px;
   text-shadow:
     0 1px 5px #050607,
     0 0 3px #050607;
+}
+.replay-killfeed .replay-killfeed-name.t {
+  color: #e8c86c;
+}
+.replay-killfeed .replay-killfeed-name.ct {
+  color: #9fc8e8;
+}
+.replay-killfeed .replay-killfeed-assist {
+  max-width: 120px;
+  font-size: 12px;
 }
 .replay-killfeed-row span {
   overflow: hidden;
@@ -963,7 +978,11 @@
   flex: 0 0 auto;
   object-fit: contain;
 }
-.replay-killfeed-row img:last-child {
+.replay-killfeed-row img.replay-killfeed-weapon {
+  width: 32px;
+  height: 18px;
+}
+.replay-killfeed-row img.replay-killfeed-notice {
   width: 16px;
   height: 16px;
 }
@@ -1034,8 +1053,45 @@
 .replay-player.is-dead {
   opacity: 0.4;
 }
+.replay-radars {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.replay-radars.is-dual {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.replay-radars.is-dual .replay-notes-toggle {
+  top: auto;
+  bottom: 12px;
+}
+.replay-radars.is-dual .replay-notes-panel {
+  top: auto;
+  bottom: 54px;
+}
+.replay-radar-pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.replay-radar-pane + .replay-radar-pane {
+  border-left: 1px solid var(--line-soft);
+}
+.replay-radar-label {
+  padding: 6px 12px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 14px;
+}
 .replay-map {
   position: relative;
+  flex: 1;
   min-width: 0;
   min-height: 0;
   overflow: hidden;

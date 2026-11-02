@@ -1,4 +1,12 @@
-import { useEffect, useRef, useState } from 'react';
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
+import { createPortal } from 'react-dom';
 import { useSearchParams } from 'react-router-dom';
 import {
   Circle,
@@ -29,6 +37,8 @@ type Props = {
   round: ReplayRound;
   clock: { current: number };
   lower: boolean;
+  showControls?: boolean;
+  controlsTarget?: HTMLElement | null;
   view: { s: number; x: number; y: number };
   onPause: () => void;
   onSeek: (tick: number, lower: boolean) => void;
@@ -47,6 +57,40 @@ const colors = [
   ['#94a3b8', 'Gray', 'Серый'],
   ['#111827', 'Black', 'Чёрный'],
 ] as const;
+
+function useAnnotationState() {
+  const [open, setOpen] = useState(false);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [tool, setTool] = useState<Stroke['tool']>('pen');
+  const [color, setColor] = useState<string>(colors[0][0]);
+  return {
+    open,
+    setOpen,
+    selectedId,
+    setSelectedId,
+    tool,
+    setTool,
+    color,
+    setColor,
+  };
+}
+
+const AnnotationContext = createContext<ReturnType<
+  typeof useAnnotationState
+> | null>(null);
+
+export function ReplayAnnotationsProvider({
+  children,
+}: {
+  children: ReactNode;
+}) {
+  const state = useAnnotationState();
+  return (
+    <AnnotationContext.Provider value={state}>
+      {children}
+    </AnnotationContext.Provider>
+  );
+}
 
 function Shape({ stroke }: { stroke: Stroke }) {
   const [start] = stroke.points;
@@ -79,6 +123,8 @@ export default function ReplayAnnotations({
   round,
   clock,
   lower,
+  showControls = true,
+  controlsTarget,
   view,
   onPause,
   onSeek,
@@ -91,13 +137,21 @@ export default function ReplayAnnotations({
   const setNotes = (update: (all: Note[]) => Note[]) => {
     if (ready) saveReplayNotes(detail.id, update(notes));
   };
-  const [open, setOpen] = useState(false);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const state = useContext(AnnotationContext);
+  if (!state) throw new Error('Replay annotations require a shared provider');
+  const {
+    open,
+    setOpen,
+    selectedId,
+    setSelectedId,
+    tool,
+    setTool,
+    color,
+    setColor,
+  } = state;
   const [searchParams] = useSearchParams();
   const requestedNoteId = searchParams.get('note');
   const openedRequest = useRef<string | null>(null);
-  const [tool, setTool] = useState<Stroke['tool']>('pen');
-  const [color, setColor] = useState<string>(colors[0][0]);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const palette = useRef<HTMLDivElement>(null);
   const [draft, setDraft] = useState<Stroke | null>(null);
@@ -105,22 +159,28 @@ export default function ReplayAnnotations({
   const svg = useRef<SVGSVGElement>(null);
   const [size, setSize] = useState({ width: 1, height: 1 });
   const currentNotes = notes.filter((n) => n.round === round.round_number);
-  const selected = currentNotes.find(
-    (n) => n.id === selectedId && n.lower === lower,
-  );
-  const visibleStrokes = selected?.strokes ?? [];
+  const selected = currentNotes.find((n) => n.id === selectedId);
+  const visibleStrokes = selected?.lower === lower ? selected.strokes : [];
   const unit = ((Math.min(size.width, size.height) * 0.94) / 1024) * view.s;
   const ox = (size.width - 1024 * unit) / 2 + view.x;
   const oy = (size.height - 1024 * unit) / 2 + view.y;
   useEffect(() => {
     const request = requestedNoteId ? `${detail.id}:${requestedNoteId}` : null;
-    if (!request || openedRequest.current === request) return;
+    if (!showControls || !request || openedRequest.current === request) return;
     const note = notes.find((item) => item.id === requestedNoteId);
-    if (note?.round !== round.round_number || note.lower !== lower) return;
+    if (note?.round !== round.round_number) return;
     openedRequest.current = request;
     setSelectedId(note.id);
     setOpen(true);
-  }, [requestedNoteId, notes, round.round_number, lower, detail.id]);
+  }, [
+    requestedNoteId,
+    notes,
+    round.round_number,
+    detail.id,
+    showControls,
+    setSelectedId,
+    setOpen,
+  ]);
   useEffect(() => {
     if (!svg.current) return;
     const observer = new ResizeObserver(([entry]) =>
@@ -136,7 +196,7 @@ export default function ReplayAnnotations({
     gesture.current = null;
     setDraft(null);
     setPaletteOpen(false);
-  }, [round.round_number, lower, open]);
+  }, [round.round_number, lower, open, selectedId]);
   useEffect(() => {
     if (!paletteOpen) return;
     const closeOutside = (event: PointerEvent) => {
@@ -150,16 +210,17 @@ export default function ReplayAnnotations({
     return () => document.removeEventListener('pointerdown', closeOutside);
   }, [paletteOpen]);
 
-  const makeNote = (): Note => ({
+  const makeNote = (floor = lower): Note => ({
     id: crypto.randomUUID(),
     round: round.round_number,
     tick: clock.current,
-    lower,
+    lower: floor,
     text: '',
     strokes: [],
   });
-  const updateNote = (update: (note: Note) => Note) => {
-    const note = selected ?? makeNote();
+  const updateNote = (update: (note: Note) => Note, drawing = false) => {
+    const note =
+      (drawing && selected?.lower !== lower ? null : selected) ?? makeNote();
     setSelectedId(note.id);
     setNotes((all) =>
       all.some((n) => n.id === note.id)
@@ -192,62 +253,65 @@ export default function ReplayAnnotations({
     );
     return `${freezing ? tr('F ', 'Ф ') : ''}${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
   };
-  return (
+  const drawing = (
+    <svg
+      ref={svg}
+      className={`replay-annotations ${open && detail.radar ? 'is-drawing' : ''}`}
+      aria-label={tr('Replay drawings', 'Рисунки реплея')}
+      onWheel={cancel}
+      onPointerDown={(e) => {
+        if (!open || !detail.radar || !ready || e.button !== 0) return;
+        e.preventDefault();
+        onPause();
+        e.currentTarget.setPointerCapture(e.pointerId);
+        const start = position(e);
+        gesture.current = { tool, color, points: [start, start] };
+        setDraft(gesture.current);
+      }}
+      onPointerMove={(e) => {
+        const stroke = gesture.current;
+        if (!stroke) return;
+        const end = position(e);
+        const last = stroke.points[stroke.points.length - 1];
+        if (Math.hypot(end[0] - last[0], end[1] - last[1]) * unit < 1) return;
+        gesture.current = {
+          ...stroke,
+          points:
+            stroke.tool === 'pen'
+              ? [...stroke.points, end]
+              : [stroke.points[0], end],
+        };
+        setDraft(gesture.current);
+      }}
+      onPointerUp={(e) => {
+        const stroke = gesture.current;
+        if (!stroke) return;
+        updateNote((n) => ({ ...n, strokes: [...n.strokes, stroke] }), true);
+        cancel();
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      }}
+      onPointerCancel={cancel}
+      onLostPointerCapture={cancel}
+    >
+      {open && (
+        <g
+          transform={`translate(${ox} ${oy}) scale(${unit})`}
+          fill="none"
+          strokeWidth={3 / unit}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          {[...visibleStrokes, ...(draft ? [draft] : [])].map((stroke, i) => (
+            <g key={i} stroke={stroke.color}>
+              <Shape stroke={stroke} />
+            </g>
+          ))}
+        </g>
+      )}
+    </svg>
+  );
+  const controls = (
     <>
-      <svg
-        ref={svg}
-        className={`replay-annotations ${open && detail.radar ? 'is-drawing' : ''}`}
-        aria-label={tr('Replay drawings', 'Рисунки реплея')}
-        onPointerDown={(e) => {
-          if (!open || !detail.radar || !ready || e.button !== 0) return;
-          e.preventDefault();
-          onPause();
-          e.currentTarget.setPointerCapture(e.pointerId);
-          const start = position(e);
-          gesture.current = { tool, color, points: [start, start] };
-          setDraft(gesture.current);
-        }}
-        onPointerMove={(e) => {
-          const stroke = gesture.current;
-          if (!stroke) return;
-          const end = position(e);
-          const last = stroke.points[stroke.points.length - 1];
-          if (Math.hypot(end[0] - last[0], end[1] - last[1]) * unit < 1) return;
-          gesture.current = {
-            ...stroke,
-            points:
-              stroke.tool === 'pen'
-                ? [...stroke.points, end]
-                : [stroke.points[0], end],
-          };
-          setDraft(gesture.current);
-        }}
-        onPointerUp={(e) => {
-          const stroke = gesture.current;
-          if (!stroke) return;
-          updateNote((n) => ({ ...n, strokes: [...n.strokes, stroke] }));
-          cancel();
-          e.currentTarget.releasePointerCapture(e.pointerId);
-        }}
-        onPointerCancel={cancel}
-        onLostPointerCapture={cancel}
-      >
-        {open && (
-          <g
-            transform={`translate(${ox} ${oy}) scale(${unit})`}
-            fill="none"
-            strokeWidth={3 / unit}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            {[...visibleStrokes, ...(draft ? [draft] : [])].map((stroke, i) => (
-              <g key={i} stroke={stroke.color}>
-                <Shape stroke={stroke} />
-              </g>
-            ))}
-          </g>
-        )}
-      </svg>
       <button
         className={`replay-notes-toggle ${open ? 'active' : ''}`}
         aria-pressed={open}
@@ -306,7 +370,7 @@ export default function ReplayAnnotations({
             <button
               aria-label={tr('Undo drawing', 'Отменить рисунок')}
               data-tip={tr('Undo drawing', 'Отменить рисунок')}
-              disabled={!visibleStrokes.length}
+              disabled={!selected?.strokes.length}
               onClick={() =>
                 updateNote((n) => ({ ...n, strokes: n.strokes.slice(0, -1) }))
               }
@@ -380,8 +444,8 @@ export default function ReplayAnnotations({
           </div>
           <p>
             {tr(
-              'Draw on the radar. Notes are saved automatically.',
-              'Рисуйте на радаре. Заметки сохраняются автоматически.',
+              'Draw on the radar. Scroll to zoom. Notes are saved automatically.',
+              'Рисуйте на радаре. Колесо — масштаб. Заметки сохраняются автоматически.',
             )}
           </p>
           <div className="replay-note-actions">
@@ -389,7 +453,7 @@ export default function ReplayAnnotations({
               disabled={!ready}
               onClick={() => {
                 onPause();
-                const note = makeNote();
+                const note = makeNote(selected?.lower ?? lower);
                 setNotes((all) => [...all, note]);
                 setSelectedId(note.id);
               }}
@@ -472,6 +536,13 @@ export default function ReplayAnnotations({
           )}
         </section>
       )}
+    </>
+  );
+  return (
+    <>
+      {drawing}
+      {showControls &&
+        (controlsTarget ? createPortal(controls, controlsTarget) : controls)}
     </>
   );
 }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Minus, Plus, RotateCcw } from 'lucide-react';
 import c4Icon from '../assets/equipment_icons/c4.svg';
 import { preloadImage, cachedImage } from '../lib/imageCache';
@@ -39,7 +39,8 @@ type Props = {
   onCopyCoordinates: (g: ReplayGrenade) => void;
   onPause: () => void;
   onSeekNote: (tick: number, lower: boolean) => void;
-  killfeed?: ReactNode;
+  showNotesControls?: boolean;
+  notesControlsTarget?: HTMLElement | null;
 };
 const FLASH_FULL_RADIUS_GAME = 400;
 const FLASH_FADE_RADIUS_GAME = 1000;
@@ -113,34 +114,61 @@ export default function ReplayCanvas({
   onCopyCoordinates,
   onPause,
   onSeekNote,
-  killfeed,
+  showNotesControls = true,
+  notesControlsTarget,
 }: Props) {
   const { tr } = useI18n();
   const canvas = useRef<HTMLCanvasElement>(null);
+  const surface = useRef<HTMLDivElement>(null);
   const [view, setView] = useState({ s: 1, x: 0, y: 0 });
   const [failedImagePath, setFailedImagePath] = useState<string | null>(null);
   const viewRef = useRef(view);
   useEffect(() => {
     viewRef.current = view;
   }, [view]);
-  const clampView = (s: number, x: number, y: number) => {
+  const clampView = useCallback((s: number, x: number, y: number) => {
     const bounds = canvas.current?.getBoundingClientRect();
     if (s <= 1 || !bounds?.width || !bounds.height) return { s: 1, x: 0, y: 0 };
     const maxX = (bounds.width * (s - 1)) / 2;
     const maxY = (bounds.height * (s - 1)) / 2;
     return { s, x: clamp(x, -maxX, maxX), y: clamp(y, -maxY, maxY) };
-  };
-  const zoomAt = (factor: number, x = 0, y = 0) => {
-    setView((current) => {
-      const s = clamp(current.s * factor, 1, 6);
-      const ratio = s / current.s;
-      return clampView(
-        s,
-        x - (x - current.x) * ratio,
-        y - (y - current.y) * ratio,
+  }, []);
+  const zoomAt = useCallback(
+    (factor: number, x = 0, y = 0) => {
+      setView((current) => {
+        const s = clamp(current.s * factor, 1, 6);
+        const ratio = s / current.s;
+        return clampView(
+          s,
+          x - (x - current.x) * ratio,
+          y - (y - current.y) * ratio,
+        );
+      });
+    },
+    [clampView],
+  );
+  useEffect(() => {
+    const element = surface.current;
+    if (!element) return;
+    const wheel = (event: WheelEvent) => {
+      if (
+        !event.deltaY ||
+        !(event.target instanceof Element) ||
+        !event.target.closest('canvas, .replay-annotations')
+      )
+        return;
+      event.preventDefault();
+      const bounds = canvas.current?.getBoundingClientRect();
+      if (!bounds) return;
+      zoomAt(
+        event.deltaY < 0 ? 1.12 : 1 / 1.12,
+        event.clientX - bounds.left - bounds.width / 2,
+        event.clientY - bounds.top - bounds.height / 2,
       );
-    });
-  };
+    };
+    element.addEventListener('wheel', wheel, { passive: false });
+    return () => element.removeEventListener('wheel', wheel);
+  }, [zoomAt]);
   const drag = useRef<{
     x: number;
     y: number;
@@ -1320,49 +1348,23 @@ export default function ReplayCanvas({
     actionEventsByPlayer,
   ]);
   return (
-    <div className={`replay-map ${view.s > 1 ? 'is-draggable' : ''}`}>
-      {killfeed}
+    <div
+      ref={surface}
+      className={`replay-map ${view.s > 1 ? 'is-draggable' : ''}`}
+    >
       <canvas
         ref={canvas}
         aria-label={tr('Match radar', 'Радар матча')}
         role="img"
         tabIndex={0}
-        onWheel={(e) => {
-          e.preventDefault();
-          const bounds = e.currentTarget.getBoundingClientRect();
-          zoomAt(
-            e.deltaY < 0 ? 1.12 : 1 / 1.12,
-            e.clientX - bounds.left - bounds.width / 2,
-            e.clientY - bounds.top - bounds.height / 2,
-          );
-        }}
         onKeyDown={(e) => {
-          const bounds = e.currentTarget.getBoundingClientRect();
-          const step = Math.max(
-            32,
-            Math.min(bounds.width, bounds.height) * 0.1,
-          );
-          const pans: Record<string, [number, number]> = {
-            ArrowUp: [0, step],
-            ArrowDown: [0, -step],
-            ArrowLeft: [step, 0],
-            ArrowRight: [-step, 0],
-          };
-          if (
-            ['+', '=', '-', '_', '0', 'Home', ...Object.keys(pans)].includes(
-              e.key,
-            )
-          ) {
+          if (['+', '=', '-', '_', '0', 'Home'].includes(e.key)) {
             e.preventDefault();
             e.stopPropagation();
             if (e.key === '+' || e.key === '=') zoomAt(1.18);
             else if (e.key === '-' || e.key === '_') zoomAt(1 / 1.18);
             else if (e.key === '0' || e.key === 'Home')
               setView({ s: 1, x: 0, y: 0 });
-            else {
-              const [x, y] = pans[e.key];
-              setView((v) => clampView(v.s, v.x + x, v.y + y));
-            }
           }
         }}
         onPointerDown={(e) => {
@@ -1418,6 +1420,8 @@ export default function ReplayCanvas({
         round={round}
         clock={clock}
         lower={lower}
+        showControls={showNotesControls}
+        controlsTarget={notesControlsTarget}
         view={view}
         onPause={onPause}
         onSeek={onSeekNote}

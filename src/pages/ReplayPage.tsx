@@ -34,6 +34,8 @@ import defuserIcon from '../assets/equipment_icons/defuser.svg';
 import armorIcon from '../assets/equipment_icons/armor.svg';
 import armorHelmetIcon from '../assets/equipment_icons/armor_helmet.svg';
 import ReplayCanvas from '../components/ReplayCanvas';
+import { ReplayAnnotationsProvider } from '../components/ReplayAnnotations';
+import ReplayKillfeed from '../components/ReplayKillfeed';
 import ReplayHistory from '../components/ReplayHistory';
 import {
   deleteReplayNotes,
@@ -70,6 +72,7 @@ import {
 import { isWindowActive, onWindowActiveChange } from '../lib/windowActive';
 import { weaponIcon } from '../lib/weaponIcons';
 import { deathNoticeIcon } from '../lib/deathNoticeIcons';
+import { killNotices } from '../lib/replayKillfeed';
 import { preloadImage } from '../lib/imageCache';
 import type {
   ReplayDetail,
@@ -190,18 +193,7 @@ function groupedGrenades(weapons: ReplayWeapon[]) {
   }
   return [...groups.values()].slice(0, 5);
 }
-function killNotices(event: ReplayRound['events'][number]) {
-  const data = event.data ?? {};
-  const result: string[] = [];
-  if (data.headshot === true) result.push('headshot');
-  if (data.attacker_blind === true) result.push('blind');
-  if (data.wallbang === true || Number(data.penetrated_objects ?? 0) > 0)
-    result.push('penetrate');
-  if (data.through_smoke === true) result.push('smoke');
-  if (event.player_id && event.player_id === event.target_id)
-    result.push('suicide');
-  return result;
-}
+const REPLAY_SPEEDS = [0.25, 0.5, 1, 2, 4];
 function roundReasonLabel(
   reason: string | null | undefined,
   winnerSide: string | null | undefined,
@@ -408,6 +400,8 @@ export default function ReplayPage() {
     { showToast } = useToast();
   const [entries, setEntries] = useState<ReplayEntry[]>([]);
   const [detail, setDetail] = useState<ReplayDetail | null>(null);
+  const dualRadar =
+    detail?.map.name.toLowerCase().replace(/^de_/, '') === 'nuke';
   const replayNotes = useReplayNotes(detail);
   const [round, setRound] = useState<ReplayRound | null>(null);
   const [number, setNumber] = useState<number | null>(null);
@@ -424,6 +418,8 @@ export default function ReplayPage() {
   const replayOptionsTrigger = useRef<HTMLButtonElement>(null);
   const [tick, setTick] = useState(0);
   const [lower, setLower] = useState(false);
+  const [notesControlsTarget, setNotesControlsTarget] =
+    useState<HTMLDivElement | null>(null);
   const [selected, setSelected] = useState<ReplayGrenade | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [hoveredRound, setHoveredRound] = useState<number | null>(null);
@@ -848,21 +844,45 @@ export default function ReplayPage() {
     if (!round || !detail) return;
     const key = (e: KeyboardEvent) => {
       if (
-        e.target instanceof HTMLElement &&
-        e.target.closest(
-          'input,textarea,select,button,a,[contenteditable=true]',
-        )
+        e.defaultPrevented ||
+        e.isComposing ||
+        e.ctrlKey ||
+        e.altKey ||
+        e.metaKey ||
+        e.shiftKey ||
+        document.querySelector(
+          '[role="dialog"], [role="alertdialog"], [aria-modal="true"], [role="menu"]',
+        ) ||
+        (e.target instanceof Element &&
+          e.target.closest(
+            'input,textarea,select,[contenteditable]:not([contenteditable="false"]),[role="slider"],[role="combobox"],[role="listbox"],[role="spinbutton"]',
+          ))
       )
         return;
       if (e.code === 'Space') {
+        if (e.target instanceof Element && e.target.closest('button,a')) return;
         e.preventDefault();
         if (!e.repeat) togglePlayback();
       }
       if (e.code === 'ArrowLeft' || e.code === 'ArrowRight') {
         e.preventDefault();
+        setPlaying(false);
         seek(
           clock.current +
             (e.code === 'ArrowRight' ? 5 : -5) * detail.metadata.tickrate,
+        );
+      }
+      if (e.code === 'ArrowUp' || e.code === 'ArrowDown') {
+        e.preventDefault();
+        setSpeed(
+          (value) =>
+            REPLAY_SPEEDS[
+              clamp(
+                REPLAY_SPEEDS.indexOf(value) + (e.code === 'ArrowUp' ? 1 : -1),
+                0,
+                REPLAY_SPEEDS.length - 1,
+              )
+            ],
         );
       }
     };
@@ -937,14 +957,6 @@ export default function ReplayPage() {
           e.type,
         ),
       ) ?? [],
-    [round],
-  );
-  const killEvents = useMemo(
-    () => round?.events.filter((event) => event.type === 'kill') ?? [],
-    [round],
-  );
-  const damageEvents = useMemo(
-    () => round?.events.filter((event) => event.type === 'damage') ?? [],
     [round],
   );
   const eventTime = (value: number) => {
@@ -1206,7 +1218,7 @@ export default function ReplayPage() {
                 {tr('Incomplete demo', 'Неполное демо')}
               </span>
             )}
-            {detail.map.has_lower_radar && (
+            {detail.map.has_lower_radar && !dualRadar && (
               <div
                 className="radar-switch replay-segment"
                 role="group"
@@ -1564,98 +1576,72 @@ export default function ReplayPage() {
                     bombCarrier={bombCarrier}
                   />
                 </aside>
-                <ReplayCanvas
-                  detail={detail}
-                  round={round}
-                  clock={clock}
-                  tickrate={detail.metadata.tickrate}
-                  lower={lower}
-                  selected={selected}
-                  onPause={() => {
-                    cancelAutoNext();
-                    setPlaying(false);
-                  }}
-                  onSeekNote={(noteTick, noteLower) => {
-                    setLower(noteLower);
-                    seek(noteTick, true);
-                  }}
-                  copiedGrenadeId={copiedId}
-                  onSelect={(grenade) => {
-                    cancelAutoNext();
-                    setSelected(grenade);
-                  }}
-                  onCopyCoordinates={(grenade) => {
-                    void copyGrenadeCoordinates(grenade);
-                  }}
-
-                  killfeed={
-                    <div
-                      className="replay-killfeed"
-                      aria-label={tr('Kill feed', 'Киллчат')}
-                    >
-                      {killEvents
-                        .filter((event) => event.tick <= tick)
-                        .slice(-2)
-                        .map((event) => {
-                          const weapon = String(event.data?.weapon ?? '');
-                          const playersAtEvent = playersAt(
-                            round,
-                            event.tick,
-                            round.events,
-                            killTicks,
-                          );
-                          const killer = playersAtEvent.find(
-                            (player) => player.id === event.player_id,
-                          );
-                          const victim = playersAtEvent.find(
-                            (player) => player.id === event.target_id,
-                          );
-                          const notices = killNotices(event)
-                            .map((id) => ({ id, icon: deathNoticeIcon(id) }))
-                            .filter((item) => item.icon);
-                          return (
-                            <div
-                              className="replay-killfeed-row"
-                              key={`${event.tick}-${event.target_id}`}
-                            >
-                              <span
-                                className={`replay-killfeed-name ${String(killer?.side ?? 'world').toLowerCase()}`}
-                              >
-                                {killer?.name ?? event.player_id ?? 'World'}
-                              </span>
-                              <ReplayKillAssists
-                                event={event}
-                                players={playersAtEvent}
-                                events={damageEvents}
-                                tickrate={detail.metadata.tickrate}
-                                className="replay-killfeed-assist"
-                              />
-                              {weapon && (
-                                <img
-                                  src={weaponIcon(weapon)}
-                                  alt={weapon}
-                                  data-tip={weapon}
-                                />
-                              )}
-                              {notices.map((item) => (
-                                <img
-                                  key={item.id}
-                                  src={item.icon}
-                                  alt={item.id}
-                                  data-tip={item.id}
-                                />
-                              ))}
-                              <span
-                                className={`replay-killfeed-name ${String(victim?.side ?? 'world').toLowerCase()}`}
-                              >
-                                {victim?.name ?? event.target_id ?? '—'}
-                              </span>
-                            </div>
-                          );
-                        })}
-                    </div>
-                  }
-                />
+                <ReplayAnnotationsProvider
+                  key={`${detail.id}.${detail.metadata.parsed_at}`}
+                >
+                  <div
+                    ref={setNotesControlsTarget}
+                    className={`replay-radars ${dualRadar ? 'is-dual' : ''}`}
+                  >
+                    {(dualRadar ? [false, true] : [lower]).map((floor) => (
+                      <section
+                        className="replay-radar-pane"
+                        key={dualRadar ? String(floor) : 'single'}
+                        aria-label={
+                          floor
+                            ? tr('Lower radar', 'Нижний радар')
+                            : tr('Main radar', 'Основной радар')
+                        }
+                        data-floor={floor ? 'lower' : 'main'}
+                      >
+                        {dualRadar && (
+                          <div className="replay-radar-label">
+                            {floor
+                              ? tr('Lower', 'Нижний')
+                              : tr('Main', 'Основной')}
+                          </div>
+                        )}
+                        <ReplayCanvas
+                          key={`${detail.id}.${detail.metadata.parsed_at}`}
+                          detail={detail}
+                          round={round}
+                          clock={clock}
+                          tickrate={detail.metadata.tickrate}
+                          lower={floor}
+                          showNotesControls={!dualRadar || !floor}
+                          notesControlsTarget={
+                            dualRadar ? notesControlsTarget : null
+                          }
+                          selected={selected}
+                          onPause={() => {
+                            cancelAutoNext();
+                            setPlaying(false);
+                          }}
+                          onSeekNote={(noteTick, noteLower) => {
+                            setLower(noteLower);
+                            seek(noteTick, true);
+                          }}
+                          copiedGrenadeId={copiedId}
+                          onSelect={(grenade) => {
+                            cancelAutoNext();
+                            setSelected(grenade);
+                          }}
+                          onCopyCoordinates={(grenade) => {
+                            void copyGrenadeCoordinates(grenade);
+                          }}
+                        />
+                      </section>
+                    ))}
+                    <ReplayKillfeed
+                      key={`${detail.id}.${round.round_number}`}
+                      round={round}
+                      clock={clock}
+                      tick={tick}
+                      tickrate={detail.metadata.tickrate}
+                      playing={playing}
+                    />
+                  </div>
+                </ReplayAnnotationsProvider>
                 <aside className="replay-inspector">
                   {selected ? (
                     <section className="replay-grenade-detail">
@@ -1940,8 +1926,8 @@ export default function ReplayPage() {
                     }
                     data-tip={
                       playing
-                        ? tr('Pause', 'Пауза')
-                        : tr('Play', 'Воспроизвести')
+                        ? tr('Pause · Space', 'Пауза · Пробел')
+                        : tr('Play · Space', 'Воспроизвести · Пробел')
                     }
                   >
                     {playing ? <Pause size={20} /> : <Play size={20} />}
@@ -1981,13 +1967,17 @@ export default function ReplayPage() {
                   />
                   <div
                     className="replay-speeds"
+                    data-tip={tr(
+                      '↑ / ↓ Speed · ← / → Seek 5 seconds and pause',
+                      '↑ / ↓ Скорость · ← / → Перемотка на 5 секунд и пауза',
+                    )}
                     role="group"
                     aria-label={tr(
                       'Playback speed',
                       'Скорость воспроизведения',
                     )}
                   >
-                    {[0.25, 0.5, 1, 2, 4].map((value) => (
+                    {REPLAY_SPEEDS.map((value) => (
                       <button
                         key={value}
                         type="button"
