@@ -266,9 +266,32 @@ const Team = memo(
     return (
       <section className={`replay-team is-${side.toLowerCase()}`}>
         <header>
-          <strong>{players[0]?.team_name || side}</strong>
-          <span className="replay-team-economy">
-            ${money.toLocaleString()} · ${economy.toLocaleString()}
+          <div className="replay-team-heading">
+            <strong>{players[0]?.team_name || side}</strong>
+            <span
+              className="replay-team-economy"
+              data-tip={tr(
+                'Money / Equipment value',
+                'Деньги / Стоимость экипировки',
+              )}
+            >
+              ${money.toLocaleString()} · ${economy.toLocaleString()}
+            </span>
+          </div>
+          <span
+            className="replay-team-kda-heading"
+            data-tip={tr(
+              'Kills / Deaths / Assists',
+              'Убийства / Смерти / Ассисты',
+            )}
+            aria-label={tr(
+              'Kills / Deaths / Assists',
+              'Убийства / Смерти / Ассисты',
+            )}
+          >
+            <span>K</span>
+            <span>D</span>
+            <span>A</span>
           </span>
         </header>
         {players.map((p) => (
@@ -286,17 +309,26 @@ const Team = memo(
                   'Убийства / Смерти / Ассисты',
                 )}
               >
-                <small>K–D–A</small>
-                <b>
-                  {p.kills ?? 0}–{p.deaths ?? 0}–{p.assists ?? 0}
-                </b>
+                <b>{p.kills ?? 0}</b>
+                <b>{p.deaths ?? 0}</b>
+                <b>{p.assists ?? 0}</b>
               </span>
             </div>
             <div className="replay-player-stats">
               <b>{p.health} HP</b>
+              <meter
+                min={0}
+                max={100}
+                value={p.alive ? p.health : 0}
+                aria-label={`${p.name} ${tr('health', 'здоровье')}`}
+              />
               <span
                 className="replay-player-armor-inline"
-                data-tip={p.has_helmet ? 'Kevlar + helmet' : 'Kevlar'}
+                data-tip={
+                  p.has_helmet
+                    ? tr('Kevlar + helmet', 'Броня + шлем')
+                    : tr('Kevlar', 'Броня')
+                }
               >
                 {p.armor > 0 && (
                   <img
@@ -308,21 +340,16 @@ const Team = memo(
               </span>
               <span>${p.money.toLocaleString()}</span>
             </div>
-            <meter
-              min={0}
-              max={100}
-              value={p.alive ? p.health : 0}
-              aria-label={`${p.name} ${tr('health', 'здоровье')}`}
-            />
             <div className="replay-player-loadout">
               <div className="replay-player-icons">
                 <div className="replay-player-group replay-player-weapons">
-                  {weaponSlots(p.weapons ?? []).map(({ weapon: w }) => {
+                  {weaponSlots(p.weapons ?? []).map(({ slot, weapon: w }) => {
                     const active = weaponMatchesActive(w.name, p.active_weapon);
                     const ammo = weaponAmmoText(w);
                     return (
                       <span
                         className={`replay-player-item replay-player-weapon-item ${active ? 'active' : ''}`}
+                        data-slot={slot}
                         key={w.name}
                         data-tip={ammo ? `${w.name} · ${ammo}` : w.name}
                       >
