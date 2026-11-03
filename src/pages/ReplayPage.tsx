@@ -278,22 +278,35 @@ const Team = memo(
           >
             <div className="replay-player-head">
               <strong data-tip={p.name}>{p.name}</strong>
-              <span className="replay-player-stats">
-                <b>{p.health} HP</b>
-                <span
-                  className="replay-player-armor-inline"
-                  data-tip={p.has_helmet ? 'Kevlar + helmet' : 'Kevlar'}
-                >
-                  {p.armor > 0 && (
-                    <img
-                      src={p.has_helmet ? armorHelmetIcon : armorIcon}
-                      alt=""
-                    />
-                  )}
-                  {p.armor} AP
-                </span>
-                <span>${p.money.toLocaleString()}</span>
+              <span
+                className="replay-player-kda"
+                aria-label={`${tr('Kills', 'Убийства')}: ${p.kills ?? 0}, ${tr('Deaths', 'Смерти')}: ${p.deaths ?? 0}, ${tr('Assists', 'Ассисты')}: ${p.assists ?? 0}`}
+                data-tip={tr(
+                  'Kills / Deaths / Assists',
+                  'Убийства / Смерти / Ассисты',
+                )}
+              >
+                <small>K–D–A</small>
+                <b>
+                  {p.kills ?? 0}–{p.deaths ?? 0}–{p.assists ?? 0}
+                </b>
               </span>
+            </div>
+            <div className="replay-player-stats">
+              <b>{p.health} HP</b>
+              <span
+                className="replay-player-armor-inline"
+                data-tip={p.has_helmet ? 'Kevlar + helmet' : 'Kevlar'}
+              >
+                {p.armor > 0 && (
+                  <img
+                    src={p.has_helmet ? armorHelmetIcon : armorIcon}
+                    alt=""
+                  />
+                )}
+                {p.armor} AP
+              </span>
+              <span>${p.money.toLocaleString()}</span>
             </div>
             <meter
               min={0}
@@ -393,6 +406,9 @@ const Team = memo(
         player.health === nextPlayer.health &&
         player.armor === nextPlayer.armor &&
         player.money === nextPlayer.money &&
+        player.kills === nextPlayer.kills &&
+        player.deaths === nextPlayer.deaths &&
+        player.assists === nextPlayer.assists &&
         player.active_weapon === nextPlayer.active_weapon &&
         player.weapons === nextPlayer.weapons
       );
@@ -432,6 +448,21 @@ export default function ReplayPage() {
   const [selected, setSelected] = useState<ReplayGrenade | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [hoveredRound, setHoveredRound] = useState<number | null>(null);
+  const roundPreviewCloseTimer = useRef<number>();
+  const keepRoundPreviewOpen = useCallback(() => {
+    window.clearTimeout(roundPreviewCloseTimer.current);
+  }, []);
+  const closeRoundPreview = useCallback(() => {
+    window.clearTimeout(roundPreviewCloseTimer.current);
+    roundPreviewCloseTimer.current = window.setTimeout(
+      () => setHoveredRound(null),
+      180,
+    );
+  }, []);
+  useEffect(
+    () => () => window.clearTimeout(roundPreviewCloseTimer.current),
+    [],
+  );
   const [hoveredRoundRect, setHoveredRoundRect] = useState<{
     left: number;
     top: number;
@@ -864,7 +895,7 @@ export default function ReplayPage() {
         ) ||
         (e.target instanceof Element &&
           e.target.closest(
-            'input,textarea,select,[contenteditable]:not([contenteditable="false"]),[role="slider"],[role="combobox"],[role="listbox"],[role="spinbutton"]',
+            'input,textarea,select,[contenteditable]:not([contenteditable="false"]),[role="slider"],[role="combobox"],[role="listbox"],[role="spinbutton"],.replay-round-rail-card',
           ))
       )
         return;
@@ -1303,6 +1334,7 @@ export default function ReplayPage() {
                           className={`${item.number === number ? 'active' : ''} ${winner}`}
                           onClick={() => changeRound(item.number)}
                           onMouseEnter={(event) => {
+                            keepRoundPreviewOpen();
                             const rect =
                               event.currentTarget.getBoundingClientRect();
                             setHoveredRound(item.number);
@@ -1322,8 +1354,9 @@ export default function ReplayPage() {
                             });
                             loadRoundPreview(item.number);
                           }}
-                          onMouseLeave={() => setHoveredRound(null)}
+                          onMouseLeave={closeRoundPreview}
                           onFocus={(event) => {
+                            keepRoundPreviewOpen();
                             const rect =
                               event.currentTarget.getBoundingClientRect();
                             setHoveredRound(item.number);
@@ -1343,7 +1376,7 @@ export default function ReplayPage() {
                             });
                             loadRoundPreview(item.number);
                           }}
-                          onBlur={() => setHoveredRound(null)}
+                          onBlur={closeRoundPreview}
                           aria-current={
                             item.number === number ? 'true' : undefined
                           }
@@ -1450,21 +1483,27 @@ export default function ReplayPage() {
                 preview.number === number
                   ? round
                   : roundPreviews[preview.number];
-              const previewDamageEvents =
+              const actionStart =
+                previewData?.round.freeze_end_tick ?? preview.start_tick;
+              const previewRoundEvents =
                 previewData?.events.filter(
-                  (event) => event.type === 'damage',
+                  (event) =>
+                    event.tick >= actionStart &&
+                    event.tick <= (previewData.round.end_tick ?? Infinity),
                 ) ?? [];
-              const previewEvents =
-                previewData?.events.filter((event) =>
-                  [
-                    'kill',
-                    'bomb_planted',
-                    'bomb_defused',
-                    'bomb_exploded',
-                  ].includes(event.type),
-                ) ?? [];
+              const previewDamageEvents = previewRoundEvents.filter(
+                (event) => event.type === 'damage',
+              );
+              const previewEvents = previewRoundEvents.filter((event) =>
+                [
+                  'kill',
+                  'bomb_planted',
+                  'bomb_defused',
+                  'bomb_exploded',
+                ].includes(event.type),
+              );
               const previewKillTicks = new Map<string, number>();
-              for (const event of previewData?.events ?? []) {
+              for (const event of previewRoundEvents) {
                 if (event.type !== 'kill' || !event.target_id) continue;
                 const previous = previewKillTicks.get(event.target_id);
                 if (previous === undefined || event.tick < previous)
@@ -1485,9 +1524,20 @@ export default function ReplayPage() {
                 <div
                   className={`replay-round-rail-card is-${hoveredRoundRect.align}`}
                   role="tooltip"
+                  onMouseEnter={keepRoundPreviewOpen}
+                  onMouseLeave={closeRoundPreview}
+                  onFocus={keepRoundPreviewOpen}
+                  onBlur={closeRoundPreview}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Escape') {
+                      keepRoundPreviewOpen();
+                      setHoveredRound(null);
+                    }
+                  }}
                   style={{
                     left: hoveredRoundRect.left,
                     top: hoveredRoundRect.top + 52,
+                    maxHeight: `calc(100dvh - ${hoveredRoundRect.top + 64}px)`,
                   }}
                 >
                   <div className="replay-round-rail-card-head">
@@ -1508,7 +1558,12 @@ export default function ReplayPage() {
                   <div className="replay-round-rail-card-reason">
                     {roundReasonLabel(preview.reason, preview.winner_side, tr)}
                   </div>
-                  <div className="replay-round-rail-card-feed">
+                  <div
+                    className="replay-round-rail-card-feed"
+                    tabIndex={0}
+                    role="region"
+                    aria-label={tr('Round events', 'События раунда')}
+                  >
                     {!previewData ? (
                       <span className="replay-round-rail-card-empty">
                         {tr('Loading preview...', 'Загрузка превью...')}

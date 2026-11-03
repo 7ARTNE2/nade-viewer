@@ -529,7 +529,7 @@
   background: #151a20;
   color: var(--text);
   box-shadow: 0 14px 30px rgba(0, 0, 0, 0.5);
-  pointer-events: none;
+  pointer-events: auto;
   transform: translateX(-50%);
 }
 .replay-round-rail-card.is-start {
@@ -596,10 +596,12 @@
 }
 .replay-round-rail-card-feed {
   display: flex;
+  min-height: 0;
   max-height: 220px;
   flex-direction: column;
   gap: 5px;
   overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .replay-round-rail-card-row {
   display: grid;
@@ -2241,6 +2243,22 @@
   color: #e6ebf0;
   font-size: 10px;
   font-weight: 700;
+}
+.replay-player-kda {
+  display: inline-flex;
+  flex: none;
+  align-items: baseline;
+  gap: 5px;
+}
+.replay-player-kda small {
+  color: var(--dim);
+  font-size: 7px;
+  font-weight: 600;
+}
+.replay-player-kda b {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 600;
 }
 .replay-player-stats {
   gap: 6px;
