@@ -377,6 +377,16 @@ export default function ReplayCanvas({
     let imageReady = false,
       disposed = false,
       animation = 0;
+    const smokeTimerWidths = new Map<boolean, number>();
+    // Canvas does not repaint when a web font finishes loading while paused.
+    void document.fonts
+      .load('600 100px Orbitron', '0123456789.s')
+      .then(() => {
+        if (disposed) return;
+        smokeTimerWidths.clear();
+        draw();
+      })
+      .catch(() => undefined);
     setFailedImagePath(null);
     if (image?.complete && image.naturalWidth > 0) {
       imageReady = true;
@@ -884,14 +894,30 @@ export default function ReplayCanvas({
         const [x, y] = point(smoke.x, smoke.y);
         const radius = (SMOKE_RADIUS_GAME / radar.scale) * unit;
         ctx.save();
+        // Fit the countdown inside the cloud without resizing it as digits change.
+        const compact = radius < 18;
+        let referenceWidth = smokeTimerWidths.get(compact);
+        if (referenceWidth === undefined) {
+          ctx.font = '600 100px Orbitron, "Segoe UI", sans-serif';
+          referenceWidth = ctx.measureText(compact ? '00' : '00.0s').width;
+          smokeTimerWidths.set(compact, referenceWidth);
+        }
+        const fontSize = Math.min(
+          clamp(radius * 0.7, 8, 26),
+          (radius * 1.7 * 100) / referenceWidth,
+        );
+        const label = compact
+          ? String(Math.ceil(smoke.remainingSeconds))
+          : `${smoke.remainingSeconds.toFixed(1)}s`;
         ctx.fillStyle = '#f8fafc';
-        ctx.strokeStyle = 'rgba(2,6,23,0.9)';
-        ctx.lineWidth = Math.max(1.5, radius * 0.055);
-        ctx.font = `900 ${Math.max(9, Math.min(18, radius * 0.62))}px Segoe UI`;
+        ctx.strokeStyle = 'rgba(2,6,23,0.85)';
+        ctx.lineWidth = clamp(fontSize * 0.12, 1, 2.5);
+        ctx.lineJoin = 'round';
+        ctx.font = `600 ${fontSize}px Orbitron, "Segoe UI", sans-serif`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.strokeText(`${smoke.remainingSeconds.toFixed(1)}s`, x, y);
-        ctx.fillText(`${smoke.remainingSeconds.toFixed(1)}s`, x, y);
+        ctx.strokeText(label, x, y);
+        ctx.fillText(label, x, y);
         ctx.restore();
       }
       if (
