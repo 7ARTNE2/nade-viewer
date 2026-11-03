@@ -1,4 +1,12 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Fragment,
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import {
   Link,
@@ -8,6 +16,7 @@ import {
 } from 'react-router-dom';
 import {
   ArrowLeft,
+  ArrowLeftRight,
   Activity,
   Check,
   ChevronLeft,
@@ -1257,7 +1266,7 @@ export default function ReplayPage() {
                   <ChevronLeft size={14} />
                 </button>
                 <div className="replay-round-rail-list" ref={roundRailRef}>
-                  {replayRounds.map((item) => {
+                  {replayRounds.map((item, index) => {
                     const noteCount = replayNotes.filter(
                       (note) => note.round === item.number,
                     ).length;
@@ -1266,70 +1275,94 @@ export default function ReplayPage() {
                       t: item.score_t,
                       ct: item.score_ct,
                     };
+                    // Scores are recorded at round start, before its winner is added.
+                    const playedBefore = item.score_t + item.score_ct;
+                    const sideSwitch =
+                      index > 0 &&
+                      (playedBefore === 12 ||
+                        (playedBefore >= 24 && (playedBefore - 24) % 3 === 0));
+                    const switchTitle =
+                      playedBefore === 12
+                        ? tr('Side switch (halftime)', 'Смена сторон (перерыв)')
+                        : tr('Overtime side switch', 'Смена сторон (допы)');
                     return (
-                      <button
-                        key={item.number}
-                        type="button"
-                        className={`${item.number === number ? 'active' : ''} ${winner}`}
-                        onClick={() => changeRound(item.number)}
-                        onMouseEnter={(event) => {
-                          const rect =
-                            event.currentTarget.getBoundingClientRect();
-                          setHoveredRound(item.number);
-                          const first = item.number === replayRounds[0]?.number;
-                          const last =
-                            item.number ===
-                            replayRounds[replayRounds.length - 1]?.number;
-                          setHoveredRoundRect({
-                            left: first
-                              ? rect.left
-                              : last
-                                ? rect.right
-                                : rect.left + rect.width / 2,
-                            top: rect.top,
-                            align: first ? 'start' : last ? 'end' : 'center',
-                          });
-                          loadRoundPreview(item.number);
-                        }}
-                        onMouseLeave={() => setHoveredRound(null)}
-                        onFocus={(event) => {
-                          const rect =
-                            event.currentTarget.getBoundingClientRect();
-                          setHoveredRound(item.number);
-                          const first = item.number === replayRounds[0]?.number;
-                          const last =
-                            item.number ===
-                            replayRounds[replayRounds.length - 1]?.number;
-                          setHoveredRoundRect({
-                            left: first
-                              ? rect.left
-                              : last
-                                ? rect.right
-                                : rect.left + rect.width / 2,
-                            top: rect.top,
-                            align: first ? 'start' : last ? 'end' : 'center',
-                          });
-                          loadRoundPreview(item.number);
-                        }}
-                        onBlur={() => setHoveredRound(null)}
-                        aria-current={
-                          item.number === number ? 'true' : undefined
-                        }
-                        aria-label={`${tr('Round', 'Раунд')} ${item.number}, ${endingScore.t}:${endingScore.ct}${noteCount ? `, ${tr('Notes', 'Заметки')}: ${noteCount}` : ''}`}
-                      >
-                        <span>R{item.number}</span>
-                        {noteCount > 0 && (
-                          <StickyNote
-                            className="replay-round-note-badge"
-                            size={10}
-                            aria-hidden="true"
-                            data-tip={`${tr('Notes', 'Заметки')}: ${noteCount}`}
-                          />
+                      <Fragment key={item.number}>
+                        {sideSwitch && (
+                          <div
+                            className="replay-round-rail-switch"
+                            role="separator"
+                            aria-orientation="vertical"
+                            aria-label={switchTitle}
+                            data-tip={switchTitle}
+                          >
+                            <ArrowLeftRight size={12} aria-hidden="true" />
+                          </div>
                         )}
-                        <strong>
-                          {endingScore.t}:{endingScore.ct}
-                        </strong>
-                      </button>
+                        <button
+                          type="button"
+                          className={`${item.number === number ? 'active' : ''} ${winner}`}
+                          onClick={() => changeRound(item.number)}
+                          onMouseEnter={(event) => {
+                            const rect =
+                              event.currentTarget.getBoundingClientRect();
+                            setHoveredRound(item.number);
+                            const first =
+                              item.number === replayRounds[0]?.number;
+                            const last =
+                              item.number ===
+                              replayRounds[replayRounds.length - 1]?.number;
+                            setHoveredRoundRect({
+                              left: first
+                                ? rect.left
+                                : last
+                                  ? rect.right
+                                  : rect.left + rect.width / 2,
+                              top: rect.top,
+                              align: first ? 'start' : last ? 'end' : 'center',
+                            });
+                            loadRoundPreview(item.number);
+                          }}
+                          onMouseLeave={() => setHoveredRound(null)}
+                          onFocus={(event) => {
+                            const rect =
+                              event.currentTarget.getBoundingClientRect();
+                            setHoveredRound(item.number);
+                            const first =
+                              item.number === replayRounds[0]?.number;
+                            const last =
+                              item.number ===
+                              replayRounds[replayRounds.length - 1]?.number;
+                            setHoveredRoundRect({
+                              left: first
+                                ? rect.left
+                                : last
+                                  ? rect.right
+                                  : rect.left + rect.width / 2,
+                              top: rect.top,
+                              align: first ? 'start' : last ? 'end' : 'center',
+                            });
+                            loadRoundPreview(item.number);
+                          }}
+                          onBlur={() => setHoveredRound(null)}
+                          aria-current={
+                            item.number === number ? 'true' : undefined
+                          }
+                          aria-label={`${tr('Round', 'Раунд')} ${item.number}, ${endingScore.t}:${endingScore.ct}${noteCount ? `, ${tr('Notes', 'Заметки')}: ${noteCount}` : ''}`}
+                        >
+                          <span>R{item.number}</span>
+                          {noteCount > 0 && (
+                            <StickyNote
+                              className="replay-round-note-badge"
+                              size={10}
+                              aria-hidden="true"
+                              data-tip={`${tr('Notes', 'Заметки')}: ${noteCount}`}
+                            />
+                          )}
+                          <strong>
+                            {endingScore.t}:{endingScore.ct}
+                          </strong>
+                        </button>
+                      </Fragment>
                     );
                   })}
                 </div>

@@ -398,6 +398,39 @@
 .replay-round-rail-list::-webkit-scrollbar {
   display: none;
 }
+.replay-round-rail-switch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: stretch;
+  flex: 0 0 18px;
+  margin: 0 1px;
+  color: rgba(var(--acid-rgb), 0.9);
+}
+.replay-round-rail-switch::before {
+  position: absolute;
+  top: 6px;
+  bottom: 9px;
+  left: 50%;
+  width: 1px;
+  background: linear-gradient(
+    180deg,
+    transparent,
+    rgba(var(--acid-rgb), 0.45),
+    transparent
+  );
+  content: '';
+  transform: translateX(-50%);
+}
+.replay-round-rail-switch svg {
+  position: relative;
+  z-index: 1;
+  padding: 1px;
+  border-radius: 50%;
+  background: var(--bg);
+  filter: drop-shadow(0 0 4px rgba(var(--acid-rgb), 0.45));
+}
 .replay-round-rail-list button {
   position: relative;
   display: grid;
