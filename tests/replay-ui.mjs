@@ -155,6 +155,7 @@ try {
       const drawImage = window.CanvasRenderingContext2D.prototype.drawImage;
       const clearRect = window.CanvasRenderingContext2D.prototype.clearRect;
       window.CanvasRenderingContext2D.prototype.clearRect = function (...args) {
+        window.__replayDrawCount = (window.__replayDrawCount ?? 0) + 1;
         window.__replayActionLabels = [];
         window.__replayGrenadeIcons = [];
         window.__replayFlameLayers = [];
@@ -163,7 +164,10 @@ try {
       };
       const fill = window.CanvasRenderingContext2D.prototype.fill;
       window.CanvasRenderingContext2D.prototype.fill = function (...args) {
-        if (args[0] instanceof window.Path2D) {
+        if (
+          args[0] instanceof window.Path2D &&
+          this.canvas.matches('.replay-map canvas')
+        ) {
           const transform = this.getTransform();
           window.__replayFlameLayers.push({
             color: this.fillStyle,
@@ -186,6 +190,23 @@ try {
         return fillText.apply(this, args);
       };
       window.CanvasRenderingContext2D.prototype.drawImage = function (...args) {
+        if (
+          args[0] instanceof window.HTMLCanvasElement &&
+          this.canvas.matches('.replay-map canvas') &&
+          [
+            'rgba(249, 115, 22, 0.76)',
+            'rgba(251, 191, 36, 0.88)',
+            'rgba(255, 247, 237, 0.92)',
+          ].includes(this.fillStyle)
+        ) {
+          const transform = this.getTransform();
+          window.__replayFlameLayers.push({
+            color: this.fillStyle,
+            alpha: this.globalAlpha,
+            a: transform.a,
+            d: transform.d,
+          });
+        }
         if (
           args.length === 5 &&
           Math.abs(Math.max(args[3], args[4]) - 19) < 0.01
@@ -354,6 +375,83 @@ try {
     { metadata, rounds, first, mapImagePath, radar },
   );
   const page = await context.newPage();
+  await page.route('**/__animation-check', (route) =>
+    route.fulfill({ contentType: 'text/html', body: '<!doctype html>' }),
+  );
+  await page.goto('http://127.0.0.1:1428/__animation-check');
+  const animationChecks = await page.evaluate(async () => {
+    const originalRequest = window.requestAnimationFrame;
+    const originalCancel = window.cancelAnimationFrame;
+    const pending = new Map();
+    let id = 0;
+    window.requestAnimationFrame = (callback) => {
+      pending.set(++id, callback);
+      return id;
+    };
+    window.cancelAnimationFrame = (id) => pending.delete(id);
+    const { onReplayAnimationFrame } =
+      await import('/src/lib/replayAnimation.ts');
+    const step = (now) => {
+      const callbacks = [...pending.values()];
+      pending.clear();
+      for (const callback of callbacks) callback(now);
+    };
+    try {
+      return [60, 120, 144, 165, 240].map((refreshRate) => {
+        const frames = [];
+        let clock = -1;
+        // Subscribe views first to verify ordering independently of mount order.
+        const stopView = onReplayAnimationFrame((now) =>
+          frames.push({ now, clock }),
+        );
+        const stopSecondView = onReplayAnimationFrame(() => undefined);
+        const stopClock = onReplayAnimationFrame((now) => {
+          clock = now;
+        }, 'clock');
+        let singleLoop = true;
+        for (let i = 0; i <= refreshRate * 10; i++) {
+          singleLoop &&= pending.size === 1;
+          step((i * 1000) / refreshRate);
+        }
+        const count = frames.length;
+        const gaps = frames
+          .slice(1)
+          .map((frame, index) => frame.now - frames[index].now);
+        step(10500);
+        const afterStall = frames.length - count;
+        stopClock();
+        stopView();
+        stopSecondView();
+        return {
+          refreshRate,
+          count,
+          singleLoop,
+          freshClock: frames.every((frame) => frame.now === frame.clock),
+          maxGap: Math.max(...gaps),
+          afterStall,
+          stopped: pending.size === 0,
+        };
+      });
+    } finally {
+      window.requestAnimationFrame = originalRequest;
+      window.cancelAnimationFrame = originalCancel;
+    }
+  });
+  for (const check of animationChecks) {
+    assert.equal(check.count, 601, `${check.refreshRate} Hz: 60 FPS over 10s`);
+    assert.ok(
+      check.singleLoop,
+      'both radars and clock share one animation loop',
+    );
+    assert.ok(check.freshClock, 'views must draw the current frame clock');
+    assert.ok(check.maxGap <= 1000 / 60 + 1000 / check.refreshRate + 0.5);
+    assert.equal(
+      check.afterStall,
+      1,
+      'never render a burst of catch-up frames',
+    );
+    assert.ok(check.stopped, 'unsubscribe must cancel the shared loop');
+  }
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   // Force the first round to mount before the shared radar preload resolves.
@@ -751,6 +849,44 @@ try {
   );
   await page.keyboard.press('Space');
   await page.getByRole('button', { name: 'Пауза', exact: true }).waitFor();
+  const playbackUpdates = await page.evaluate(
+    () =>
+      new Promise((resolve) => {
+        let previousDraws;
+        let samples = 0;
+        let skipped = 0;
+        let timerWrites = 0;
+        const observer = new window.MutationObserver((records) => {
+          timerWrites += records.length;
+        });
+        observer.observe(document.querySelector('.replay-phase-time'), {
+          childList: true,
+          characterData: true,
+          subtree: true,
+        });
+        const sample = () => {
+          const draws = window.__replayDrawCount;
+          if (previousDraws !== undefined) {
+            if (draws === previousDraws) skipped += 1;
+            samples += 1;
+          }
+          previousDraws = draws;
+          if (samples === 30) {
+            observer.disconnect();
+            resolve({ skipped, timerWrites });
+          } else window.requestAnimationFrame(sample);
+        };
+        window.requestAnimationFrame(sample);
+      }),
+  );
+  assert.ok(
+    playbackUpdates.skipped <= 1,
+    `radar must follow display frames during playback; skipped ${playbackUpdates.skipped}/30`,
+  );
+  assert.ok(
+    playbackUpdates.timerWrites <= 3,
+    `timeline must not rewrite identical timer text every frame: ${playbackUpdates.timerWrites} writes`,
+  );
   await page.keyboard.press('ArrowUp');
   await page.getByRole('button', { name: 'Пауза', exact: true }).waitFor();
   await page.keyboard.press('ArrowLeft');
@@ -1238,6 +1374,34 @@ try {
   );
   await mkdir('dist/replay-checks', { recursive: true });
   await page.screenshot({ path: 'dist/replay-checks/desktop.png' });
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  await page.locator('.replay-rosters[data-fit="expanded"]').waitFor();
+  const expandedRoster = await page
+    .locator('.replay-rosters')
+    .evaluate((pane) => {
+      const bounds = pane.getBoundingClientRect();
+      const teams = [...pane.querySelectorAll('.replay-team')].map((team) =>
+        team.getBoundingClientRect(),
+      );
+      const players = [...pane.querySelectorAll('.replay-player')].map(
+        (player) => player.getBoundingClientRect(),
+      );
+      return {
+        height: bounds.height,
+        teamHeights: teams.map((team) => team.height),
+        remaining: bounds.bottom - players.at(-1).bottom,
+        overflow: pane.scrollHeight > pane.clientHeight + 1,
+      };
+    });
+  assert.ok(
+    expandedRoster.teamHeights.every(
+      (height) => Math.abs(height - expandedRoster.height / 2) <= 1,
+    ),
+    'Full HD roster must split the available height evenly between teams',
+  );
+  assert.ok(expandedRoster.remaining < 12, 'roster must fill the pane height');
+  assert.equal(expandedRoster.overflow, false, 'Full HD roster must fit');
+  await page.screenshot({ path: 'dist/replay-checks/fullhd-roster.png' });
   await page.getByRole('button', { name: 'Следующий раунд' }).click();
   await page.getByRole('slider', { name: 'Таймлайн повтора' }).waitFor();
   await page.waitForTimeout(200);

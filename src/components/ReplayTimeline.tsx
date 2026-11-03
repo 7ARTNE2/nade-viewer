@@ -28,6 +28,7 @@ import ReplayKillAssists from './ReplayKillAssists';
 import { deathNoticeIcon } from '../lib/deathNoticeIcons';
 import { weaponIcon } from '../lib/weaponIcons';
 import { playersAt } from '../lib/replayPlayback';
+import { onReplayAnimationFrame } from '../lib/replayAnimation';
 
 type Props = {
   round: ReplayRound;
@@ -61,6 +62,15 @@ export default function ReplayTimeline({
   const { tr } = useI18n();
   const damageEvents = useMemo(
     () => round.events.filter((event) => event.type === 'damage'),
+    [round],
+  );
+  const timerRound = useMemo(
+    () => ({
+      ...round,
+      events: round.events.filter((event) =>
+        ['bomb_planted', 'bomb_defused', 'bomb_exploded'].includes(event.type),
+      ),
+    }),
     [round],
   );
   const [hoveredKill, setHoveredKill] = useState<number | null>(null);
@@ -239,17 +249,17 @@ export default function ReplayTimeline({
   });
   const labelAt = useCallback(
     (value: number) => {
-      const bomb = replayTimers(round, value, tickrate).bomb;
+      const bomb = replayTimers(timerRound, value, tickrate).bomb;
       if (bomb) {
         if (bomb.state === 'bomb_defused') return defusedLabel;
         if (bomb.state === 'bomb_exploded') return explodedLabel;
         return `${bombLabel} ${bomb.time}`;
       }
-      const phase = roundPhaseTime(round.round, value, tickrate);
+      const phase = roundPhaseTime(timerRound.round, value, tickrate);
       return `${phase.freezing ? freezeLabel : roundLabel} ${phase.label}`;
     },
     [
-      round,
+      timerRound,
       tickrate,
       freezeLabel,
       roundLabel,
@@ -260,21 +270,23 @@ export default function ReplayTimeline({
   );
   const sync = useCallback(() => {
     const value = clamp(clock.current, timelineStart, end);
-    const timers = replayTimers(round, value, tickrate);
+    const timers = replayTimers(timerRound, value, tickrate);
     const phaseColor = timers.bomb
-      ? '#ff8e96'
+      ? 'rgb(255, 142, 150)'
       : timers.freezing
-        ? '#8fd8ff'
-        : '#c7ff3d';
+        ? 'rgb(143, 216, 255)'
+        : 'rgb(199, 255, 61)';
     if (slider.current) {
       slider.current.value = String(clamp(value, boundedViewStart, viewEnd));
-      slider.current.style.accentColor = phaseColor;
-      slider.current.setAttribute('aria-valuetext', labelAt(value));
+      if (slider.current.style.accentColor !== phaseColor)
+        slider.current.style.accentColor = phaseColor;
     }
-    if (track.current) track.current.style.background = 'var(--surface-3)';
-    if (elapsed.current) {
-      elapsed.current.textContent = labelAt(value);
-    }
+    const label = labelAt(value);
+    if (slider.current?.getAttribute('aria-valuetext') !== label)
+      slider.current?.setAttribute('aria-valuetext', label);
+    // Replacing identical text each frame still invalidates layout and paint.
+    if (elapsed.current && elapsed.current.textContent !== label)
+      elapsed.current.textContent = label;
   }, [
     clock,
     boundedViewStart,
@@ -282,18 +294,13 @@ export default function ReplayTimeline({
     timelineStart,
     end,
     labelAt,
-    round,
+    timerRound,
     tickrate,
   ]);
   // Keep the scrubber on the playback clock without rendering the match each frame.
   useEffect(() => {
-    let animation = 0;
-    const draw = () => {
-      sync();
-      if (playing) animation = requestAnimationFrame(draw);
-    };
-    draw();
-    return () => cancelAnimationFrame(animation);
+    sync();
+    if (playing) return onReplayAnimationFrame(sync);
   }, [playing, sync]);
   useLayoutEffect(() => {
     sync();

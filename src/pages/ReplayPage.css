@@ -2177,7 +2177,7 @@
   grid-template-columns: 316px minmax(0, 1fr) 268px;
 }
 .replay-rosters {
-  container: replay-roster / size;
+  contain: strict;
   background: #0d1014;
   border-right-color: rgba(255, 255, 255, 0.08);
   scrollbar-width: thin;
@@ -2355,6 +2355,8 @@
   background: transparent;
   opacity: 0.68;
   filter: grayscale(0.18) brightness(0.9);
+  /* Inventory changes follow demo frames; transitions keep repainting the roster. */
+  transition: none;
 }
 .replay-player-weapon-item {
   display: grid;
@@ -2439,11 +2441,10 @@
   opacity: 0.35;
 }
 /* Fit both teams to the available height, including window chrome and taskbars. */
-@container replay-roster (min-width: 300px) and (min-height: 610px) {
+.replay-rosters[data-fit='expanded'] {
   .replay-team {
-    --roster-step: clamp(0px, calc((100cqh - 610px) / 160), 1px);
     display: flex;
-    height: 50cqh;
+    height: 50%;
     flex-direction: column;
   }
   .replay-team header {

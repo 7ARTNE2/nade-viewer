@@ -11,7 +11,7 @@ import {
   playerBombAction,
   playersAt,
 } from '../lib/replayPlayback';
-import { isWindowActive, onWindowActiveChange } from '../lib/windowActive';
+import { onReplayAnimationFrame } from '../lib/replayAnimation';
 import { weaponIcon } from '../lib/weaponIcons';
 import {
   replayGrenadeIcon,
@@ -375,9 +375,16 @@ export default function ReplayCanvas({
     bombImage.onload = draw;
     bombImage.src = c4Icon;
     let imageReady = false,
-      disposed = false,
-      animation = 0;
+      disposed = false;
     const smokeTimerWidths = new Map<boolean, number>();
+    const nameplates = new Map<
+      string,
+      {
+        image: HTMLCanvasElement;
+        label: string;
+        width: number;
+      }
+    >();
     // Canvas does not repaint when a web font finishes loading while paused.
     void document.fonts
       .load('600 100px Orbitron', '0123456789.s')
@@ -418,7 +425,6 @@ export default function ReplayCanvas({
     let width = 0,
       height = 0,
       dpr = 1;
-    let lastDrawAt = 0;
     const resize = () => {
       const bounds = element.getBoundingClientRect();
       width = bounds.width;
@@ -427,6 +433,7 @@ export default function ReplayCanvas({
       // the backing store keeps high-DPI Windows displays from rendering
       // four times as many pixels without changing the CSS-sized map.
       dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+      nameplates.clear();
       element.width = Math.round(width * dpr);
       element.height = Math.round(height * dpr);
       setView((current) => clampView(current.s, current.x, current.y));
@@ -461,32 +468,52 @@ export default function ReplayCanvas({
         ctx.font = '600 10px "Segoe UI", sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        const maxWidth = 132;
-        let label = name;
-        if (ctx.measureText(label).width > maxWidth) {
-          while (
-            label.length > 3 &&
-            ctx.measureText(`${label}…`).width > maxWidth
-          )
-            label = label.slice(0, -1);
-          label += '…';
+        const key = `${player.side}:${name}`;
+        let plate = nameplates.get(key);
+        if (!plate) {
+          const maxWidth = 132;
+          let label = name;
+          if (ctx.measureText(label).width > maxWidth) {
+            while (
+              label.length > 3 &&
+              ctx.measureText(`${label}…`).width > maxWidth
+            )
+              label = label.slice(0, -1);
+            label += '…';
+          }
+          const width = Math.min(
+            maxWidth + 12,
+            ctx.measureText(label).width + 16,
+          );
+          const image = document.createElement('canvas');
+          image.width = Math.ceil((width + 16) * dpr);
+          image.height = Math.ceil(32 * dpr);
+          const background = image.getContext('2d')!;
+          background.scale(dpr, dpr);
+          background.shadowColor = 'rgba(0,0,0,.45)';
+          background.shadowBlur = 5 * dpr;
+          background.fillStyle = 'rgba(8, 11, 15, .76)';
+          background.beginPath();
+          background.roundRect(8, 8, width, 16, 5);
+          background.fill();
+          background.shadowBlur = 0;
+          background.fillStyle = teamColor;
+          background.beginPath();
+          background.roundRect(11, 12, 2, 8, 1);
+          background.fill();
+          plate = { image, label, width };
+          nameplates.set(key, plate);
         }
-        const textWidth = ctx.measureText(label).width;
-        const width = Math.min(maxWidth + 12, textWidth + 16);
         const top = y + 15;
-        ctx.shadowColor = 'rgba(0,0,0,.45)';
-        ctx.shadowBlur = 5;
-        ctx.fillStyle = 'rgba(8, 11, 15, .76)';
-        ctx.beginPath();
-        ctx.roundRect(x - width / 2, top, width, 16, 5);
-        ctx.fill();
-        ctx.shadowBlur = 0;
-        ctx.fillStyle = teamColor;
-        ctx.beginPath();
-        ctx.roundRect(x - width / 2 + 3, top + 4, 2, 8, 1);
-        ctx.fill();
+        ctx.drawImage(
+          plate.image,
+          x - plate.width / 2 - 8,
+          top - 8,
+          plate.width + 16,
+          32,
+        );
         ctx.fillStyle = '#f4f6f8';
-        ctx.fillText(label, x, top + 8);
+        ctx.fillText(plate.label, x, top + 8);
         ctx.restore();
       };
       const visible = (z: number) =>
@@ -1333,25 +1360,12 @@ export default function ReplayCanvas({
           ctx.globalAlpha = 1;
         });
     }
-    function loop(now = performance.now()) {
-      if (now - lastDrawAt >= 1000 / 60) {
-        draw();
-        lastDrawAt = now;
-      }
-      if (isWindowActive() && !disposed)
-        animation = requestAnimationFrame(loop);
-    }
-    const unlisten = onWindowActiveChange((active) => {
-      cancelAnimationFrame(animation);
-      if (active) loop();
-    });
+    const unlisten = onReplayAnimationFrame(draw);
     const observer = new ResizeObserver(resize);
     observer.observe(element);
     resize();
-    if (isWindowActive()) loop();
     return () => {
       disposed = true;
-      cancelAnimationFrame(animation);
       observer.disconnect();
       unlisten();
     };

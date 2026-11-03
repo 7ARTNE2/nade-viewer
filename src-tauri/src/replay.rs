@@ -338,8 +338,15 @@ pub(crate) fn get_replay(
     )
 }
 #[tauri::command]
-pub(crate) fn get_replay_round(app: AppHandle, id: i64, number: i64) -> Result<Value> {
-    let conn = database(&app)?;
+pub(crate) async fn get_replay_round(app: AppHandle, id: i64, number: i64) -> Result<Value> {
+    // Prefetch runs during playback; JSON/zstd work must not occupy Tauri's
+    // window thread, even when the JavaScript caller awaits the command.
+    tauri::async_runtime::spawn_blocking(move || read_round(&database(&app)?, id, number))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn read_round(conn: &Connection, id: i64, number: i64) -> Result<Value> {
     let bytes: Vec<u8> = conn
         .query_row(
             "SELECT data FROM rounds WHERE match_id=?1 AND number=?2",
@@ -354,16 +361,22 @@ pub(crate) fn get_replay_round(app: AppHandle, id: i64, number: i64) -> Result<V
 /// thousands of sampled frames and projectile trajectories; decoding all of
 /// that on every hover makes the preview feel unresponsive on large demos.
 #[tauri::command]
-pub(crate) fn get_replay_round_preview(app: AppHandle, id: i64, number: i64) -> Result<Value> {
-    let conn = database(&app)?;
-    let bytes: Vec<u8> = conn
-        .query_row(
-            "SELECT data FROM rounds WHERE match_id=?1 AND number=?2",
-            params![id, number],
-            |r| r.get(0),
-        )
-        .map_err(|e| e.to_string())?;
-    let mut round = decode(&bytes)?;
+pub(crate) async fn get_replay_round_preview(
+    app: AppHandle,
+    id: i64,
+    number: i64,
+) -> Result<Value> {
+    tauri::async_runtime::spawn_blocking(move || {
+        Ok(round_preview(
+            read_round(&database(&app)?, id, number)?,
+            number,
+        ))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+fn round_preview(mut round: Value, number: i64) -> Value {
     // Player identity and team are stable through a round. The first sampled
     // frame is enough for the tooltip; avoid walking every sampled frame.
     let players = round["frames"]
@@ -382,7 +395,7 @@ pub(crate) fn get_replay_round_preview(app: AppHandle, id: i64, number: i64) -> 
     });
     round["frames"] = json!([preview_frame]);
     round["grenades"] = json!([]);
-    Ok(round)
+    round
 }
 #[tauri::command]
 pub(crate) fn save_replay_position(app: AppHandle, id: i64, number: i64, tick: f64) -> Result<()> {
@@ -736,6 +749,48 @@ mod tests {
     fn compressed_round_preserves_ids() {
         let value = json!({"players":[{"steamid64":"76561198012345678"}],"grenades":[]});
         assert_eq!(decode(&encode(&value).unwrap()).unwrap(), value);
+    }
+
+    #[test]
+    fn round_read_and_preview_keep_events_and_player_identity() {
+        let conn = open(std::path::Path::new(":memory:")).unwrap();
+        conn.execute(
+            "INSERT INTO matches(id,hash,version,metadata) VALUES(1,'preview',1,'{}')",
+            [],
+        )
+        .unwrap();
+        let value = json!({
+            "round_number": 13,
+            "round": {"number":13,"start_tick":100,"score_t":6,"score_ct":6},
+            "frames": [
+                {"tick":104,"players":[{"id":"76561198012345678","name":"Player"}],"projectiles":[{"id":"g"}]},
+                {"tick":108,"players":[],"projectiles":[]}
+            ],
+            "events":[{"type":"kill","tick":110,"player_id":"76561198012345678"}],
+            "grenades":[{"id":"g"}]
+        });
+        conn.execute(
+            "INSERT INTO rounds(match_id,number,summary,data) VALUES(1,13,?1,?2)",
+            params![value["round"].to_string(), encode(&value).unwrap()],
+        )
+        .unwrap();
+        let full = read_round(&conn, 1, 13).unwrap();
+        assert_eq!(full, value);
+        let preview = round_preview(full, 13);
+        assert_eq!(preview["round"], value["round"]);
+        assert_eq!(preview["events"], value["events"]);
+        assert_eq!(preview["frames"].as_array().unwrap().len(), 1);
+        assert_eq!(preview["frames"][0]["tick"], 100);
+        assert_eq!(
+            preview["frames"][0]["players"],
+            value["frames"][0]["players"]
+        );
+        assert_eq!(preview["frames"][0]["projectiles"], json!([]));
+        assert_eq!(preview["grenades"], json!([]));
+        assert_eq!(read_round(&conn, 1, 13).unwrap(), value);
+        assert!(read_round(&conn, 1, 99).is_err());
+        let empty = round_preview(json!({"round":{"start_tick":100}}), 13);
+        assert_eq!(empty["frames"][0]["players"], json!([]));
     }
 
     #[test]

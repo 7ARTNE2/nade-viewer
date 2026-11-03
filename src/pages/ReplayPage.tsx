@@ -79,6 +79,7 @@ import {
   playersAt,
 } from '../lib/replayPlayback';
 import { isWindowActive, onWindowActiveChange } from '../lib/windowActive';
+import { onReplayAnimationFrame } from '../lib/replayAnimation';
 import { weaponIcon } from '../lib/weaponIcons';
 import { deathNoticeIcon } from '../lib/deathNoticeIcons';
 import { killNotices } from '../lib/replayKillfeed';
@@ -247,6 +248,157 @@ function roundEndingScore(round: {
     ct: round.score_ct + (round.winner_side === 'CT' ? 1 : 0),
   };
 }
+const RoundRailCards = memo(function RoundRailCards({
+  rounds,
+  number,
+  noteCounts,
+  onChange,
+  onPreview,
+  onClose,
+}: {
+  rounds: ReplayDetail['rounds'];
+  number: number | null;
+  noteCounts: ReadonlyMap<number, number>;
+  onChange: (number: number) => void;
+  onPreview: (number: number, element: HTMLButtonElement) => void;
+  onClose: () => void;
+}) {
+  const { tr } = useI18n();
+  return rounds.map((item, index) => {
+    const noteCount = noteCounts.get(item.number) ?? 0;
+    const winner = roundWinnerClass(item.winner_side);
+    const endingScore = roundEndingScore(item);
+    const playedBefore = item.score_t + item.score_ct;
+    const sideSwitch =
+      index > 0 &&
+      (playedBefore === 12 ||
+        (playedBefore >= 24 && (playedBefore - 24) % 3 === 0));
+    const switchTitle =
+      playedBefore === 12
+        ? tr('Side switch (halftime)', 'Смена сторон (перерыв)')
+        : tr('Overtime side switch', 'Смена сторон (допы)');
+    return (
+      <Fragment key={item.number}>
+        {sideSwitch && (
+          <div
+            className="replay-round-rail-switch"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label={switchTitle}
+            data-tip={switchTitle}
+          >
+            <ArrowLeftRight size={12} aria-hidden="true" />
+          </div>
+        )}
+        <button
+          type="button"
+          className={`${item.number === number ? 'active' : ''} ${winner}`}
+          onClick={() => onChange(item.number)}
+          onMouseEnter={(event) => onPreview(item.number, event.currentTarget)}
+          onMouseLeave={onClose}
+          onFocus={(event) => onPreview(item.number, event.currentTarget)}
+          onBlur={onClose}
+          aria-current={item.number === number ? 'true' : undefined}
+          aria-label={`${tr('Round', 'Раунд')} ${item.number}, ${endingScore.t}:${endingScore.ct}${noteCount ? `, ${tr('Notes', 'Заметки')}: ${noteCount}` : ''}`}
+        >
+          <span>R{item.number}</span>
+          {noteCount > 0 && (
+            <StickyNote
+              className="replay-round-note-badge"
+              size={10}
+              aria-hidden="true"
+              data-tip={`${tr('Notes', 'Заметки')}: ${noteCount}`}
+            />
+          )}
+          <strong>
+            {endingScore.t}:{endingScore.ct}
+          </strong>
+        </button>
+      </Fragment>
+    );
+  });
+});
+const ReplayThrows = memo(function ReplayThrows({
+  grenades,
+  selectedId,
+  copiedId,
+  times,
+  onSelect,
+  onCopy,
+}: {
+  grenades: ReplayGrenade[];
+  selectedId: string | undefined;
+  copiedId: string | null;
+  times: ReadonlyMap<string, { label: string; bomb: boolean }>;
+  onSelect: (grenade: ReplayGrenade) => void;
+  onCopy: (grenade: ReplayGrenade) => Promise<void>;
+}) {
+  const { tr, locale } = useI18n();
+  return (
+    <section className="replay-throws">
+      <h2>
+        <span>
+          <Crosshair size={13} />
+          {tr('Grenades', 'Гранаты')}
+        </span>
+        <small className="replay-count">{grenades.length}</small>
+      </h2>
+      {grenades.map((g) => (
+        <div className="replay-throw-row" key={g.id}>
+          <button
+            className={`replay-throw ${selectedId === g.id ? 'active' : ''}`}
+            onClick={() => onSelect(g)}
+          >
+            <span
+              className={`replay-nade-icon type-${g.data.grenade_type.toLowerCase().replace(/ /g, '-')}`}
+            >
+              <GrenadeMapIcon grenadeType={g.data.grenade_type} />
+            </span>
+            <span>
+              <strong>{g.data.thrower}</strong>
+              <small>{grenadeLabel(g.data.grenade_type, locale)}</small>
+            </span>
+            <time
+              data-tip={
+                times.get(g.id)?.bomb
+                  ? tr('Bomb timer at throw', 'Таймер бомбы при броске')
+                  : tr('Round time', 'Время раунда')
+              }
+            >
+              {times.get(g.id)?.label ?? '-'}
+            </time>
+          </button>
+          <button
+            type="button"
+            className={`copy-action replay-throw-copy ${copiedId === g.id ? 'copied' : ''}`}
+            onClick={() => void onCopy(g)}
+            disabled={!g.data.coordinates}
+            aria-label={tr(
+              'Copy grenade coordinates',
+              'Копировать координаты гранаты',
+            )}
+            data-tip={
+              copiedId === g.id
+                ? tr('Copied', 'Скопировано')
+                : tr('Copy coordinates', 'Копировать координаты')
+            }
+          >
+            {copiedId === g.id ? (
+              <Check className="copy-action-icon" size={13} />
+            ) : (
+              <Copy className="copy-action-icon" size={13} />
+            )}
+            <span className="sr-only">
+              {copiedId === g.id
+                ? tr('Copied', 'Скопировано')
+                : tr('Copy', 'Копировать')}
+            </span>
+          </button>
+        </div>
+      ))}
+    </section>
+  );
+});
 const Team = memo(
   function Team({
     side,
@@ -437,7 +589,24 @@ const Team = memo(
         player.deaths === nextPlayer.deaths &&
         player.assists === nextPlayer.assists &&
         player.active_weapon === nextPlayer.active_weapon &&
-        player.weapons === nextPlayer.weapons
+        player.name === nextPlayer.name &&
+        player.team_name === nextPlayer.team_name &&
+        player.equipment_value === nextPlayer.equipment_value &&
+        player.has_helmet === nextPlayer.has_helmet &&
+        player.has_defuse_kit === nextPlayer.has_defuse_kit &&
+        (player.weapons === nextPlayer.weapons ||
+          ((player.weapons?.length ?? 0) ===
+            (nextPlayer.weapons?.length ?? 0) &&
+            (player.weapons ?? []).every((weapon, weaponIndex) => {
+              const nextWeapon = nextPlayer.weapons?.[weaponIndex];
+              return (
+                nextWeapon &&
+                weapon.name === nextWeapon.name &&
+                weapon.type === nextWeapon.type &&
+                weapon.ammo_in_magazine === nextWeapon.ammo_in_magazine &&
+                weapon.ammo_reserve === nextWeapon.ammo_reserve
+              );
+            })))
       );
     });
   },
@@ -500,6 +669,23 @@ export default function ReplayPage() {
   >({});
   const [timelineZoomTarget, setTimelineZoomTarget] =
     useState<HTMLDivElement | null>(null);
+  const [rosterElement, setRosterElement] = useState<HTMLElement | null>(null);
+  useEffect(() => {
+    if (!rosterElement) return;
+    // Container-relative font sizes make WebView2 restyle the whole roster
+    // on inventory changes. Recompute the scale only when the pane resizes.
+    const observer = new ResizeObserver(([entry]) => {
+      const { width, height } = entry.contentRect;
+      rosterElement.dataset.fit =
+        width >= 300 && height >= 610 ? 'expanded' : 'compact';
+      rosterElement.style.setProperty(
+        '--roster-step',
+        `${clamp((height - 610) / 160, 0, 1)}px`,
+      );
+    });
+    observer.observe(rosterElement);
+    return () => observer.disconnect();
+  }, [rosterElement]);
   const roundRailRef = useRef<HTMLDivElement | null>(null);
   const roundPreviewCache = useRef(new Map<number, Promise<ReplayRound>>());
   const [roundRailCanScrollPrev, setRoundRailCanScrollPrev] = useState(false);
@@ -587,7 +773,7 @@ export default function ReplayPage() {
       mounted.current = false;
     };
   }, []);
-  const fail = (e: unknown) => setError(String(e));
+  const fail = useCallback((e: unknown) => setError(String(e)), []);
   useEffect(() => {
     let alive = true;
     void listReplays().then(
@@ -816,8 +1002,7 @@ export default function ReplayPage() {
   }, [cancelAutoNext]);
   useEffect(() => {
     if (!playing || !round || !detail) return;
-    let raf = 0,
-      last = 0,
+    let last = 0,
       lastUi = 0;
     const [start, end] = roundBounds(round);
     const playbackStart = showFreezeTimeRef.current
@@ -863,10 +1048,8 @@ export default function ReplayPage() {
         setPlaying(false);
         return;
       }
-      raf = requestAnimationFrame(run);
     };
-    raf = requestAnimationFrame(run);
-    return () => cancelAnimationFrame(raf);
+    return onReplayAnimationFrame(run, 'clock');
   }, [autoNextRound, playing, round, detail, speed, replayRounds, changeRound]);
   useEffect(() => {
     if (id === null || !round) return;
@@ -979,25 +1162,28 @@ export default function ReplayPage() {
       if (mounted.current) setStarting(false);
     }
   };
-  const copyGrenadeCoordinates = async (grenade: ReplayGrenade) => {
-    if (!grenade.data.coordinates) return;
-    const request = ++copyRequest.current;
-    try {
-      await navigator.clipboard.writeText(grenade.data.coordinates);
-      if (request !== copyRequest.current) return;
-      setCopiedId(grenade.id);
-      copyButton.current?.getAnimations().forEach((animation) => {
-        animation.currentTime = 0;
-      });
-      window.clearTimeout(copyTimer.current);
-      copyTimer.current = window.setTimeout(() => setCopiedId(null), 1600);
-      showToast(tr('Coordinates copied', 'Координаты скопированы'), {
-        tone: 'success',
-      });
-    } catch (e) {
-      if (request === copyRequest.current) fail(e);
-    }
-  };
+  const copyGrenadeCoordinates = useCallback(
+    async (grenade: ReplayGrenade) => {
+      if (!grenade.data.coordinates) return;
+      const request = ++copyRequest.current;
+      try {
+        await navigator.clipboard.writeText(grenade.data.coordinates);
+        if (request !== copyRequest.current) return;
+        setCopiedId(grenade.id);
+        copyButton.current?.getAnimations().forEach((animation) => {
+          animation.currentTime = 0;
+        });
+        window.clearTimeout(copyTimer.current);
+        copyTimer.current = window.setTimeout(() => setCopiedId(null), 1600);
+        showToast(tr('Coordinates copied', 'Координаты скопированы'), {
+          tone: 'success',
+        });
+      } catch (e) {
+        if (request === copyRequest.current) fail(e);
+      }
+    },
+    [tr, showToast, fail],
+  );
   const copy = () => {
     if (selected) void copyGrenadeCoordinates(selected);
   };
@@ -1031,20 +1217,27 @@ export default function ReplayPage() {
     const phase = roundPhaseTime(round.round, value, detail.metadata.tickrate);
     return `${phase.freezing ? '-' : ''}${phase.label}`;
   };
-  const grenadeTime = (grenade: ReplayGrenade) => {
-    if (!round || !detail) return '-';
-    const timers = replayTimers(
-      round,
-      grenade.release_tick,
-      detail.metadata.tickrate,
-    );
-    return timers.bomb?.time ?? formatClock(grenade.data.round_time_seconds);
-  };
+  const grenadeTimes = useMemo(() => {
+    const times = new Map<string, { label: string; bomb: boolean }>();
+    if (!round || !detail) return times;
+    for (const grenade of round.grenades) {
+      const timers = replayTimers(
+        round,
+        grenade.release_tick,
+        detail.metadata.tickrate,
+      );
+      times.set(grenade.id, {
+        label:
+          timers.bomb?.time ?? formatClock(grenade.data.round_time_seconds),
+        bomb: Boolean(timers.bomb),
+      });
+    }
+    return times;
+  }, [round, detail]);
+  const grenadeTime = (grenade: ReplayGrenade) =>
+    grenadeTimes.get(grenade.id)?.label ?? '-';
   const grenadeHasBombTimer = (grenade: ReplayGrenade) =>
-    round?.events.some(
-      (event) =>
-        event.type === 'bomb_planted' && event.tick <= grenade.release_tick,
-    ) ?? false;
+    grenadeTimes.get(grenade.id)?.bomb ?? false;
   const replayEventLabel = (type: string) => {
     const labels: Record<string, [string, string]> = {
       bomb_planted: ['Bomb planted', 'Бомба установлена'],
@@ -1054,23 +1247,42 @@ export default function ReplayPage() {
     const label = labels[type];
     return label ? tr(label[0], label[1]) : type.replace(/_/g, ' ');
   };
-  const grenadeTrajectoryTick = (grenade: ReplayGrenade) => {
-    if (!round || !detail?.radar) return grenade.release_tick;
-    let previous: { x: number; y: number } | null = null;
+  const grenadeMovementStarts = useMemo(() => {
+    const starts = new Map<string, number>();
+    if (!round || !detail?.radar) return starts;
+    const previous = new Map<string, { x: number; y: number }>();
+    // Index once per round instead of scanning its frames for every marker
+    // on every playback UI update.
     for (const frame of round.frames) {
-      const projectile = frame.projectiles?.find((p) => p.id === grenade.id);
-      if (!projectile) continue;
-      if (
-        previous &&
-        Math.hypot(projectile.x - previous.x, projectile.y - previous.y) >=
-          1.5 * detail.radar.scale
-      ) {
-        return frame.tick;
+      for (const projectile of frame.projectiles ?? []) {
+        if (starts.has(projectile.id)) continue;
+        const last = previous.get(projectile.id);
+        if (
+          last &&
+          Math.hypot(projectile.x - last.x, projectile.y - last.y) >=
+            1.5 * detail.radar.scale
+        ) {
+          starts.set(projectile.id, frame.tick);
+        } else {
+          previous.set(projectile.id, projectile);
+        }
       }
-      previous = { x: projectile.x, y: projectile.y };
     }
-    return grenade.release_tick;
-  };
+    return starts;
+  }, [round, detail?.radar]);
+  const grenadeTrajectoryTick = useCallback(
+    (grenade: ReplayGrenade) =>
+      grenadeMovementStarts.get(grenade.id) ?? grenade.release_tick,
+    [grenadeMovementStarts],
+  );
+  const selectThrow = useCallback(
+    (grenade: ReplayGrenade) => {
+      setSelected(grenade);
+      seek(grenadeTrajectoryTick(grenade));
+      setPlaying(false);
+    },
+    [seek, grenadeTrajectoryTick],
+  );
   const replayEndScores = useMemo(() => {
     const scores: Record<number, { t: number; ct: number }> = {};
     for (const item of replayRounds) {
@@ -1078,23 +1290,54 @@ export default function ReplayPage() {
     }
     return scores;
   }, [replayRounds]);
-  const loadRoundPreview = (roundNumber: number) => {
-    if (!detail || roundNumber === number || roundPreviews[roundNumber]) return;
-    let request = roundPreviewCache.current.get(roundNumber);
-    if (!request) {
-      request = getReplayRoundPreview(detail.id, roundNumber);
-      roundPreviewCache.current.set(roundNumber, request);
-    }
-    void request
-      .then((value) => {
-        setRoundPreviews((current) => ({ ...current, [roundNumber]: value }));
-      })
-      .catch(() => {
-        roundPreviewCache.current.delete(roundNumber);
+  const loadRoundPreview = useCallback(
+    (roundNumber: number) => {
+      if (!detail || roundNumber === number || roundPreviews[roundNumber])
+        return;
+      let request = roundPreviewCache.current.get(roundNumber);
+      if (!request) {
+        request = getReplayRoundPreview(detail.id, roundNumber);
+        roundPreviewCache.current.set(roundNumber, request);
+      }
+      void request
+        .then((value) => {
+          setRoundPreviews((current) => ({ ...current, [roundNumber]: value }));
+        })
+        .catch(() => {
+          roundPreviewCache.current.delete(roundNumber);
+        });
+    },
+    [detail, number, roundPreviews],
+  );
+  const previewRound = useCallback(
+    (roundNumber: number, element: HTMLButtonElement) => {
+      keepRoundPreviewOpen();
+      const rect = element.getBoundingClientRect();
+      const first = roundNumber === replayRounds[0]?.number;
+      const last =
+        roundNumber === replayRounds[replayRounds.length - 1]?.number;
+      setHoveredRound(roundNumber);
+      setHoveredRoundRect({
+        left: first
+          ? rect.left
+          : last
+            ? rect.right
+            : rect.left + rect.width / 2,
+        top: rect.top,
+        align: first ? 'start' : last ? 'end' : 'center',
       });
-  };
+      loadRoundPreview(roundNumber);
+    },
+    [keepRoundPreviewOpen, replayRounds, loadRoundPreview],
+  );
+  const roundNoteCounts = useMemo(() => {
+    const counts = new Map<number, number>();
+    for (const note of replayNotes)
+      counts.set(note.round, (counts.get(note.round) ?? 0) + 1);
+    return counts;
+  }, [replayNotes]);
   useEffect(() => {
-    if (!detail) return;
+    if (!detail || playing) return;
     let cancelled = false;
     const rounds = detail.rounds
       .filter((item) => item.number > 0 && item.number !== number)
@@ -1128,7 +1371,7 @@ export default function ReplayPage() {
     return () => {
       cancelled = true;
     };
-  }, [detail, number]);
+  }, [detail, number, playing]);
   const scrollRoundRail = (direction: -1 | 1) => {
     roundRailRef.current?.scrollBy({
       left:
@@ -1324,107 +1567,14 @@ export default function ReplayPage() {
                   <ChevronLeft size={14} />
                 </button>
                 <div className="replay-round-rail-list" ref={roundRailRef}>
-                  {replayRounds.map((item, index) => {
-                    const noteCount = replayNotes.filter(
-                      (note) => note.round === item.number,
-                    ).length;
-                    const winner = roundWinnerClass(item.winner_side);
-                    const endingScore = replayEndScores[item.number] ?? {
-                      t: item.score_t,
-                      ct: item.score_ct,
-                    };
-                    // Scores are recorded at round start, before its winner is added.
-                    const playedBefore = item.score_t + item.score_ct;
-                    const sideSwitch =
-                      index > 0 &&
-                      (playedBefore === 12 ||
-                        (playedBefore >= 24 && (playedBefore - 24) % 3 === 0));
-                    const switchTitle =
-                      playedBefore === 12
-                        ? tr('Side switch (halftime)', 'Смена сторон (перерыв)')
-                        : tr('Overtime side switch', 'Смена сторон (допы)');
-                    return (
-                      <Fragment key={item.number}>
-                        {sideSwitch && (
-                          <div
-                            className="replay-round-rail-switch"
-                            role="separator"
-                            aria-orientation="vertical"
-                            aria-label={switchTitle}
-                            data-tip={switchTitle}
-                          >
-                            <ArrowLeftRight size={12} aria-hidden="true" />
-                          </div>
-                        )}
-                        <button
-                          type="button"
-                          className={`${item.number === number ? 'active' : ''} ${winner}`}
-                          onClick={() => changeRound(item.number)}
-                          onMouseEnter={(event) => {
-                            keepRoundPreviewOpen();
-                            const rect =
-                              event.currentTarget.getBoundingClientRect();
-                            setHoveredRound(item.number);
-                            const first =
-                              item.number === replayRounds[0]?.number;
-                            const last =
-                              item.number ===
-                              replayRounds[replayRounds.length - 1]?.number;
-                            setHoveredRoundRect({
-                              left: first
-                                ? rect.left
-                                : last
-                                  ? rect.right
-                                  : rect.left + rect.width / 2,
-                              top: rect.top,
-                              align: first ? 'start' : last ? 'end' : 'center',
-                            });
-                            loadRoundPreview(item.number);
-                          }}
-                          onMouseLeave={closeRoundPreview}
-                          onFocus={(event) => {
-                            keepRoundPreviewOpen();
-                            const rect =
-                              event.currentTarget.getBoundingClientRect();
-                            setHoveredRound(item.number);
-                            const first =
-                              item.number === replayRounds[0]?.number;
-                            const last =
-                              item.number ===
-                              replayRounds[replayRounds.length - 1]?.number;
-                            setHoveredRoundRect({
-                              left: first
-                                ? rect.left
-                                : last
-                                  ? rect.right
-                                  : rect.left + rect.width / 2,
-                              top: rect.top,
-                              align: first ? 'start' : last ? 'end' : 'center',
-                            });
-                            loadRoundPreview(item.number);
-                          }}
-                          onBlur={closeRoundPreview}
-                          aria-current={
-                            item.number === number ? 'true' : undefined
-                          }
-                          aria-label={`${tr('Round', 'Раунд')} ${item.number}, ${endingScore.t}:${endingScore.ct}${noteCount ? `, ${tr('Notes', 'Заметки')}: ${noteCount}` : ''}`}
-                        >
-                          <span>R{item.number}</span>
-                          {noteCount > 0 && (
-                            <StickyNote
-                              className="replay-round-note-badge"
-                              size={10}
-                              aria-hidden="true"
-                              data-tip={`${tr('Notes', 'Заметки')}: ${noteCount}`}
-                            />
-                          )}
-                          <strong>
-                            {endingScore.t}:{endingScore.ct}
-                          </strong>
-                        </button>
-                      </Fragment>
-                    );
-                  })}
+                  <RoundRailCards
+                    rounds={replayRounds}
+                    number={number}
+                    noteCounts={roundNoteCounts}
+                    onChange={changeRound}
+                    onPreview={previewRound}
+                    onClose={closeRoundPreview}
+                  />
                 </div>
                 <button
                   type="button"
@@ -1679,7 +1829,7 @@ export default function ReplayPage() {
           {round ? (
             <>
               <div className="replay-stage">
-                <aside className="replay-rosters">
+                <aside className="replay-rosters" ref={setRosterElement}>
                   <Team
                     side="T"
                     players={players.filter((p) => p.side === 'T')}
@@ -1914,79 +2064,14 @@ export default function ReplayPage() {
                       </div>
                     </section>
                   ) : null}
-                  <section className="replay-throws">
-                    <h2>
-                      <span>
-                        <Crosshair size={13} />
-                        {tr('Grenades', 'Гранаты')}
-                      </span>
-                      <small className="replay-count">
-                        {round.grenades.length}
-                      </small>
-                    </h2>
-                    {round.grenades.map((g) => (
-                      <div className="replay-throw-row" key={g.id}>
-                        <button
-                          className={`replay-throw ${selected?.id === g.id ? 'active' : ''}`}
-                          onClick={() => {
-                            setSelected(g);
-                            seek(grenadeTrajectoryTick(g));
-                            setPlaying(false);
-                          }}
-                        >
-                          <span
-                            className={`replay-nade-icon type-${g.data.grenade_type.toLowerCase().replace(/ /g, '-')}`}
-                          >
-                            <GrenadeMapIcon grenadeType={g.data.grenade_type} />
-                          </span>
-                          <span>
-                            <strong>{g.data.thrower}</strong>
-                            <small>
-                              {grenadeLabel(g.data.grenade_type, locale)}
-                            </small>
-                          </span>
-                          <time
-                            data-tip={
-                              grenadeHasBombTimer(g)
-                                ? tr(
-                                    'Bomb timer at throw',
-                                    'Таймер бомбы при броске',
-                                  )
-                                : tr('Round time', 'Время раунда')
-                            }
-                          >
-                            {grenadeTime(g)}
-                          </time>
-                        </button>
-                        <button
-                          type="button"
-                          className={`copy-action replay-throw-copy ${copiedId === g.id ? 'copied' : ''}`}
-                          onClick={() => void copyGrenadeCoordinates(g)}
-                          disabled={!g.data.coordinates}
-                          aria-label={tr(
-                            'Copy grenade coordinates',
-                            'Копировать координаты гранаты',
-                          )}
-                          data-tip={
-                            copiedId === g.id
-                              ? tr('Copied', 'Скопировано')
-                              : tr('Copy coordinates', 'Копировать координаты')
-                          }
-                        >
-                          {copiedId === g.id ? (
-                            <Check className="copy-action-icon" size={13} />
-                          ) : (
-                            <Copy className="copy-action-icon" size={13} />
-                          )}
-                          <span className="sr-only">
-                            {copiedId === g.id
-                              ? tr('Copied', 'Скопировано')
-                              : tr('Copy', 'Копировать')}
-                          </span>
-                        </button>
-                      </div>
-                    ))}
-                  </section>
+                  <ReplayThrows
+                    grenades={round.grenades}
+                    selectedId={selected?.id}
+                    copiedId={copiedId}
+                    times={grenadeTimes}
+                    onSelect={selectThrow}
+                    onCopy={copyGrenadeCoordinates}
+                  />
                   <section className="replay-events">
                     <h2>
                       <span>
@@ -2066,11 +2151,7 @@ export default function ReplayPage() {
                   events={events}
                   grenades={round.grenades}
                   grenadeTick={grenadeTrajectoryTick}
-                  onGrenadeSelect={(grenade) => {
-                    setSelected(grenade);
-                    seek(grenadeTrajectoryTick(grenade));
-                    setPlaying(false);
-                  }}
+                  onGrenadeSelect={selectThrow}
                   zoomPortalTarget={timelineZoomTarget}
                   onSeek={seek}
                   showFreezeTime={showFreezeTime}

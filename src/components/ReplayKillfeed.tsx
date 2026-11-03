@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useI18n } from '../i18n';
 import { playersAt } from '../lib/replayPlayback';
 import { deathNoticeIcon } from '../lib/deathNoticeIcons';
 import { weaponIcon } from '../lib/weaponIcons';
+import { onReplayAnimationFrame } from '../lib/replayAnimation';
 import {
   killfeedOpacity,
   killNotices,
@@ -27,17 +28,8 @@ export default function ReplayKillfeed({
   playing,
 }: Props) {
   const { tr } = useI18n();
-  const [liveTick, setLiveTick] = useState(tick);
-  useEffect(() => {
-    if (!playing) return;
-    let raf = 0;
-    const update = () => {
-      setLiveTick(clock.current);
-      raf = requestAnimationFrame(update);
-    };
-    raf = requestAnimationFrame(update);
-    return () => cancelAnimationFrame(raf);
-  }, [playing, clock]);
+  const rowElements = useRef(new Map<string, HTMLDivElement>());
+  const [visibleKeys, setVisibleKeys] = useState<string[]>([]);
   const rows = useMemo(() => {
     const kills = round.events.filter((event) => event.type === 'kill');
     const damage = round.events.filter((event) => event.type === 'damage');
@@ -62,10 +54,39 @@ export default function ReplayKillfeed({
       };
     });
   }, [round]);
-  const current = playing ? liveTick : tick;
+  const current = playing ? clock.current : tick;
   const visible = rows
     .filter(({ event }) => killfeedOpacity(event.tick, current, tickrate) > 0)
     .slice(-KILLFEED_MAX_ROWS);
+  const lastVisibleKeys = useRef(visibleKeys);
+  useLayoutEffect(() => {
+    const update = () => {
+      const current = playing ? clock.current : tick;
+      const activeRows = rows
+        .filter(
+          ({ event }) => killfeedOpacity(event.tick, current, tickrate) > 0,
+        )
+        .slice(-KILLFEED_MAX_ROWS);
+      const keys = activeRows.map((row) => row.key);
+      if (
+        keys.length !== lastVisibleKeys.current.length ||
+        keys.some((key, index) => key !== lastVisibleKeys.current[index])
+      ) {
+        lastVisibleKeys.current = keys;
+        setVisibleKeys(keys);
+      }
+      // Only membership needs a React render. The short fade follows demo
+      // time directly, including speed changes, pauses and backward seeks.
+      for (const { event, key } of activeRows) {
+        const element = rowElements.current.get(key);
+        const opacity = String(killfeedOpacity(event.tick, current, tickrate));
+        if (element && element.style.opacity !== opacity)
+          element.style.opacity = opacity;
+      }
+    };
+    update();
+    if (playing) return onReplayAnimationFrame(update);
+  }, [playing, clock, rows, tick, tickrate]);
 
   return (
     <div className="replay-killfeed" aria-label={tr('Kill feed', 'Киллчат')}>
@@ -74,6 +95,10 @@ export default function ReplayKillfeed({
           <div
             className="replay-killfeed-row"
             key={key}
+            ref={(element) => {
+              if (element) rowElements.current.set(key, element);
+              else rowElements.current.delete(key);
+            }}
             data-tick={event.tick}
             style={{ opacity: killfeedOpacity(event.tick, current, tickrate) }}
           >
