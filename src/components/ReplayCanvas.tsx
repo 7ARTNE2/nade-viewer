@@ -863,7 +863,7 @@ export default function ReplayCanvas({
         ctx.shadowColor = '#080b0f';
         ctx.shadowBlur = 4;
         if (icon?.complete && icon.naturalWidth > 0) {
-          const scale = 22 / Math.max(icon.naturalWidth, icon.naturalHeight);
+          const scale = 19 / Math.max(icon.naturalWidth, icon.naturalHeight);
           const w = icon.naturalWidth * scale,
             h = icon.naturalHeight * scale;
           ctx.drawImage(icon, x - w / 2, y - h / 2, w, h);

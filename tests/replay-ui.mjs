@@ -188,7 +188,7 @@ try {
       window.CanvasRenderingContext2D.prototype.drawImage = function (...args) {
         if (
           args.length === 5 &&
-          Math.abs(Math.max(args[3], args[4]) - 22) < 0.01
+          Math.abs(Math.max(args[3], args[4]) - 19) < 0.01
         )
           window.__replayGrenadeIcons.push(args[0].src);
         if (args[0].src?.includes('_radar_') && args[0].naturalWidth > 0) {
