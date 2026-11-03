@@ -7,7 +7,25 @@ can download a MessagePack snapshot from a configured HTTPS URL and verify its d
 It also replays local CS2 demos on a 2D radar and saves round-linked text and
 drawing notes for reviewing matches.
 
-Current application version: **0.7.1**.
+Current application version: **0.7.2**.
+
+## What's new in 0.7.2
+
+- Replay uses one shared 60 FPS animation loop for the playback clock, radars,
+  timeline, and killfeed. Cached flame effects and nameplate backgrounds reduce
+  repeated canvas work; round decompression runs off Tauri's window thread.
+  Background round-preview preloading pauses during playback.
+- The player roster fills the available height on Full HD displays, shows
+  K-D-A, and keeps weapon images clear of their ammunition counts. Its adaptive
+  sizes update on pane resize, avoiding repeated container-query style work.
+- The horizontal round strip marks CS2 MR12/MR3 side switches, including
+  overtime. Markers use the score before each round, so a knife round does not
+  shift them.
+- Round previews omit freeze-time events and allow scrolling through long
+  event lists. English and Russian tooltips describe the side-switch markers.
+- Flying grenade icons are a compact 19 px. Smoke countdowns use Orbitron and
+  fit their smoke radius as the radar zoom changes. Replay headings and key
+  numbers use Orbitron while player names retain the regular interface font.
 
 ## What's new in 0.7.1
 
@@ -69,8 +87,15 @@ lower on the right, each with independent zoom and pan. The layout stays side
 by side at every window width. Vertigo retains its upper/lower radar switch.
 
 Replay samples default to **16 frames per second**, every four ticks for a
-64-tick demo, with interpolated rendering. Grenade detection runs on every demo
-tick through the same collector as the existing grenade export.
+64-tick demo, with interpolated rendering targeting **60 frames per second**.
+Rendering remains capped at 60 FPS on higher-refresh displays; playback speed
+changes demo time, not that limit. Grenade detection runs on every demo tick
+through the same collector as the existing grenade export.
+
+The roster shows each player's kills, deaths, assists, health, armor, money,
+equipment, active weapon, and ammunition. On sufficiently tall windows, both
+teams share the available pane height; smaller windows keep the roster
+scrollable. Smoke countdown text scales to the visible smoke radius.
 
 Parsed matches are stored locally in a separate `replays.sqlite` database, with
 compressed round data loaded as needed. Saved matches remain playable without
@@ -81,7 +106,14 @@ Replay does not automatically import grenades into a library or Favorites.
 #### Playback and previews
 
 Use the horizontal round strip to select rounds and preview their events on
-hover. Timeline previews show kills, damage and flash assists, grenade throws,
+hover. Round previews omit freeze-time events and scroll when the event list
+exceeds the preview height. Noninteractive side-switch markers separate rounds
+after 12 played rounds, before overtime after 24, and every three rounds
+thereafter (27, 30, 33, ...). Boundaries use the score at round start rather
+than card numbers, so a knife round does not offset them; no marker precedes
+the first available card.
+
+Timeline previews show kills, damage and flash assists, grenade throws,
 and bomb events. Grenade icons on the radar follow their trajectories and use
 the same type colors as the timeline. Selecting a grenade exposes its throw
 details and copyable commands.
@@ -220,7 +252,7 @@ limitations are documented in [Data formats](docs/data-formats.md).
 ## Technology stack
 
 Versions below are the resolved versions from `package-lock.json` and
-`src-tauri/Cargo.lock` for Nade Viewer 0.7.1.
+`src-tauri/Cargo.lock` for Nade Viewer 0.7.2.
 
 ### Application architecture
 
@@ -321,6 +353,8 @@ npm run tauri:dev
 
 `npm run dev` starts only the Vite frontend. Most application operations call
 Tauri commands, so use `npm run tauri:dev` for normal development.
+The desktop dev command starts Vite itself on port 1420; stop a separately
+started frontend server before running it.
 
 ## Build
 
@@ -364,8 +398,8 @@ for Viewer releases.
 Create and push a semantic-version tag from the repository root:
 
 ```powershell
-git tag -a v0.7.1 -m "Nade Viewer 0.7.1"
-git push --atomic origin main v0.7.1
+git tag -a v0.7.2 -m "Nade Viewer 0.7.2"
+git push --atomic origin main v0.7.2
 ```
 
 Pushing the tag starts the `Release` workflow automatically. It builds the
@@ -485,7 +519,7 @@ To rebuild an existing tag without creating a new one:
 1. Open the repository's `Actions` tab on GitHub.
 2. Select the `Release` workflow.
 3. Click `Run workflow`.
-4. Enter an existing tag, for example `v0.7.1`.
+4. Enter an existing tag, for example `v0.7.2`.
 5. Click `Run workflow` again.
 
 The manual workflow also requires a tag in the `vMAJOR.MINOR.PATCH` format,
@@ -528,6 +562,10 @@ npm test
 and mocked Tauri IPC. Install the test browser once with `npx playwright install chromium`.
 Run just these regressions with `npm run test:replay`; an existing Chromium binary
 can be selected with `NADE_VIEWER_TEST_BROWSER_PATH`.
+The replay checks cover shared animation scheduling at simulated 60, 120, 144,
+165, and 240 Hz, clock-before-render ordering, and the Full HD roster layout.
+These deterministic checks do not measure native WebView2 presentation or GPU
+frame times; investigate reported stutter in the desktop app as well.
 
 Replay regressions cover playback and round navigation, five-second keyboard
 seeks and speed changes, killfeed lifetime and fading, kill and grenade previews,
@@ -735,6 +773,21 @@ native toolchain is not visible in the current shell.
 
 Install or repair the Microsoft Edge WebView2 Runtime, then rerun
 `npm run tauri:dev`.
+
+### Development fails because port 1420 is already in use
+
+`npm run tauri:dev` starts its own Vite server. Stop an earlier `npm run dev`
+or `tauri:dev` session with Ctrl+C in its terminal, then run the desktop command
+again. To identify a leftover listener in PowerShell:
+
+```powershell
+Get-NetTCPConnection -LocalPort 1420 -State Listen |
+  Select-Object LocalPort, OwningProcess
+Get-Process -Id <OwningProcess>
+```
+
+Stop only the confirmed leftover development server. Keep port 1420 in sync
+with the Tauri dev URL and development CSP if changing the configuration.
 
 ## Limitations
 
