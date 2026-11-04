@@ -1,0 +1,90 @@
+# Nade Parser Plugin
+
+Independent source copy of the Nadegrid Go parser. Building does not require
+the Nadegrid checkout. The executable is distributed separately from Viewer.
+
+Build from this directory with Go 1.25 or newer:
+
+```powershell
+go test ./...
+go build -o nade-parser.exe ./cmd/nade-parser
+```
+
+Protocol:
+
+```text
+nade-parser.exe --plugin-info
+nade-parser.exe --parse --demo match.dem --output result.json
+nade-parser.exe --replay --demo match.dem --output replay.ndjson
+```
+
+Nade Parser 0.3.0 advertises the `replay_v1` capability. Replay is collected in
+one demoinfocs pass with the same grenade collector as `--parse`; grenade
+selection, throw keys, lineup coordinates, complete trajectories and airtime
+are shared. `--sample-fps` defaults to 16 (one sample every four ticks at 64 Hz)
+and affects only replay frames, not grenade detection. Playback interpolates
+between samples.
+
+Replay output is NDJSON, format `nadeviewer_replay`, version 1. Records are
+`metadata`, `round` (frames and events), `grenade` (a finalized canonical throw
+with its round, projectile ID and actual release tick), and `complete`.
+Grenades can finalize after their round record; consumers must attach them by
+`round_number`. Round 0 represents pre-round footage. The existing canonical
+`throw_tick` retains its lineup preparation semantics; `release_tick` identifies
+the actual projectile creation. All 64-bit IDs in replay are decimal strings.
+Unexpected end-of-demo follows the canonical parser's recovery policy and marks
+the completed replay `incomplete`; other failures exit nonzero. `--output -`
+streams records on stdout, with diagnostics on stderr.
+
+Optional local integration checks:
+
+```powershell
+$env:NADE_REPLAY_DEMO = 'F:\Dev\newdemos\match.dem'
+go test ./pkg/parser -run TestReplayGrenadesMatchCanonical -count=1
+```
+
+`NADE_REPLAY_BASELINE` can additionally point to a pre-refactor canonical JSON
+export. The check compares every grenade field and trajectory point at 1 and
+16 FPS and checks the four-tick cadence for 64-tick demos. Demo files and
+generated outputs are not committed.
+
+The output contains version 1 canonical_grenades with the trajectory data used by Nade Viewer.
+Each parsed throw also carries a `usage_events` entry with its demo, tick, player,
+SteamID64, and team. Viewer combines these events when it deduplicates lineups;
+reparse older exports to populate the full usage snapshot.
+
+`airtime` measures demo time from projectile creation to activation (HE, flash,
+smoke or decoy), or actual projectile entity deletion for molotov/incendiary,
+matching MatchZy's event choices. Jump lineup corrections do not affect airtime.
+Unobserved activations have no airtime value; entity cleanup and smoke lifetime
+are not used as fallbacks. Decoys are excluded from canonical grenade exports.
+Existing exports must be reparsed to update airtime.
+
+The CLI sorts parsed throws deterministically by throw tick and projectile entity
+ID, with a serialized-record fallback for exact ties. The CLI does not
+deduplicate throws. Tools optionally applies Viewer Rust deduplication to the
+combined output before publishing it.
+
+Tools accepts a single `.dem` file or multiple folders through a native
+multi-folder picker. Selected paths can be removed before starting. Folder
+discovery is recursive, case-insensitive for `.dem`, sorted by canonical path,
+and deduplicates overlapping paths (including canonical aliases). Directory
+cycles are visited only once. Non-demo files inside folders are ignored;
+missing inputs, unreadable entries, invalid explicit files and empty selections
+fail explicitly. Hard-linked files with distinct canonical paths remain distinct.
+
+Viewer invokes this CLI once per file with separate process arguments, never
+a shell or the Go directory parser (which can swallow per-file failures).
+Up to four CLI processes run concurrently by default. Set
+`NADE_PARSER_MAX_WORKERS=1..8` before launching Viewer to override that limit;
+`1` restores serial execution. Results are committed to the parser workspace by
+a single SQLite writer; exports use stable demo-path ordering regardless of
+worker completion order. Progress reports scanning, completed demos among the
+selected files / total, and finalization. Unchanged demos count immediately;
+new demos count after each successful workspace commit. The workspace demo
+total also includes previous runs. Only one batch job runs at a time. Any
+subprocess, JSON, metadata conflict or write failure aborts the job and
+cleans temporary spool files. Errors identify the failing demo where applicable.
+Canonical grenade objects and compatible root metadata are preserved while
+combining results. JSON/MessagePack export and explicit Viewer import use that
+same combined result. No valid demo fixture is bundled for end-to-end parsing.

@@ -10,7 +10,8 @@ struct ParserEnvelope {
 
 pub(crate) fn open(path: &Path) -> rusqlite::Result<Connection> {
     let c = Connection::open(path)?;
-    c.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA temp_store=MEMORY; PRAGMA cache_size=-65536; PRAGMA busy_timeout=5000; CREATE TABLE IF NOT EXISTS demos(path TEXT PRIMARY KEY, size INTEGER NOT NULL, modified INTEGER NOT NULL, status TEXT NOT NULL, error TEXT); CREATE TABLE IF NOT EXISTS throws(id INTEGER PRIMARY KEY, demo_path TEXT NOT NULL, ordinal INTEGER NOT NULL, raw_json TEXT NOT NULL, map TEXT, side TEXT, grenade_type TEXT, throw_keys TEXT, start_x REAL, start_y REAL, start_z REAL, explode_x REAL, explode_y REAL, explode_z REAL); CREATE INDEX IF NOT EXISTS throws_demo_ordinal ON throws(demo_path,ordinal); CREATE INDEX IF NOT EXISTS throws_lookup ON throws(map,side,grenade_type,throw_keys); CREATE INDEX IF NOT EXISTS throws_start ON throws(start_x,start_y,start_z); CREATE TABLE IF NOT EXISTS dedup(run INTEGER NOT NULL, ordinal INTEGER NOT NULL, raw_json TEXT NOT NULL, PRIMARY KEY(run,ordinal));")?;
+    c.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA temp_store=MEMORY; PRAGMA cache_size=-65536; PRAGMA busy_timeout=5000; CREATE TABLE IF NOT EXISTS demos(path TEXT PRIMARY KEY, size INTEGER NOT NULL, modified INTEGER NOT NULL, status TEXT NOT NULL, error TEXT, parser_profile TEXT NOT NULL DEFAULT 'v5'); CREATE TABLE IF NOT EXISTS throws(id INTEGER PRIMARY KEY, demo_path TEXT NOT NULL, ordinal INTEGER NOT NULL, raw_json TEXT NOT NULL, map TEXT, side TEXT, grenade_type TEXT, throw_keys TEXT, start_x REAL, start_y REAL, start_z REAL, explode_x REAL, explode_y REAL, explode_z REAL); CREATE INDEX IF NOT EXISTS throws_demo_ordinal ON throws(demo_path,ordinal); CREATE INDEX IF NOT EXISTS throws_lookup ON throws(map,side,grenade_type,throw_keys); CREATE INDEX IF NOT EXISTS throws_start ON throws(start_x,start_y,start_z); CREATE TABLE IF NOT EXISTS dedup(run INTEGER NOT NULL, ordinal INTEGER NOT NULL, raw_json TEXT NOT NULL, PRIMARY KEY(run,ordinal));")?;
+    let _ = c.execute("ALTER TABLE demos ADD COLUMN parser_profile TEXT NOT NULL DEFAULT 'v5'", []);
     Ok(c)
 }
 
@@ -57,9 +58,27 @@ pub(crate) fn import_demo_file(
     modified: i64,
     output_path: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    import_demo_file_profile(c, path, size, modified, output_path, "v5")
+}
+
+pub(crate) fn import_demo_file_profile(
+    c: &mut Connection,
+    path: &str,
+    size: u64,
+    modified: i64,
+    output_path: &Path,
+    profile: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
     let file = std::fs::File::open(output_path)?;
     let envelope: ParserEnvelope = serde_json::from_reader(BufReader::new(file))?;
-    import_demo(c, path, size, modified, &envelope.canonical_grenades)?;
+    let tx = c.transaction()?;
+    tx.execute("DELETE FROM throws WHERE demo_path=?", [path])?;
+    tx.execute("DELETE FROM dedup", [])?;
+    tx.execute("INSERT INTO demos(path,size,modified,status,error,parser_profile) VALUES(?,?,?,'ok',NULL,?) ON CONFLICT(path) DO UPDATE SET size=excluded.size,modified=excluded.modified,status='ok',error=NULL,parser_profile=excluded.parser_profile", params![path,size as i64,modified,profile])?;
+    let mut insert = tx.prepare_cached("INSERT INTO throws(demo_path,ordinal,raw_json,map,side,grenade_type,throw_keys,start_x,start_y,start_z,explode_x,explode_y,explode_z) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)")?;
+    for (ordinal, v) in envelope.canonical_grenades.iter().enumerate() { let p = |n: &str| v.get(n).and_then(Value::as_f64); insert.execute(params![path,ordinal as i64,serde_json::to_string(v).unwrap(),v.get("map").and_then(Value::as_str),v.get("side").and_then(Value::as_str),v.get("grenade_type").and_then(Value::as_str),v.get("throw_keys").and_then(Value::as_str),p("start_pos_x"),p("start_pos_y"),p("start_pos_z"),p("explode_pos_x"),p("explode_pos_y"),p("explode_pos_z")])?; }
+    drop(insert);
+    tx.commit()?;
     Ok(())
 }
 
@@ -128,9 +147,19 @@ pub(crate) fn unchanged(
     size: u64,
     modified: i64,
 ) -> rusqlite::Result<bool> {
+    unchanged_for_profile(c, path, size, modified, "v5")
+}
+
+pub(crate) fn unchanged_for_profile(
+    c: &Connection,
+    path: &str,
+    size: u64,
+    modified: i64,
+    profile: &str,
+) -> rusqlite::Result<bool> {
     c.query_row(
-        "SELECT count(*) FROM demos WHERE path=? AND size=? AND modified=? AND status='ok'",
-        params![path, size as i64, modified],
+        "SELECT count(*) FROM demos WHERE path=? AND size=? AND modified=? AND status='ok' AND parser_profile=?",
+        params![path, size as i64, modified, profile],
         |r| r.get::<_, i64>(0),
     )
     .map(|n| n > 0)

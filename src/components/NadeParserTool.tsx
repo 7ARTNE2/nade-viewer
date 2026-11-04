@@ -31,6 +31,7 @@ import { useI18n } from '../i18n';
 import DestructiveConfirmDialog from './DestructiveConfirmDialog';
 import WorkersSelect from './WorkersSelect';
 import ParserWorkspaceSelect from './ParserWorkspaceSelect';
+import ParserProfileSelect, { type ParserProfileOption } from './ParserProfileSelect';
 
 type Props = { refreshImports?: () => Promise<void> };
 type Status = {
@@ -82,6 +83,8 @@ function formatDataRate(bytesPerSecond: number) {
 export default function NadeParserTool({ refreshImports }: Props) {
   const { tr } = useI18n();
   const [installed, setInstalled] = useState(false);
+  const [parserProfile, setParserProfile] = useState<'v5' | 'v6'>('v6');
+  const [profiles, setProfiles] = useState<ParserProfileOption[]>([]);
   const [status, setStatus] = useState<Status>({
     running: false,
     stage: 'idle',
@@ -114,14 +117,15 @@ export default function NadeParserTool({ refreshImports }: Props) {
   const countedCompletedRef = useRef(0);
   const installButtonRef = useRef<HTMLButtonElement>(null);
   const refresh = async () => {
-    const info = await invoke<{ installed: boolean }>('get_nade_parser_info');
-    setInstalled(info.installed);
     setStatus(await invoke<Status>('get_nade_parser_status'));
     const catalog = await invoke<WorkspaceCatalog>('get_parser_workspaces');
     setWorkspace(catalog.active);
     setWorkspaces(catalog.workspaces);
     const active = catalog.workspaces.find((entry) => entry.active);
     setCounts(active?.counts ?? [0, 0, 0]);
+    const nextProfiles = await invoke<ParserProfileOption[]>('get_parser_profiles');
+    setProfiles(nextProfiles);
+    setInstalled(nextProfiles.find((profile) => profile.id === parserProfile)?.installed ?? false);
   };
   useEffect(() => {
     refresh().catch((e) => setError(String(e)));
@@ -223,7 +227,7 @@ export default function NadeParserTool({ refreshImports }: Props) {
     setMessage('');
     try {
       if (confirmation === 'uninstall') {
-        await invoke('uninstall_nade_parser');
+        await invoke('uninstall_parser_profile', { profile: parserProfile });
       } else if (confirmation === 'clear') {
         await invoke('clear_parser_workspace', { confirmed: true });
       } else if (confirmation === 'production-run') {
@@ -232,6 +236,7 @@ export default function NadeParserTool({ refreshImports }: Props) {
           deduplicate: dedup,
           workers,
           confirmed: true,
+          profile: parserProfile,
         });
         setStatus(await invoke<Status>('get_nade_parser_status'));
       } else {
@@ -360,18 +365,19 @@ export default function NadeParserTool({ refreshImports }: Props) {
           </p>
         </div>
         <div className="tools-plugin-controls">
+          <ParserProfileSelect value={parserProfile} profiles={profiles} disabled={locked} onChange={(next) => { setParserProfile(next); setInstalled(profiles.find((profile) => profile.id === next)?.installed ?? false); }} />
           <button
             ref={installButtonRef}
             className={`btn ${installed ? '' : 'primary'}`}
             disabled={locked}
             onClick={() =>
               void action(async () => {
-                await invoke('install_nade_parser');
+                await invoke('install_parser_profile', { profile: parserProfile });
                 await refresh();
                 setMessage(
                   tr(
-                    installed ? 'Plugin reinstalled.' : 'Plugin installed.',
-                    installed ? 'Плагин переустановлен.' : 'Плагин установлен.',
+                    installed ? 'Parser reinstalled.' : 'Parser installed.',
+                    installed ? 'Парсер переустановлен.' : 'Парсер установлен.',
                   ),
                 );
               })
@@ -684,6 +690,7 @@ export default function NadeParserTool({ refreshImports }: Props) {
                           deduplicate: dedup,
                           workers,
                           confirmed: false,
+                          profile: parserProfile,
                         });
                         const nextStatus = await invoke<Status>(
                           'get_nade_parser_status',

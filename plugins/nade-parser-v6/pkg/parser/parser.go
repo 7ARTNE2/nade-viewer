@@ -1,0 +1,940 @@
+package parser
+
+import (
+	"fmt"
+	"math"
+	"nadesoulpars-v6/pkg/models"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/golang/geo/r3"
+	demoinfocs "github.com/markus-wa/demoinfocs-golang/v6/pkg/demoinfocs"
+	"github.com/markus-wa/demoinfocs-golang/v6/pkg/demoinfocs/common"
+)
+
+// DemoParser представляет парсер для одного демофайла
+type DemoParser struct {
+	filePath             string
+	fileName             string
+	options              OutputOptions
+	grenades             []*models.ParsedGrenade
+	currentRound         int
+	tickRate             float64
+	mapName              string
+	team1                string
+	team2                string
+	roundActionStartTick int
+	roundDurationSeconds float64
+
+	// Для отслеживания кнопок и позиций игроков. Кольцевой буфер исключает
+	// копирование полной 700-тиковой истории на каждом кадре.
+	playerAttackHistory   map[int]*historyRing[uint64]
+	playerPositionHistory map[int]*historyRing[PositionSnapshot]
+}
+
+type OutputOptions struct {
+	IncludeThrowerSteamID64   bool
+	IncludeThrowerEntityID    bool
+	IncludeProjectileEntityID bool
+}
+
+func DefaultOutputOptions() OutputOptions {
+	return OutputOptions{
+		IncludeThrowerSteamID64:   true,
+		IncludeThrowerEntityID:    true,
+		IncludeProjectileEntityID: true,
+	}
+}
+
+// История кнопок за 700 тиков (~11 секунд), чтобы захватывать длинное движение до броска.
+const attackHistorySize = 700
+
+type PositionSnapshot struct {
+	Tick     int
+	Position r3.Vector
+	Pitch    float64
+	Yaw      float64
+}
+
+// historyRing stores a fixed number of recent values without reallocating or
+// copying the entire history for every parsed frame.
+type historyRing[T any] struct {
+	values []T
+	start  int
+	len    int
+}
+
+func newHistoryRing[T any]() *historyRing[T] {
+	return &historyRing[T]{values: make([]T, attackHistorySize)}
+}
+
+func (h *historyRing[T]) push(value T) {
+	if h.len < attackHistorySize {
+		h.values[(h.start+h.len)%attackHistorySize] = value
+		h.len++
+		return
+	}
+
+	h.values[h.start] = value
+	h.start = (h.start + 1) % attackHistorySize
+}
+
+func (h *historyRing[T]) snapshotWith(value T) []T {
+	length := h.len + 1
+	if length > attackHistorySize {
+		length = attackHistorySize
+	}
+
+	out := make([]T, length)
+	if h.len == 0 {
+		out[0] = value
+		return out
+	}
+
+	if h.len < attackHistorySize {
+		copy(out, h.values[:h.len])
+	} else {
+		// snapshotWith is an append operation: retain the newest 699 stored
+		// values and reserve the last slot for the current event/frame value.
+		for i := 0; i < attackHistorySize-1; i++ {
+			out[i] = h.values[(h.start+1+i)%attackHistorySize]
+		}
+	}
+	out[length-1] = value
+	return out
+}
+
+func historyFor[T any](histories map[int]*historyRing[T], id int) *historyRing[T] {
+	if history := histories[id]; history != nil {
+		return history
+	}
+
+	history := newHistoryRing[T]()
+	histories[id] = history
+	return history
+}
+
+func lastPositionSnapshot(histories map[int]*historyRing[PositionSnapshot], id int) PositionSnapshot {
+	history := histories[id]
+	if history == nil || history.len == 0 {
+		return PositionSnapshot{}
+	}
+	return history.values[(history.start+history.len-1)%attackHistorySize]
+}
+
+type LineupOrigin struct {
+	Position models.TrajectoryPoint
+}
+
+const duckRecentWindowTicks = 5
+
+// NewDemoParser создаёт новый парсер для демофайла
+func NewDemoParser(filePath string) *DemoParser {
+	return NewDemoParserWithOptions(filePath, DefaultOutputOptions())
+}
+
+func NewDemoParserWithOptions(filePath string, options OutputOptions) *DemoParser {
+	return &DemoParser{
+		filePath:              filePath,
+		fileName:              filepath.Base(filePath),
+		options:               options,
+		grenades:              make([]*models.ParsedGrenade, 0),
+		playerAttackHistory:   make(map[int]*historyRing[uint64]),
+		playerPositionHistory: make(map[int]*historyRing[PositionSnapshot]),
+		roundActionStartTick:  -1,
+	}
+}
+
+// getThrowKeys формирует строку кнопок броска.
+func getThrowKeys(player *common.Player, attackHistory []uint64) string {
+	var parts []string
+
+	// Анализируем историю кнопок за последние 20 тиков
+	// Ищем нажатия LMB и RMB
+	var lmbPressed, rmbPressed bool
+	checkRecentTicks := 20
+	startIdx := len(attackHistory) - checkRecentTicks
+	if startIdx < 0 {
+		startIdx = 0
+	}
+	for i := startIdx; i < len(attackHistory); i++ {
+		buttons := attackHistory[i]
+		if (buttons & uint64(common.ButtonAttack)) != 0 {
+			lmbPressed = true
+		}
+		if (buttons & uint64(common.ButtonAttack2)) != 0 {
+			rmbPressed = true
+		}
+	}
+
+	// Определяем тип броска по истории нажатий
+	if lmbPressed && rmbPressed {
+		parts = append(parts, "LMB+RMB") // Средний бросок
+	} else if lmbPressed {
+		parts = append(parts, "LMB") // Дальний бросок
+	} else if rmbPressed {
+		parts = append(parts, "RMB") // Короткий бросок
+	} else {
+		// По умолчанию LMB
+		parts = append(parts, "LMB")
+	}
+
+	// Для обычных бросков считаем движением только непрерывный хвост кнопок у самого релиза.
+	// Для jump-throw ищем движение только до прыжка, чтобы пост-прыжковые коррекции
+	// вроде короткого нажатия S не ломали реальный lineup разбега.
+	var lastMoveButton string
+
+	checkRecentTicks = 20
+	startIdx = len(attackHistory) - checkRecentTicks
+	if startIdx < 0 {
+		startIdx = 0
+	}
+
+	moveSearchStart := startIdx
+	moveSearchEnd := len(attackHistory) - 1
+	lastJumpIdx := -1
+	for i := len(attackHistory) - 1; i >= startIdx; i-- {
+		if (attackHistory[i] & uint64(common.ButtonJump)) != 0 {
+			lastJumpIdx = i
+			moveSearchEnd = i
+			break
+		}
+	}
+
+	if lastJumpIdx == -1 {
+		// Ищем ЛЮБОЕ движение в последних 20 тиках, а не только непрерывный хвост
+		// Это нужно для случаев, когда W был отпущен за несколько тиков до броска
+		for i := len(attackHistory) - 1; i >= startIdx; i-- {
+			if hasMovementButton(attackHistory[i]) {
+				moveSearchStart = i
+				moveSearchEnd = i
+				break
+			}
+		}
+	}
+
+	for i := moveSearchEnd; i >= moveSearchStart; i-- {
+		buttons := attackHistory[i]
+
+		// Проверяем в порядке приоритета: W > A > S > D
+		if (buttons & uint64(common.ButtonForward)) != 0 {
+			lastMoveButton = "W"
+			break
+		}
+		if (buttons & uint64(common.ButtonMoveLeft)) != 0 {
+			lastMoveButton = "A"
+			break
+		}
+		if (buttons & uint64(common.ButtonBack)) != 0 {
+			lastMoveButton = "S"
+			break
+		}
+		if (buttons & uint64(common.ButtonMoveRight)) != 0 {
+			lastMoveButton = "D"
+			break
+		}
+	}
+
+	if lastMoveButton != "" {
+		parts = append(parts, lastMoveButton)
+	}
+
+	// Проверяем прыжок
+	if player.IsPressingButton(common.ButtonJump) || player.IsAirborne() {
+		parts = append(parts, "JUMP")
+	}
+
+	// Проверяем приседание только в узком окне у самого действия.
+	// Ранний duck во время наведения не должен попадать в описание броска.
+	var duckPressed bool
+	duckCheckEnd := len(attackHistory) - 1
+	if lastJumpIdx != -1 {
+		duckCheckEnd = lastJumpIdx
+	}
+	duckCheckStart := duckCheckEnd - duckRecentWindowTicks + 1
+	if duckCheckStart < startIdx {
+		duckCheckStart = startIdx
+	}
+	if duckCheckStart < 0 {
+		duckCheckStart = 0
+	}
+	for i := duckCheckStart; i <= duckCheckEnd && i < len(attackHistory); i++ {
+		buttons := attackHistory[i]
+		if (buttons & uint64(common.ButtonDuck)) != 0 {
+			duckPressed = true
+			break
+		}
+	}
+	if duckPressed {
+		parts = append(parts, "DUCK")
+	}
+
+	// Проверяем SHIFT по истории (только последние 20 тиков как для WASD)
+	var shiftPressed bool
+	shiftCheckStart := moveSearchStart
+	if shiftCheckStart < startIdx {
+		shiftCheckStart = startIdx
+	}
+	for i := shiftCheckStart; i <= moveSearchEnd && i < len(attackHistory); i++ {
+		buttons := attackHistory[i]
+		if (buttons & uint64(common.ButtonSpeed)) != 0 {
+			shiftPressed = true
+			break
+		}
+	}
+	// Добавляем SHIFT только если была кнопка движения
+	if shiftPressed && lastMoveButton != "" {
+		parts = append(parts, "SHIFT")
+	}
+
+	return strings.Join(parts, "+")
+}
+
+func hasMovementButton(buttons uint64) bool {
+	return (buttons&uint64(common.ButtonForward)) != 0 ||
+		(buttons&uint64(common.ButtonMoveLeft)) != 0 ||
+		(buttons&uint64(common.ButtonBack)) != 0 ||
+		(buttons&uint64(common.ButtonMoveRight)) != 0
+}
+
+func angleDeltaDegrees(a float64, b float64) float64 {
+	delta := math.Mod(b-a+180.0, 360.0)
+	if delta < 0 {
+		delta += 360.0
+	}
+	return delta - 180.0
+}
+
+func stripMovementModifiers(throwDesc string) string {
+	if throwDesc == "" {
+		return ""
+	}
+
+	parts := strings.Split(throwDesc, "+")
+	filtered := make([]string, 0, len(parts))
+	for _, part := range parts {
+		switch part {
+		case "W", "A", "S", "D":
+			continue
+		default:
+			filtered = append(filtered, part)
+		}
+	}
+
+	return strings.Join(filtered, "+")
+}
+
+func distanceBetween(a, b r3.Vector) float64 {
+	dx := a.X - b.X
+	dy := a.Y - b.Y
+	dz := a.Z - b.Z
+	return math.Sqrt(dx*dx + dy*dy + dz*dz)
+}
+
+func (p *DemoParser) updateRoundDurationSeconds(parser *demoinfocs.Parser) {
+	if p.roundDurationSeconds > 0 {
+		return
+	}
+
+	if parser == nil {
+		return
+	}
+
+	rules := parser.GameState().Rules()
+	if rules == nil {
+		return
+	}
+
+	if roundTime, err := rules.RoundTime(); err == nil && roundTime > 0 {
+		p.roundDurationSeconds = roundTime.Seconds()
+	}
+}
+
+func (p *DemoParser) currentRoundTimeSeconds(currentTick int) *float64 {
+	if p.roundActionStartTick < 0 || p.tickRate <= 0 || p.roundDurationSeconds <= 0 {
+		return nil
+	}
+
+	elapsedSeconds := float64(currentTick-p.roundActionStartTick) / p.tickRate
+	remainingSeconds := p.roundDurationSeconds - elapsedSeconds
+	if remainingSeconds < 0 {
+		remainingSeconds = 0
+	}
+
+	value := remainingSeconds
+	return &value
+}
+
+func hasThrowModifier(throwDesc string, modifier string) bool {
+	for _, part := range strings.Split(throwDesc, "+") {
+		if part == modifier {
+			return true
+		}
+	}
+	return false
+}
+
+func findStablePosIndexBeforeIndex(posHistory []PositionSnapshot, idx int) int {
+	if len(posHistory) == 0 {
+		return -1
+	}
+
+	if idx <= 0 {
+		return -1
+	}
+
+	if idx >= len(posHistory) {
+		idx = len(posHistory) - 1
+	}
+
+	const (
+		playerStopEps     = 0.1
+		stableTicksBefore = 3
+	)
+
+	for i := idx; i >= stableTicksBefore; i-- {
+		stable := true
+		for j := 0; j < stableTicksBefore; j++ {
+			if distanceBetween(posHistory[i-j].Position, posHistory[i-j-1].Position) > playerStopEps {
+				stable = false
+				break
+			}
+		}
+		if stable {
+			return i
+		}
+	}
+
+	return -1
+}
+
+func findStablePosBeforeIndex(posHistory []PositionSnapshot, idx int) *LineupOrigin {
+	stableIdx := findStablePosIndexBeforeIndex(posHistory, idx)
+	if stableIdx == -1 {
+		return nil
+	}
+
+	pos := posHistory[stableIdx]
+	return &LineupOrigin{
+		Position: models.TrajectoryPoint{
+			X: pos.Position.X,
+			Y: pos.Position.Y,
+			Z: pos.Position.Z,
+		},
+	}
+}
+
+func findStablePosInRange(posHistory []PositionSnapshot, startIdx int, endIdx int) *LineupOrigin {
+	if len(posHistory) == 0 || endIdx <= 0 {
+		return nil
+	}
+
+	if startIdx < 0 {
+		startIdx = 0
+	}
+
+	if endIdx >= len(posHistory) {
+		endIdx = len(posHistory) - 1
+	}
+
+	if startIdx > endIdx {
+		return nil
+	}
+
+	const stableTicksBefore = 3
+	if endIdx < stableTicksBefore {
+		return nil
+	}
+
+	if startIdx < stableTicksBefore {
+		startIdx = stableTicksBefore
+	}
+
+	for i := endIdx; i >= startIdx; i-- {
+		stable := true
+		for j := 0; j < stableTicksBefore; j++ {
+			if distanceBetween(posHistory[i-j].Position, posHistory[i-j-1].Position) > 0.1 {
+				stable = false
+				break
+			}
+		}
+		if stable {
+			pos := posHistory[i]
+			return &LineupOrigin{
+				Position: models.TrajectoryPoint{
+					X: pos.Position.X,
+					Y: pos.Position.Y,
+					Z: pos.Position.Z,
+				},
+			}
+		}
+	}
+
+	return nil
+}
+
+func findMovementSegmentBeforeAction(attackHistory []uint64, endIdx int) (int, int, bool) {
+	if len(attackHistory) == 0 {
+		return 0, 0, false
+	}
+
+	if endIdx >= len(attackHistory) {
+		endIdx = len(attackHistory) - 1
+	}
+
+	for endIdx >= 0 && !hasMovementButton(attackHistory[endIdx]) {
+		endIdx--
+	}
+	if endIdx < 0 {
+		return 0, 0, false
+	}
+
+	startIdx := endIdx
+	for startIdx > 0 && hasMovementButton(attackHistory[startIdx-1]) {
+		startIdx--
+	}
+
+	return startIdx, endIdx, true
+}
+
+func resolveActionIndex(attackHistory []uint64, throwDesc string) int {
+	n := len(attackHistory)
+	if n == 0 {
+		return -1
+	}
+
+	actionIdx := n - 2
+	if actionIdx < 0 {
+		actionIdx = n - 1
+	}
+
+	if !hasThrowModifier(throwDesc, "JUMP") {
+		return actionIdx
+	}
+
+	lastJumpIdx := -1
+	for i := n - 1; i >= 0; i-- {
+		if (attackHistory[i] & uint64(common.ButtonJump)) != 0 {
+			lastJumpIdx = i
+			break
+		}
+	}
+	if lastJumpIdx == -1 {
+		return -1
+	}
+
+	return lastJumpIdx - 1
+}
+
+func movementPauseBeforeAction(attackHistory []uint64, posHistory []PositionSnapshot, throwDesc string) bool {
+	n := len(posHistory)
+	if len(attackHistory) < n {
+		n = len(attackHistory)
+	}
+	if n == 0 {
+		return false
+	}
+
+	actionIdx := resolveActionIndex(attackHistory[:n], throwDesc)
+	if actionIdx <= 0 {
+		return false
+	}
+
+	_, moveEndIdx, ok := findMovementSegmentBeforeAction(attackHistory[:n], actionIdx)
+	if !ok {
+		return false
+	}
+
+	if moveEndIdx >= actionIdx {
+		return false
+	}
+
+	pauseStartIdx := moveEndIdx + 1
+	if pauseStartIdx > actionIdx {
+		return false
+	}
+
+	return findStablePosInRange(posHistory[:n], pauseStartIdx, actionIdx) != nil
+}
+
+// findStartPosBeforeMovement ищет последнюю стабильную позицию перед началом движения к броску.
+func findStartPosBeforeMovement(attackHistory []uint64, posHistory []PositionSnapshot) *LineupOrigin {
+	n := len(posHistory)
+	if len(attackHistory) < n {
+		n = len(attackHistory)
+	}
+	if n == 0 {
+		return nil
+	}
+
+	lastMoveIdx := -1
+	for i := n - 1; i >= 0; i-- {
+		if hasMovementButton(attackHistory[i]) {
+			lastMoveIdx = i
+			break
+		}
+	}
+
+	if lastMoveIdx == -1 {
+		return nil
+	}
+
+	moveStartIdx := lastMoveIdx
+	for moveStartIdx > 0 && hasMovementButton(attackHistory[moveStartIdx-1]) {
+		moveStartIdx--
+	}
+
+	return findStablePosBeforeIndex(posHistory[:n], moveStartIdx-1)
+}
+
+// findStartPosBeforeJumpWithoutMovement ищет последнюю стабильную позицию перед прыжком,
+// если бросок выполнен в прыжке без движения WASD.
+func findStartPosBeforeJumpWithoutMovement(attackHistory []uint64, posHistory []PositionSnapshot) *LineupOrigin {
+	n := len(posHistory)
+	if len(attackHistory) < n {
+		n = len(attackHistory)
+	}
+	if n == 0 {
+		return nil
+	}
+
+	lastJumpIdx := -1
+	for i := n - 1; i >= 0; i-- {
+		if (attackHistory[i] & uint64(common.ButtonJump)) != 0 {
+			lastJumpIdx = i
+			break
+		}
+	}
+
+	if lastJumpIdx == -1 {
+		return nil
+	}
+
+	jumpStartIdx := lastJumpIdx
+	for jumpStartIdx > 0 && (attackHistory[jumpStartIdx-1]&uint64(common.ButtonJump)) != 0 {
+		jumpStartIdx--
+	}
+
+	return findStablePosBeforeIndex(posHistory[:n], jumpStartIdx-1)
+}
+
+func shouldStripMovementModifier(attackHistory []uint64, posHistory []PositionSnapshot, throwDesc string) bool {
+	if !hasAnyMovementModifier(throwDesc) {
+		return false
+	}
+
+	return movementPauseBeforeAction(attackHistory, posHistory, throwDesc)
+}
+
+func normalizeThrowKeys(attackHistory []uint64, posHistory []PositionSnapshot, throwDesc string) string {
+	if !shouldStripMovementModifier(attackHistory, posHistory, throwDesc) {
+		return throwDesc
+	}
+
+	return stripMovementModifiers(throwDesc)
+}
+
+func hasAnyMovementModifier(throwDesc string) bool {
+	return hasThrowModifier(throwDesc, "W") ||
+		hasThrowModifier(throwDesc, "A") ||
+		hasThrowModifier(throwDesc, "S") ||
+		hasThrowModifier(throwDesc, "D")
+}
+
+func findSnapshotAtOrBeforeTick(posHistory []PositionSnapshot, targetTick int) *PositionSnapshot {
+	for i := len(posHistory) - 1; i >= 0; i-- {
+		if posHistory[i].Tick > targetTick {
+			continue
+		}
+
+		snapshot := posHistory[i]
+		return &snapshot
+	}
+
+	return nil
+}
+
+func resolveLineupStart(attackHistory []uint64, posHistory []PositionSnapshot, throwDesc string, currentTick int) (*models.TrajectoryPoint, *PositionSnapshot) {
+	var origin *LineupOrigin
+	if hasAnyMovementModifier(throwDesc) {
+		origin = findStartPosBeforeMovement(attackHistory, posHistory)
+	} else if hasThrowModifier(throwDesc, "JUMP") {
+		origin = findStartPosBeforeJumpWithoutMovement(attackHistory, posHistory)
+	} else {
+		// Для обычного throw без override берем setpos и setang с небольшим упреждением
+		// относительно тика броска, чтобы команда координат попадала в реальный lineup.
+		if snapshot := findSnapshotAtOrBeforeTick(posHistory, currentTick-2); snapshot != nil {
+			return nil, snapshot
+		}
+	}
+
+	if origin == nil {
+		return nil, nil
+	}
+
+	position := origin.Position
+	return &position, nil
+}
+
+// alignJumpLineupToStartTick подменяет fallback-позицию прыжкового броска на startTick.
+func alignJumpLineupToStartTick(
+	startPosOverride *models.TrajectoryPoint,
+	lineupSnapshot *PositionSnapshot,
+	posHistory []PositionSnapshot,
+	throwDesc string,
+	startTick int,
+) (*models.TrajectoryPoint, *PositionSnapshot) {
+	if !hasThrowModifier(throwDesc, "JUMP") {
+		return startPosOverride, lineupSnapshot
+	}
+
+	// Only rewrite jump lineup to startTick when the parser fell back to
+	// event-state coordinates. If we already found a movement/jump origin,
+	// keep that origin so real moving throws preserve their resolved position.
+	if startPosOverride != nil || lineupSnapshot != nil {
+		return startPosOverride, lineupSnapshot
+	}
+
+	if snapshot := findSnapshotAtOrBeforeTick(posHistory, startTick); snapshot != nil {
+		return nil, snapshot
+	}
+
+	return startPosOverride, lineupSnapshot
+}
+
+func formatCoordinates(pos models.TrajectoryPoint, pitch, yaw float64) string {
+	return fmt.Sprintf("setpos %.6f %.6f %.6f; setang %.6f %.6f;", pos.X, pos.Y, pos.Z, pitch, yaw)
+}
+
+// playerViewAngles uses the last known angles when a pawn lacks eye angles.
+// ViewDirectionX/Y use PropertyValueMust and panic for such frames.
+func playerViewAngles(player *common.Player, fallback PositionSnapshot) (pitch, yaw float64) {
+	if player == nil {
+		return fallback.Pitch, fallback.Yaw
+	}
+	pawn := player.PlayerPawnEntity()
+	if pawn == nil {
+		return fallback.Pitch, fallback.Yaw
+	}
+	value, ok := pawn.PropertyValue("m_angEyeAngles")
+	if !ok {
+		return fallback.Pitch, fallback.Yaw
+	}
+	switch angles := value.Any.(type) {
+	case [3]float32:
+		return float64(angles[0]), float64(angles[1])
+	case []float32:
+		if len(angles) >= 2 {
+			return float64(angles[0]), float64(angles[1])
+		}
+	}
+	return fallback.Pitch, fallback.Yaw
+}
+
+// getPlayerState records the player position and view at throw time.
+func getPlayerState(player *common.Player, throwDesc string, startPosOverride *models.TrajectoryPoint, lineupSnapshot *PositionSnapshot) *models.PlayerState {
+	if player == nil {
+		return nil
+	}
+
+	var pos r3.Vector
+	var eyeAngle float64
+	var pitch float64
+
+	if startPosOverride != nil {
+		// Для movement/jump override сохраняем setpos из найденной позиции,
+		// а setang оставляем по текущему взгляду игрока в тик броска.
+		pos = r3.Vector{
+			X: startPosOverride.X,
+			Y: startPosOverride.Y,
+			Z: startPosOverride.Z,
+		}
+		pitch, eyeAngle = playerViewAngles(player, PositionSnapshot{})
+	} else if lineupSnapshot != nil {
+		pos = lineupSnapshot.Position
+		eyeAngle = lineupSnapshot.Yaw
+		pitch = lineupSnapshot.Pitch
+	} else {
+		pos = player.Position()
+		pitch, eyeAngle = playerViewAngles(player, PositionSnapshot{})
+	}
+
+	return &models.PlayerState{
+		Position: models.TrajectoryPoint{
+			X: pos.X,
+			Y: pos.Y,
+			Z: pos.Z,
+		},
+		Pitch:   pitch,
+		Yaw:     eyeAngle,
+		Buttons: []string{throwDesc}, // Сохраняем описание броска
+	}
+}
+
+// ParseDemoFile анализирует один демофайл и возвращает данные о гранатах
+func ParseDemoFile(filePath string) ([]*models.ParsedGrenade, error) {
+	return ParseDemoFileWithOptions(filePath, DefaultOutputOptions())
+}
+
+func ParseDemoFileWithOptions(filePath string, options OutputOptions) ([]*models.ParsedGrenade, error) {
+	parser := NewDemoParserWithOptions(filePath, options)
+	return parser.Parse()
+}
+
+// ParseDemoDirectory анализирует все демофайлы в директории
+func ParseDemoDirectory(dirPath string) ([]*models.ParsedGrenade, error) {
+	return ParseDemoDirectoryWithOptions(dirPath, DefaultOutputOptions())
+}
+
+func ParseDemoDirectoryWithOptions(dirPath string, options OutputOptions) ([]*models.ParsedGrenade, error) {
+	var allGrenades []*models.ParsedGrenade
+
+	err := filepath.Walk(dirPath, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		// Пропускаем директории
+		if info.IsDir() {
+			return nil
+		}
+
+		// Обрабатываем только .dem файлы
+		if !strings.HasSuffix(strings.ToLower(info.Name()), ".dem") {
+			return nil
+		}
+
+		fmt.Printf("Парсинг файла: %s\n", path)
+
+		grenades, err := ParseDemoFileWithOptions(path, options)
+		if err != nil {
+			fmt.Printf("Ошибка парсинга %s: %v\n", path, err)
+			return nil // Продолжаем парсинг остальных файлов
+		}
+
+		allGrenades = append(allGrenades, grenades...)
+		fmt.Printf("Найдено гранат: %d (всего: %d)\n", len(grenades), len(allGrenades))
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("ошибка сканирования директории: %w", err)
+	}
+
+	return allGrenades, nil
+}
+
+// ConvertToGrenadeData конвертирует ParsedGrenade в GrenadeData для API
+func ConvertToGrenadeData(parsed *models.ParsedGrenade) models.GrenadeData {
+	return ConvertToGrenadeDataWithOptions(parsed, DefaultOutputOptions())
+}
+
+func ConvertToGrenadeDataWithOptions(parsed *models.ParsedGrenade, options OutputOptions) models.GrenadeData {
+	data := models.GrenadeData{
+		Map:              parsed.MapName,
+		Side:             parsed.Side,
+		GrenadeType:      parsed.GrenadeType,
+		DemoFilename:     parsed.DemoFilename,
+		ThrowTick:        parsed.ThrowTick,
+		Tickrate:         parsed.Tickrate,
+		RoundTimeSeconds: parsed.RoundTimeSeconds,
+		Thrower:          parsed.ThrowerName,
+		ThrowerTeam:      parsed.ThrowerTeam,
+		Team1:            parsed.Team1,
+		Team2:            parsed.Team2,
+		Airtime:          parsed.Airtime,
+		IsManual:         false,
+		ThrowKeys:        parsed.ThrowKeys,
+		Coordinates:      parsed.Coordinates,
+	}
+
+	// Координаты начала
+	// Preserve each actual throw for usage history after lineup deduplication.
+	event := models.UsageEvent{
+		DemoFilename: parsed.DemoFilename,
+		ThrowTick:    parsed.ThrowTick,
+		Thrower:      parsed.ThrowerName,
+		ThrowerTeam:  parsed.ThrowerTeam,
+	}
+	if options.IncludeThrowerSteamID64 {
+		event.ThrowerSteamID64 = parsed.ThrowerSteamID64
+	}
+	data.UsageEvents = []models.UsageEvent{event}
+
+	if parsed.StartPos != nil {
+		data.StartPosX = parsed.StartPos.X
+		data.StartPosY = parsed.StartPos.Y
+		data.StartPosZ = parsed.StartPos.Z
+	}
+
+	// Координаты конца
+	if parsed.EndPos != nil {
+		data.ExplodePosX = parsed.EndPos.X
+		data.ExplodePosY = parsed.EndPos.Y
+		data.ExplodePosZ = parsed.EndPos.Z
+	}
+
+	// Траектория
+	if len(parsed.Trajectory) > 0 {
+		data.Trajectory = make([][]float64, len(parsed.Trajectory))
+		for i, point := range parsed.Trajectory {
+			data.Trajectory[i] = []float64{point.X, point.Y, point.Z}
+		}
+	}
+	// Entity ID
+	if options.IncludeThrowerSteamID64 {
+		data.ThrowerSteamID64 = parsed.ThrowerSteamID64
+	}
+
+	if options.IncludeThrowerEntityID && parsed.ThrowerEntityID != nil {
+		data.ThrowerEntityID = parsed.ThrowerEntityID
+	}
+
+	if options.IncludeProjectileEntityID && parsed.ProjectileEntityID != nil {
+		data.ProjectileEntityID = parsed.ProjectileEntityID
+	}
+
+	return data
+}
+
+// ParseAndConvert анализирует демофайлы и конвертирует в формат для API
+func ParseAndConvert(filePath string) ([]models.GrenadeData, error) {
+	return ParseAndConvertWithOptions(filePath, DefaultOutputOptions())
+}
+
+func ParseAndConvertWithOptions(filePath string, options OutputOptions) ([]models.GrenadeData, error) {
+	var parsedGrenades []*models.ParsedGrenade
+	var err error
+
+	// Проверяем, файл это или директория
+	info, err := os.Stat(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("ошибка доступа к пути: %w", err)
+	}
+
+	if info.IsDir() {
+		parsedGrenades, err = ParseDemoDirectoryWithOptions(filePath, options)
+	} else {
+		parsedGrenades, err = ParseDemoFileWithOptions(filePath, options)
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	// Конвертируем в формат для API
+	grenadeDataList := make([]models.GrenadeData, len(parsedGrenades))
+	for i, parsed := range parsedGrenades {
+		grenadeDataList[i] = ConvertToGrenadeDataWithOptions(parsed, options)
+	}
+
+	return grenadeDataList, nil
+}
+
+// Close закрывает парсер и освобождает ресурсы
+func (p *DemoParser) Close() {
+	// Очистка памяти
+	p.grenades = nil
+}

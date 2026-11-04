@@ -92,6 +92,7 @@ import type {
   ReplayRound,
   ReplayWeapon,
 } from '../types/replay';
+import ParserProfileSelect, { type ParserProfileOption } from '../components/ParserProfileSelect';
 import './ReplayPage.css';
 
 type Job = {
@@ -628,6 +629,8 @@ export default function ReplayPage() {
   const [number, setNumber] = useState<number | null>(null);
   const [error, setError] = useState('');
   const [capability, setCapability] = useState(false);
+  const [parserProfile, setParserProfile] = useState<'v5' | 'v6'>('v6');
+  const [parserProfiles, setParserProfiles] = useState<ParserProfileOption[]>([]);
   const [job, setJob] = useState<Job | null>(null);
   const [starting, setStarting] = useState(false);
   const [playing, setPlaying] = useState(false);
@@ -792,6 +795,7 @@ export default function ReplayPage() {
         if (alive) fail(e);
       },
     );
+    void invoke<ParserProfileOption[]>('get_parser_profiles').then(setParserProfiles, fail);
     const poll = async () => {
       try {
         const status = await invoke<Job>('get_nade_parser_status');
@@ -1146,7 +1150,7 @@ export default function ReplayPage() {
       const files = await invoke<string[]>('select_demo_files');
       if (files[0]) {
         lastCompleted.current = null;
-        await startReplay(files[0]);
+        await startReplay(files[0], parserProfile);
         jobOwned.current = true;
         setJob({
           running: true,
@@ -1475,6 +1479,9 @@ export default function ReplayPage() {
             <Link className="btn" to="/tools/nade-parser">
               {tr('Update Nade Parser', 'Обновить Nade Parser')}
             </Link>
+          )}
+          {id === null && (
+            <ParserProfileSelect value={parserProfile} profiles={parserProfiles} disabled={starting || Boolean(job?.running)} onChange={setParserProfile} />
           )}
           {id === null && (
             <button

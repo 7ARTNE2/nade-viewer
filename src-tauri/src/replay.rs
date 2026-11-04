@@ -204,7 +204,9 @@ pub(crate) fn save_replay_notes(
 
 #[tauri::command]
 pub(crate) fn get_replay_capability(app: AppHandle) -> bool {
-    supports_replay(&plugin::exe(&app))
+    [plugin::ParserProfile::V5, plugin::ParserProfile::V6]
+        .into_iter()
+        .any(|profile| supports_replay(&plugin::parser_exe(&app, profile)))
 }
 fn supports_replay(path: &std::path::Path) -> bool {
     plugin::hide_console(&mut Command::new(path))
@@ -419,11 +421,13 @@ pub(crate) fn delete_replay(app: AppHandle, id: i64) -> Result<()> {
 }
 
 #[tauri::command]
-pub(crate) fn start_replay(app: AppHandle, path: String) -> Result<()> {
+pub(crate) fn start_replay(app: AppHandle, path: String, profile: String) -> Result<()> {
     if !std::path::Path::new(&path).is_file() {
         return Err("Demo file does not exist".into());
     }
-    if !supports_replay(&plugin::exe(&app)) {
+    let profile = plugin::ParserProfile::from_id(&profile)?;
+    let executable = plugin::parser_exe(&app, profile);
+    if !supports_replay(&executable) {
         return Err("Install Nade Parser 0.3.0 or newer with replay support".into());
     }
     let status = plugin::state(&app);
@@ -440,7 +444,7 @@ pub(crate) fn start_replay(app: AppHandle, path: String) -> Result<()> {
     if let Err(e) = std::thread::Builder::new()
         .name("replay-parser".into())
         .spawn(move || {
-            let result = run(&worker, &path);
+            let result = run(&worker, &path, profile);
             plugin::state(&worker)
                 .lock()
                 .unwrap()
@@ -453,9 +457,9 @@ pub(crate) fn start_replay(app: AppHandle, path: String) -> Result<()> {
     Ok(())
 }
 
-fn run(app: &AppHandle, path: &str) -> Result<i64> {
+fn run(app: &AppHandle, path: &str, profile: plugin::ParserProfile) -> Result<i64> {
     let control = plugin::control(app);
-    let mut child = plugin::hide_console(&mut Command::new(plugin::exe(app)))
+    let mut child = plugin::hide_console(&mut Command::new(plugin::parser_exe(app, profile)))
         .args(["--replay", "--demo", path, "--output", "-"])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -492,6 +496,7 @@ fn run(app: &AppHandle, path: &str) -> Result<i64> {
         ingest(
             &mut conn,
             BufReader::new(stdout),
+            profile.id(),
             || control.is_cancelled(),
             || {
                 plugin::state(app).lock().unwrap().completed += 1;
@@ -521,6 +526,7 @@ fn run(app: &AppHandle, path: &str) -> Result<i64> {
 fn ingest(
     conn: &mut Connection,
     reader: impl BufRead,
+    profile: &str,
     cancelled: impl Fn() -> bool,
     mut progress: impl FnMut(),
     mut finish: impl FnMut() -> Result<()>,
@@ -544,8 +550,8 @@ fn ingest(
                 let hash = value["file_sha256"].as_str().ok_or("Missing demo hash")?;
                 if let Some(id) = tx
                     .query_row(
-                        "SELECT id FROM matches WHERE hash=?1 AND version=1",
-                        [hash],
+                        "SELECT id FROM matches WHERE hash=?1 AND version=1 AND (json_extract(metadata,'$.parser_profile')=?2 OR (json_extract(metadata,'$.parser_profile') IS NULL AND ?2='v5'))",
+                        params![hash, profile],
                         |r| r.get::<_, i64>(0),
                     )
                     .optional()
@@ -553,9 +559,11 @@ fn ingest(
                 {
                     return Ok(id);
                 }
+                let mut metadata = value.clone();
+                metadata["parser_profile"] = Value::String(profile.to_owned());
                 tx.execute(
                     "INSERT INTO matches(hash,version,metadata)VALUES(?1,1,?2)",
-                    params![hash, value.to_string()],
+                    params![hash, metadata.to_string()],
                 )
                 .map_err(|e| e.to_string())?;
                 match_id = Some(tx.last_insert_rowid());
@@ -805,6 +813,7 @@ mod tests {
         assert!(ingest(
             &mut conn,
             source.as_bytes(),
+            "v5",
             || false,
             || {},
             || Err("failed".into())
@@ -815,8 +824,8 @@ mod tests {
                 .unwrap(),
             0
         );
-        assert!(ingest(&mut conn, source.as_bytes(), || true, || {}, || Ok(())).is_err());
-        let id = ingest(&mut conn, source.as_bytes(), || false, || {}, || Ok(())).unwrap();
+        assert!(ingest(&mut conn, source.as_bytes(), "v5", || true, || {}, || Ok(())).is_err());
+        let id = ingest(&mut conn, source.as_bytes(), "v5", || false, || {}, || Ok(())).unwrap();
         let bytes: Vec<u8> = conn
             .query_row("SELECT data FROM rounds WHERE match_id=?1", [id], |r| {
                 r.get(0)
@@ -830,6 +839,7 @@ mod tests {
             ingest(
                 &mut conn,
                 source.as_bytes(),
+                "v5",
                 || false,
                 || {},
                 || panic!("cached match should not wait")
@@ -853,7 +863,7 @@ mod tests {
         };
         let mut conn = open(std::path::Path::new(":memory:")).unwrap();
         let file = fs::File::open(path).unwrap();
-        let id = ingest(&mut conn, BufReader::new(file), || false, || {}, || Ok(())).unwrap();
+        let id = ingest(&mut conn, BufReader::new(file), "v5", || false, || {}, || Ok(())).unwrap();
         let (rounds,size):(i64,i64)=conn.query_row("SELECT (SELECT COUNT(*) FROM rounds WHERE match_id=?1),size FROM matches WHERE id=?1",[id],|r|Ok((r.get(0)?,r.get(1)?))).unwrap();
         assert!(rounds > 0 && size > 0);
         eprintln!("replay storage: {rounds} rounds, {size} bytes");

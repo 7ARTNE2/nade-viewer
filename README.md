@@ -79,7 +79,8 @@ Current application version: **0.7.2**.
 ### Replay / Повторы
 
 The **Replay** section (**Повторы** in Russian) opens local CS2 demos through the separately installed
-Nade Parser 0.3.0 or newer. The player includes rounds, a seekable timeline,
+Nade Parser 0.3.0 or newer. New demos use the installed **v6** parser by default;
+the preserved **v5** profile remains available for older demos. The player includes rounds, a seekable timeline,
 0.25x to 4x playback, player positions and equipment, kills, bomb state, smoke
 and fire effects, and selectable grenade trajectories with copyable lineup
 coordinates. Nuke opens two equally sized radars side by side: main on the left,
@@ -660,6 +661,15 @@ preserves the old `throw_description` values as `throw_keys` and adds any
 missing columns required by the current importer. Close Nade Viewer before
 copying or backing up the database; SQLite may also have adjacent `-wal` and
 `-shm` files while the application is running.
+
+### Parser profiles
+
+NadeViewer keeps two parser profiles side by side. **v6 (`demoinfocs-golang
+v6.0.0-rc.1`) is the primary profile** for current CS2 demos and Replay. **v5
+(`demoinfocs-golang v5.2.0`) is retained for older demos** and can be selected
+manually before parsing or opening a replay. Install each executable from the
+Nade Parser screen; if v6 is selected but not installed, the run is blocked with
+an explicit installation error rather than silently switching to v5.
 
 ## Import workflow
 
