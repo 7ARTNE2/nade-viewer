@@ -452,6 +452,72 @@ try {
     );
     assert.ok(check.stopped, 'unsubscribe must cancel the shared loop');
   }
+  const smokeChecks = await page.evaluate(async () => {
+    const { activeSmokes, buildSmokeTimeline } =
+      await import('/src/lib/replayPlayback.ts');
+    return [64, 128].map((tickrate) => {
+      const event = (seconds, type, id = 1) => ({
+        tick: seconds * tickrate,
+        type,
+        x: 100,
+        y: 200,
+        z: 0,
+        data: { grenade_entity_id: id },
+      });
+      const round = {
+        round: { start_tick: 0, end_tick: 60 * tickrate },
+        frames: [],
+        events: [event(1, 'smoke_start'), event(22, 'smoke_expired')],
+      };
+      const timeline = buildSmokeTimeline(round);
+      const at = (seconds) =>
+        activeSmokes(round, seconds * tickrate, tickrate, timeline);
+      const before = at(0);
+      const late = at(20);
+      const expired = at(22);
+      const after = at(23);
+      const rewind = at(10);
+      const missing = { ...round, events: [event(1, 'smoke_start')] };
+      const long = {
+        ...round,
+        events: [event(1, 'smoke_start'), event(40, 'smoke_expired')],
+      };
+      const reused = {
+        ...round,
+        events: [
+          ...round.events,
+          event(25, 'smoke_start'),
+          event(30, 'smoke_expired'),
+        ],
+      };
+      return {
+        before,
+        late,
+        expired,
+        after,
+        rewind,
+        long: activeSmokes(long, 30 * tickrate, tickrate),
+        missing: activeSmokes(missing, 30 * tickrate, tickrate),
+        roundEnd: activeSmokes(missing, 60 * tickrate, tickrate),
+        reused: activeSmokes(reused, 26 * tickrate, tickrate),
+        reuseGap: activeSmokes(reused, 24 * tickrate, tickrate),
+      };
+    });
+  });
+  for (const check of smokeChecks) {
+    assert.deepEqual(check.before, []);
+    assert.equal(check.late.length, 1, 'smoke remains visible past 18s');
+    assert.equal(check.late[0].remainingSeconds, 2);
+    assert.equal(check.late[0].progress, 19 / 21);
+    assert.deepEqual(check.expired, [], 'remove at the expiration tick');
+    assert.deepEqual(check.after, []);
+    assert.equal(check.rewind[0].remainingSeconds, 12);
+    assert.equal(check.long[0].remainingSeconds, 10, 'no replacement time cap');
+    assert.equal(check.missing[0].remainingSeconds, 30);
+    assert.deepEqual(check.roundEnd, [], 'missing expiration uses round end');
+    assert.equal(check.reused[0].remainingSeconds, 4);
+    assert.deepEqual(check.reuseGap, []);
+  }
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   // Force the first round to mount before the shared radar preload resolves.
