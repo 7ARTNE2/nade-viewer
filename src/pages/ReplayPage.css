@@ -1803,6 +1803,24 @@
   filter: brightness(1.2);
   transform: translateY(-2px);
 }
+.replay-timeline-grenade-marker.coordinates-copied button {
+  border-color: var(--acid);
+  background: rgba(var(--acid-rgb), 0.16);
+  color: var(--acid);
+  animation: copy-confirm 0.46s cubic-bezier(0.16, 1, 0.3, 1) both;
+  box-shadow:
+    0 0 0 2px rgba(var(--acid-rgb), 0.14),
+    0 0 12px rgba(var(--acid-rgb), 0.28);
+}
+.replay-timeline-grenade-marker.coordinates-copied::after {
+  position: absolute;
+  inset: -6px;
+  border: 1px solid var(--acid);
+  border-radius: 7px;
+  content: '';
+  pointer-events: none;
+  animation: coordinates-copy-ring 1.4s ease-out both;
+}
 .replay-timeline-grenade-marker:hover {
   z-index: 22;
 }

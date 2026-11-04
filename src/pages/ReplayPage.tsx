@@ -1175,9 +1175,13 @@ export default function ReplayPage() {
         });
         window.clearTimeout(copyTimer.current);
         copyTimer.current = window.setTimeout(() => setCopiedId(null), 1600);
-        showToast(tr('Coordinates copied', 'Координаты скопированы'), {
-          tone: 'success',
-        });
+        showToast(
+          tr(
+            'Coordinates copied. In CS2, enable sv_cheats 1, then paste setpos / setang into the console.',
+            'Координаты скопированы. В CS2 включите sv_cheats 1, затем вставьте setpos / setang в консоль.',
+          ),
+          { tone: 'success' },
+        );
       } catch (e) {
         if (request === copyRequest.current) fail(e);
       }
@@ -2152,6 +2156,8 @@ export default function ReplayPage() {
                   grenades={round.grenades}
                   grenadeTick={grenadeTrajectoryTick}
                   onGrenadeSelect={selectThrow}
+                  onCopyCoordinates={copyGrenadeCoordinates}
+                  copiedGrenadeId={copiedId}
                   zoomPortalTarget={timelineZoomTarget}
                   onSeek={seek}
                   showFreezeTime={showFreezeTime}

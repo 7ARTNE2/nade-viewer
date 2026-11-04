@@ -12,7 +12,7 @@ import type {
 } from 'react';
 import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { Minus, Plus, RotateCcw } from 'lucide-react';
+import { Check, Minus, Plus, RotateCcw } from 'lucide-react';
 import { useI18n } from '../i18n';
 import {
   clamp,
@@ -40,6 +40,8 @@ type Props = {
   grenades: ReplayGrenade[];
   grenadeTick: (grenade: ReplayGrenade) => number;
   onGrenadeSelect: (grenade: ReplayGrenade) => void;
+  onCopyCoordinates: (grenade: ReplayGrenade) => void;
+  copiedGrenadeId: string | null;
   zoomPortalTarget: HTMLElement | null;
   onSeek: (tick: number) => void;
   showFreezeTime: boolean;
@@ -55,6 +57,8 @@ export default function ReplayTimeline({
   grenades,
   grenadeTick,
   onGrenadeSelect,
+  onCopyCoordinates,
+  copiedGrenadeId,
   zoomPortalTarget,
   onSeek,
   showFreezeTime,
@@ -380,7 +384,7 @@ export default function ReplayTimeline({
                   .replace(/ /g, '-');
                 return (
                   <span
-                    className={`replay-timeline-grenade-marker type-${grenadeType}`}
+                    className={`replay-timeline-grenade-marker type-${grenadeType} ${copiedGrenadeId === grenade.id ? 'coordinates-copied' : ''}`}
                     key={grenade.id}
                     data-tick={markerTick}
                     style={{ left: `${progress(markerTick)}%` }}
@@ -388,13 +392,24 @@ export default function ReplayTimeline({
                     onMouseLeave={() => setHoveredGrenade(null)}
                     onFocus={() => setHoveredGrenade(grenade.id)}
                     onBlur={() => setHoveredGrenade(null)}
+                    onContextMenu={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      onCopyCoordinates(grenade);
+                    }}
                   >
                     <button
                       type="button"
                       aria-label={`${grenade.data.thrower} · ${grenade.data.grenade_type}`}
                       onClick={() => onGrenadeSelect(grenade)}
                     >
-                      <GrenadeMapIcon grenadeType={grenade.data.grenade_type} />
+                      {copiedGrenadeId === grenade.id ? (
+                        <Check size={11} strokeWidth={2.7} aria-hidden="true" />
+                      ) : (
+                        <GrenadeMapIcon
+                          grenadeType={grenade.data.grenade_type}
+                        />
+                      )}
                     </button>
                     {hoveredGrenade === grenade.id && (
                       <span

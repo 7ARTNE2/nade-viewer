@@ -1471,6 +1471,26 @@ try {
   await page.getByRole('button', { name: 'Следующий раунд' }).click();
   await page.getByRole('slider', { name: 'Таймлайн повтора' }).waitFor();
   await page.waitForTimeout(200);
+  const timelineGrenade = page
+    .locator('.replay-timeline-grenade-marker')
+    .first();
+  await timelineGrenade.waitFor();
+  await timelineGrenade.click({ button: 'right' });
+  await page
+    .locator('.replay-timeline-grenade-marker.coordinates-copied .lucide-check')
+    .waitFor();
+  assert.equal(
+    await page.evaluate(() => window.__copiedReplayCoordinates),
+    rounds.find((r) => r.round_number === 2).grenades[0].data.coordinates,
+  );
+  const timelineCopyAnimation = await timelineGrenade.evaluate((marker) => ({
+    duration: Number.parseFloat(
+      window.getComputedStyle(marker.querySelector('button')).animationDuration,
+    ),
+    ring: window.getComputedStyle(marker, '::after').animationName,
+  }));
+  assert.ok(timelineCopyAnimation.duration >= 0.4);
+  assert.equal(timelineCopyAnimation.ring, 'coordinates-copy-ring');
   await page.setViewportSize({ width: 760, height: 560 });
   await page.screenshot({ path: 'dist/replay-checks/compact.png' });
   const layout = await page.evaluate(() => {
