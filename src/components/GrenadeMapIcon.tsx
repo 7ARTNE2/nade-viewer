@@ -3,6 +3,7 @@ import flashIcon from '../assets/grenades_icons/flashbang.svg?raw';
 import molotovIcon from '../assets/grenades_icons/molotov.svg?raw';
 import incendiaryIcon from '../assets/grenades_icons/incgrenade.svg?raw';
 import heIcon from '../assets/grenades_icons/hegrenade.svg?raw';
+import decoyIcon from '../assets/equipment_icons/decoy.svg?raw';
 
 type Props = {
   grenadeType: string;
@@ -14,10 +15,14 @@ const icons: Record<string, string> = {
   molotov: molotovIcon,
   'incendiary grenade': incendiaryIcon,
   HE: heIcon,
+  decoy: decoyIcon,
 };
 
 export default function GrenadeMapIcon({ grenadeType }: Props) {
-  const icon = icons[grenadeType];
+  const normalized = grenadeType.toLowerCase().replace(/[_-]/g, ' ');
+  const icon =
+    icons[grenadeType] ??
+    (normalized.includes('decoy') ? decoyIcon : undefined);
   return icon ? (
     <i
       className="grenade-map-icon"

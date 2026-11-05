@@ -92,7 +92,9 @@ import type {
   ReplayRound,
   ReplayWeapon,
 } from '../types/replay';
-import ParserProfileSelect, { type ParserProfileOption } from '../components/ParserProfileSelect';
+import ParserProfileSelect, {
+  type ParserProfileOption,
+} from '../components/ParserProfileSelect';
 import './ReplayPage.css';
 
 type Job = {
@@ -109,6 +111,7 @@ function grenadeLabel(type: string, locale: string) {
     HE: ['HE', 'Осколочная'],
     molotov: ['Molotov', 'Молотов'],
     'incendiary grenade': ['Incendiary', 'Зажигательная'],
+    decoy: ['Decoy', 'Отвлекающая'],
   };
   return labels[type]?.[locale === 'ru' ? 1 : 0] ?? type;
 }
@@ -630,7 +633,9 @@ export default function ReplayPage() {
   const [error, setError] = useState('');
   const [capability, setCapability] = useState(false);
   const [parserProfile, setParserProfile] = useState<'v5' | 'v6'>('v6');
-  const [parserProfiles, setParserProfiles] = useState<ParserProfileOption[]>([]);
+  const [parserProfiles, setParserProfiles] = useState<ParserProfileOption[]>(
+    [],
+  );
   const [job, setJob] = useState<Job | null>(null);
   const [starting, setStarting] = useState(false);
   const [playing, setPlaying] = useState(false);
@@ -795,7 +800,10 @@ export default function ReplayPage() {
         if (alive) fail(e);
       },
     );
-    void invoke<ParserProfileOption[]>('get_parser_profiles').then(setParserProfiles, fail);
+    void invoke<ParserProfileOption[]>('get_parser_profiles').then(
+      setParserProfiles,
+      fail,
+    );
     const poll = async () => {
       try {
         const status = await invoke<Job>('get_nade_parser_status');
@@ -1481,7 +1489,12 @@ export default function ReplayPage() {
             </Link>
           )}
           {id === null && (
-            <ParserProfileSelect value={parserProfile} profiles={parserProfiles} disabled={starting || Boolean(job?.running)} onChange={setParserProfile} />
+            <ParserProfileSelect
+              value={parserProfile}
+              profiles={parserProfiles}
+              disabled={starting || Boolean(job?.running)}
+              onChange={setParserProfile}
+            />
           )}
           {id === null && (
             <button

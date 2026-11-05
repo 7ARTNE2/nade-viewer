@@ -49,6 +49,7 @@ const FLASH_EFFECT_SECONDS = 0.6;
 const HE_RADIUS_GAME = 400;
 // Keep the HE burst close to Nadegrid's fast fire-core animation.
 const HE_EFFECT_SECONDS = 0.82;
+const DECOY_RADIUS_GAME = 220;
 // Keep the replay blast diameter in sync with Nadegrid.  These values are
 // expressed in the same world units as the radar projection, so the effect
 // stays anchored to the actual planted C4 position at every zoom level.
@@ -241,6 +242,27 @@ export default function ReplayCanvas({
       ),
     [round],
   );
+  const decoyWindows = useMemo(() => {
+    const active = new Map<string, ReplayRound['events'][number]>();
+    const windows: Array<{
+      start: ReplayRound['events'][number];
+      end: ReplayRound['events'][number];
+    }> = [];
+    for (const event of round.events) {
+      if (event.type === 'decoy_start') {
+        const id = String(event.data?.grenade_entity_id ?? '');
+        if (id) active.set(id, event);
+      } else if (event.type === 'decoy_expired') {
+        const id = String(event.data?.grenade_entity_id ?? '');
+        const start = id ? active.get(id) : undefined;
+        if (start) {
+          windows.push({ start, end: event });
+          active.delete(id);
+        }
+      }
+    }
+    return windows;
+  }, [round]);
   const bombEvents = useMemo(() => {
     const seen = new Set<string>();
     return round.events.filter((event) => {
@@ -631,6 +653,51 @@ export default function ReplayCanvas({
       drawReplayInfernos(ctx, frame.infernos ?? [], point, visible, now);
       const drawExplosionEffects = () => {
         const events = explosionEvents.filter((event) => visible(event.z ?? 0));
+        for (const window of decoyWindows) {
+          const start = window.start;
+          const end = window.end;
+          if (start.x === null || start.y === null || !visible(start.z ?? 0))
+            continue;
+          const age = (tick - start.tick) / tickrate;
+          const duration = Math.max(0.01, (end.tick - start.tick) / tickrate);
+          if (age < 0 || age > duration) continue;
+          const [x, y] = point(start.x, start.y);
+          const progress = clamp(age / duration, 0, 1);
+          const fade = Math.min(1, age / 0.35, (duration - age) / 0.7);
+          const radius = (DECOY_RADIUS_GAME / radar!.scale) * unit;
+          ctx.save();
+          // Keep the richer smoke-and-spark motion, but derive every particle
+          // from the replay clock so seeking never allocates or advances state.
+          const plumeHeight = radius * (0.9 + progress * 0.55);
+          for (let plume = 0; plume < 7; plume += 1) {
+            const phase = progress * 5.2 + plume * 0.83;
+            const drift = Math.sin(phase) * radius * 0.16;
+            const rise = ((progress * 1.15 + plume * 0.13) % 1) * plumeHeight;
+            const size = radius * (0.07 + (plume % 3) * 0.018);
+            ctx.globalAlpha = fade * (0.2 + (1 - rise / plumeHeight) * 0.22);
+            ctx.fillStyle = plume % 2 ? '#94a3b8' : '#cbd5e1';
+            ctx.beginPath();
+            ctx.arc(x + drift, y - rise, size, 0, Math.PI * 2);
+            ctx.fill();
+          }
+          for (let spark = 0; spark < 10; spark += 1) {
+            const phase = progress * 7.5 + spark * 1.71;
+            const angle = spark * 0.63 + Math.sin(spark * 2.1) * 0.24;
+            const distance = radius * (0.18 + (phase % 1) * 0.62);
+            const sx = x + Math.cos(angle) * distance;
+            const sy =
+              y + Math.sin(angle) * distance * 0.72 - progress * radius * 0.12;
+            const tail = radius * 0.12;
+            ctx.globalAlpha = fade * (0.35 + 0.45 * (1 - (phase % 1)));
+            ctx.strokeStyle = spark % 3 === 0 ? '#ffffff' : '#cbd5e1';
+            ctx.lineWidth = Math.max(0.8, radius * 0.035);
+            ctx.beginPath();
+            ctx.moveTo(sx, sy);
+            ctx.lineTo(sx - Math.cos(angle) * tail, sy - Math.sin(angle) * tail);
+            ctx.stroke();
+          }
+          ctx.restore();
+        }
         for (const event of events) {
           const age = (tick - event.tick) / tickrate;
           const isFlash = event.type === 'flash_explode';
@@ -1414,6 +1481,7 @@ export default function ReplayCanvas({
     killEvents,
     killTicks,
     explosionEvents,
+    decoyWindows,
     bombEvents,
     grenadeById,
     actionEventsByPlayer,

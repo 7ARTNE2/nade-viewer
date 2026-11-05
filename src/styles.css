@@ -62,6 +62,8 @@
 /* Keep the floor switch and selected-cluster caption in one left-side stack. */
 .map-top-left-overlays{position:absolute;z-index:50;top:12px;left:12px;display:grid;max-width:calc(100% - 24px);gap:8px;pointer-events:none}
 .map-top-left-overlays>*{pointer-events:auto}
+.map-canvas>.map-toolbar-floating{z-index:30}
+.map-canvas>.throw-preview-popover{z-index:1000}
 .map-top-left-overlays .map-caption{position:static;max-width:100%;box-sizing:border-box}
 .map-top-left-overlays .radar-switch{position:static;justify-self:start}
 .map-image{position:absolute;object-fit:contain}
@@ -573,6 +575,23 @@ html[lang="ru"] .boot-title{font-family:Orbitron,sans-serif}
 .snapshot-delete-progress .spinner{width:14px;height:14px;flex:0 0 auto;margin-top:1px;border:2px solid rgba(var(--blue-rgb),.25);border-top-color:var(--blue);border-radius:50%;animation:spin .8s linear infinite}
 .app-tooltip{max-width:min(320px,calc(100vw - 16px));overflow-wrap:anywhere}
 .throw-preview-popover{width:min(302px,calc(100% - 24px));max-height:calc(100% - 24px);overflow-y:auto}
+
+/* Keep the map preview above floating zoom controls and fit it to the map viewport. */
+.map-canvas > .map-toolbar-floating{z-index:30}
+.map-canvas > .throw-preview-popover{
+  z-index:1000;
+  box-sizing:border-box;
+  width:min(360px,calc(100% - 24px));
+  min-width:min(270px,calc(100% - 24px));
+  max-width:calc(100% - 24px);
+}
+.map-canvas > .throw-preview-popover .throw-preview-keys{
+  flex-wrap:nowrap;
+  min-width:0;
+  white-space:nowrap;
+}
+.map-canvas > .throw-preview-popover .throw-preview-key-part,
+.map-canvas > .throw-preview-popover .throw-preview-key-icon{flex:none}
 
 @media(max-width:1100px){
   .topnav-shell .viewer-topbar{gap:8px;padding-inline:10px}

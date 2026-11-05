@@ -1,8 +1,8 @@
 package parser
 
 import (
-    "context"
 	"bufio"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -188,7 +188,7 @@ func collectReplay(path string, options ReplayOptions, emit func(models.ReplaySt
 			eventCount++
 			delete(throws, id)
 			delete(accepted, id)
-		})
+		}, true)
 	p.RegisterEventHandler(func(e events.RoundStart) {
 		flush()
 		current = models.ReplayRound{Number: current.Number + 1, StartTick: tick()}
@@ -275,6 +275,8 @@ func collectReplay(path string, options ReplayOptions, emit func(models.ReplaySt
 	}
 	p.RegisterEventHandler(func(e events.SmokeStart) { grenadeEvent("smoke_start", e.GrenadeEvent) })
 	p.RegisterEventHandler(func(e events.SmokeExpired) { grenadeEvent("smoke_expired", e.GrenadeEvent) })
+	p.RegisterEventHandler(func(e events.DecoyStart) { grenadeEvent("decoy_start", e.GrenadeEvent) })
+	p.RegisterEventHandler(func(e events.DecoyExpired) { grenadeEvent("decoy_expired", e.GrenadeEvent) })
 	p.RegisterEventHandler(func(e events.HeExplode) { grenadeEvent("he_explode", e.GrenadeEvent) })
 	p.RegisterEventHandler(func(e events.FlashExplode) { grenadeEvent("flash_explode", e.GrenadeEvent) })
 	p.RegisterEventHandler(func(e events.BombPlantBegin) {

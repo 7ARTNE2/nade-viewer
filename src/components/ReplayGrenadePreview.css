@@ -30,6 +30,9 @@
 .replay-grenade-preview.type-incendiary-grenade {
   --preview-accent: #f97316;
 }
+.replay-grenade-preview.type-decoy {
+  --preview-accent: #f4f6f8;
+}
 .replay-grenade-preview::after {
   position: absolute;
   bottom: -5px;

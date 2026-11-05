@@ -22,8 +22,8 @@ package parser
 // helper-ы из parser.go (getThrowKeys, resolveLineupStart, getPlayerState).
 
 import (
-    "context"
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -110,7 +110,7 @@ func (p *DemoParser) Parse() ([]*models.ParsedGrenade, error) {
 	parser := demoinfocs.NewParser(file)
 	defer parser.Close()
 	airtime := registerAirtimeTracker(parser)
-	finish := p.registerGrenades(parser, airtime, nil, nil)
+	finish := p.registerGrenades(parser, airtime, nil, nil, false)
 	if err := parser.ParseToEnd(context.Background()); err != nil && !errors.Is(err, demoinfocs.ErrUnexpectedEndOfDemo) {
 		return nil, fmt.Errorf("failed to parse demo: %w", err)
 	}
@@ -119,7 +119,7 @@ func (p *DemoParser) Parse() ([]*models.ParsedGrenade, error) {
 }
 
 // Both export and replay attach the same per-tick collector to their parser.
-func (p *DemoParser) registerGrenades(parser *demoinfocs.Parser, airtime *airtimeTracker, onThrow func(*common.GrenadeProjectile, int), onGrenade func(*models.ParsedGrenade, int64, int)) func() {
+func (p *DemoParser) registerGrenades(parser *demoinfocs.Parser, airtime *airtimeTracker, onThrow func(*common.GrenadeProjectile, int), onGrenade func(*models.ParsedGrenade, int64, int), includeDecoys bool) func() {
 
 	parser.RegisterNetMessageHandler(func(m *msg.CSVCMsg_ServerInfo) {
 		p.mapName = utils.GetDjangoMapName(m.GetMapName())
@@ -152,7 +152,7 @@ func (p *DemoParser) registerGrenades(parser *demoinfocs.Parser, airtime *airtim
 		}
 
 		grenadeType := utils.GetDjangoGrenadeType(weapon.Type.String())
-		if grenadeType == "decoy" {
+		if grenadeType == "decoy" && !includeDecoys {
 			return
 		}
 
@@ -252,6 +252,7 @@ func (p *DemoParser) registerGrenades(parser *demoinfocs.Parser, airtime *airtim
 	parser.RegisterEventHandler(func(e events.FlashExplode) { recordExplode(e.GrenadeEvent, "flash") })
 	parser.RegisterEventHandler(func(e events.SmokeStart) { recordExplode(e.GrenadeEvent, "smoke") })
 	parser.RegisterEventHandler(func(e events.FireGrenadeStart) { recordExplode(e.GrenadeEvent, "molotov") })
+	parser.RegisterEventHandler(func(e events.DecoyStart) { recordExplode(e.GrenadeEvent, "decoy") })
 
 	// --- Уничтожение гранаты: собираем траекторию и финализируем ---
 	parser.RegisterEventHandler(func(e events.GrenadeProjectileDestroy) {
@@ -275,7 +276,7 @@ func (p *DemoParser) registerGrenades(parser *demoinfocs.Parser, airtime *airtim
 
 		airtime.deferUntilFrameDone(func() {
 			pn.traj.Airtime = airtime.seconds(id)
-			if g := p.finalizeNadeV2(pn, tickRate); g != nil {
+			if g := p.finalizeNadeV2(pn, tickRate, includeDecoys); g != nil {
 				if onGrenade != nil {
 					onGrenade(g, id, pn.throwTick)
 				} else {
@@ -339,7 +340,7 @@ func (p *DemoParser) registerGrenades(parser *demoinfocs.Parser, airtime *airtim
 		})
 		for _, pn := range remaining {
 			pn.traj.Airtime = airtime.seconds(pn.traj.UniqueID)
-			if g := p.finalizeNadeV2(pn, tickRate); g != nil {
+			if g := p.finalizeNadeV2(pn, tickRate, includeDecoys); g != nil {
 				if onGrenade != nil {
 					onGrenade(g, pn.traj.UniqueID, pn.throwTick)
 				} else {
@@ -405,9 +406,9 @@ func matchPendingByEntity(pending map[int64]*pendingNade, entityID int, explodeT
 }
 
 // finalizeNadeV2 превращает накопленное состояние в ParsedGrenade (v2).
-func (p *DemoParser) finalizeNadeV2(pn *pendingNade, tickRate float64) *models.ParsedGrenade {
+func (p *DemoParser) finalizeNadeV2(pn *pendingNade, tickRate float64, includeDecoys bool) *models.ParsedGrenade {
 	traj := pn.traj
-	if traj.WeaponType == "decoy" {
+	if traj.WeaponType == "decoy" && !includeDecoys {
 		return nil
 	}
 	if len(traj.Trajectory) == 0 && !pn.hasExplodePos {

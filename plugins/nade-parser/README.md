@@ -57,7 +57,8 @@ reparse older exports to populate the full usage snapshot.
 smoke or decoy), or actual projectile entity deletion for molotov/incendiary,
 matching MatchZy's event choices. Jump lineup corrections do not affect airtime.
 Unobserved activations have no airtime value; entity cleanup and smoke lifetime
-are not used as fallbacks. Decoys are excluded from canonical grenade exports.
+are not used as fallbacks. Decoys are excluded from canonical grenade exports,
+but are included in replay grenade events and tracks.
 Existing exports must be reparsed to update airtime.
 
 The CLI sorts parsed throws deterministically by throw tick and projectile entity

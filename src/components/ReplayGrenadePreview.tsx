@@ -21,6 +21,7 @@ const grenadeNames: Record<string, [string, string]> = {
   he: ['HE', 'Осколочная'],
   molotov: ['Molotov', 'Молотов'],
   'incendiary grenade': ['Incendiary', 'Зажигательная'],
+  decoy: ['Decoy', 'Отвлекающая'],
 };
 
 export default function ReplayGrenadePreview({

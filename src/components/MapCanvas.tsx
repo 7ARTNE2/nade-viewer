@@ -570,14 +570,15 @@ export default function MapCanvas({
         left: clamp(
           preview.x + 16,
           12,
-          Math.max(12, (viewportRef.current?.clientWidth ?? 0) - 332),
+          Math.max(12, (viewportRef.current?.clientWidth ?? 0) - 372),
         ),
         top: clamp(
           preview.y + 14,
           12,
-          Math.max(12, (viewportRef.current?.clientHeight ?? 0) - 232),
+          Math.max(12, (viewportRef.current?.clientHeight ?? 0) - 280),
         ),
         '--dot': typeColor[preview.grenade.grenade_type] ?? '#fff',
+        zIndex: 1000,
       } as CSSProperties)
     : undefined;
 

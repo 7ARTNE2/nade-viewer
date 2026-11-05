@@ -1325,6 +1325,9 @@
 .replay-nade-icon.type-incendiary-grenade {
   --dot: #f97316;
 }
+.replay-nade-icon.type-decoy {
+  --dot: #f4f6f8;
+}
 .replay-detail-type {
   justify-content: flex-start !important;
   color: var(--text) !important;
@@ -1851,6 +1854,9 @@
 }
 .replay-timeline-grenade-marker.type-incendiary-grenade {
   --grenade-dot: #f97316;
+}
+.replay-timeline-grenade-marker.type-decoy {
+  --grenade-dot: #f4f6f8;
 }
 .replay-event-ticks i {
   position: absolute;
