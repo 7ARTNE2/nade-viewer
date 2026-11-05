@@ -87,7 +87,7 @@ export default function ParserProfileSelect({
               const Icon = option.icon;
               const selectedOption = option.id === value;
               const filename = profile?.filename || profile?.path?.split(/[\\/]/).pop() || (option.id === 'v6' ? 'nade-parser-v6.exe' : 'nade-parser.exe');
-              return <button key={option.id} type="button" role="option" aria-selected={selectedOption} disabled={!profile?.installed} className={`${selectedOption ? 'selected' : ''} ${option.id === 'v6' ? 'is-primary' : 'is-legacy'}`} onClick={() => { if (!profile?.installed) return; onChange(option.id); close(); }}>
+              return <button key={option.id} type="button" role="option" aria-selected={selectedOption} className={`${selectedOption ? 'selected' : ''} ${option.id === 'v6' ? 'is-primary' : 'is-legacy'} ${!profile?.installed ? 'is-unavailable' : ''}`} onClick={() => { onChange(option.id); close(); }}>
                 <span className="parser-profile-option-mark"><Icon size={14} aria-hidden="true" /></span>
                 <span className="parser-profile-option-copy">
                   <strong>{option.title}{option.id === 'v6' && <em>{tr('primary', 'основной')}</em>}</strong>
