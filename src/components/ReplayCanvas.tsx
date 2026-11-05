@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Minus, Plus, RotateCcw } from 'lucide-react';
 import c4Icon from '../assets/equipment_icons/c4.svg';
+import defuserIcon from '../assets/equipment_icons/defuser.svg';
 import { preloadImage, cachedImage } from '../lib/imageCache';
 import {
   activeSmokes,
@@ -353,6 +354,7 @@ export default function ReplayCanvas({
     if (!ctx) return;
     let image = cachedImage(imagePath);
     const bombImage = new Image();
+    const defuseKitImage = new Image();
     const weaponImages = new Map<string, HTMLImageElement>();
     const grenadeImages = new Map<string, HTMLImageElement>();
     for (const type of [
@@ -374,6 +376,10 @@ export default function ReplayCanvas({
     }
     bombImage.onload = draw;
     bombImage.src = c4Icon;
+    defuseKitImage.onload = () => {
+      if (!disposed) draw();
+    };
+    defuseKitImage.src = defuserIcon;
     let imageReady = false,
       disposed = false;
     const smokeTimerWidths = new Map<boolean, number>();
@@ -1322,19 +1328,44 @@ export default function ReplayCanvas({
               actionEventsByPlayer.get(player.id) ?? [],
             );
             if (action) {
+              const actionLabel = `${action.label} ${action.remaining.toFixed(1)}s`;
+              ctx.font = '700 8px Segoe UI';
+              const contentWidth =
+                Math.ceil(ctx.measureText(actionLabel).width) +
+                (action.defusing ? 18 : 0);
               ctx.fillStyle = 'rgba(8,12,16,.82)';
               ctx.fillRect(x - 22, y - 28, 44, 5);
               ctx.fillStyle = action.defusing ? '#8fd8ff' : '#ffbd70';
               ctx.fillRect(x - 21, y - 27, 42 * action.progress, 3);
               ctx.fillStyle = '#f8fafc';
-              ctx.font = '700 8px Segoe UI';
               ctx.textAlign = 'center';
               ctx.textBaseline = 'bottom';
-              ctx.fillText(
-                `${action.label} ${action.remaining.toFixed(1)}s`,
-                x,
-                y - 30,
-              );
+              ctx.fillText(actionLabel, x + (action.defusing ? 9 : 0), y - 30);
+              if (
+                action.defusing &&
+                defuseKitImage.complete &&
+                defuseKitImage.naturalWidth > 0
+              ) {
+                const iconX = x - contentWidth / 2;
+                const iconY = y - 42;
+                ctx.save();
+                if (!player.has_defuse_kit) ctx.globalAlpha *= 0.45;
+                ctx.drawImage(defuseKitImage, iconX, iconY, 13.5, 12);
+                ctx.restore();
+                if (!player.has_defuse_kit) {
+                  ctx.save();
+                  ctx.beginPath();
+                  ctx.moveTo(iconX, iconY + 12);
+                  ctx.lineTo(iconX + 13.5, iconY);
+                  ctx.strokeStyle = '#080c10';
+                  ctx.lineWidth = 3.5;
+                  ctx.stroke();
+                  ctx.strokeStyle = '#ff8e96';
+                  ctx.lineWidth = 1.5;
+                  ctx.stroke();
+                  ctx.restore();
+                }
+              }
             }
             const damage = damageState.current.get(player.id);
             const popupAge = damage ? now - damage.started : Infinity;
