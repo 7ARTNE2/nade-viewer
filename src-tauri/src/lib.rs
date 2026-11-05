@@ -23,6 +23,7 @@ use std::{
 use tauri::{AppHandle, Emitter, Manager};
 use thiserror::Error;
 mod dedup;
+mod downloader;
 mod favorites;
 mod parser_store;
 mod plugin;
@@ -711,6 +712,11 @@ pub fn run() {
     tauri::Builder::default()
         .manage(StartupClock(Instant::now()))
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .on_window_event(|window, event| {
+            if window.label() == "main" && matches!(event, tauri::WindowEvent::Destroyed) {
+                window.app_handle().exit(0);
+            }
+        })
         .on_page_load(|webview, payload| {
             eprintln!(
                 "[startup] Page {:?}: {:?}",
@@ -725,6 +731,7 @@ pub fn run() {
             );
             eprintln!("[startup] Setup timestamp: {}", Utc::now().to_rfc3339());
             app.manage(StartupState::default());
+            app.manage(downloader::Downloader::default());
             let mut parser_status = crate::plugin::ParserStatus::default();
             parser_status.stage = "idle".into();
             app.manage(std::sync::Arc::new(std::sync::Mutex::new(parser_status)));
@@ -732,86 +739,106 @@ pub fn run() {
             app.manage(crate::plugin::ParserWorkspaceState::default());
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![
-            report_startup_timing,
-            initialize_application,
-            select_import_file,
-            import_json,
-            cancel_import,
-            import_parser_workspace,
-            plugin::install_nade_parser,
-            plugin::uninstall_nade_parser,
-            plugin::get_nade_parser_info,
-            plugin::get_parser_profiles,
-            plugin::install_parser_profile,
-            plugin::uninstall_parser_profile,
-            plugin::get_nade_parser_status,
-            plugin::run_nade_parser,
-            plugin::save_parser_output,
-            plugin::select_demo_files,
-            plugin::select_demo_folders,
-            plugin::run_nade_parser_batch,
-            plugin::stop_nade_parser,
-            plugin::get_parser_workspaces,
-            plugin::set_parser_workspace,
-            plugin::deduplicate_parser_workspace,
-            plugin::get_parser_workspace_counts,
-            plugin::clear_parser_workspace,
-            plugin::prepare_parser_import,
-            replay::get_replay_capability,
-            replay::start_replay,
-            replay::list_replays,
-            replay::get_replay,
-            replay::get_replay_round,
-            replay::get_replay_round_preview,
-            replay::delete_replay,
-            replay::save_replay_position,
-            replay::list_replay_notes,
-            replay::save_replay_notes,
-            check_library_update,
-            import_library_update,
-            cancel_library_download,
-            get_import_status,
-            list_imports,
-            get_import_teams,
-            get_import_players,
-            get_import_tournaments,
-            set_active_import,
-            update_import_label,
-            delete_import,
-            get_active_import,
-            get_maps,
-            get_map_overview,
-            get_throw_overview,
-            get_cluster_grenades,
-            get_throw_cluster_grenades,
-            get_grenade,
-            favorites::list_favorites,
-            favorites::get_favorite_maps,
-            favorites::get_favorite_map_overview,
-            favorites::get_favorite_cluster_grenades,
-            favorites::get_favorite_filter_options,
-            favorites::get_favorite,
-            favorites::save_favorite,
-            favorites::delete_favorite,
-            favorites::clear_favorites,
-            favorites::get_favorites_state,
-            favorites::create_favorite_collection,
-            favorites::assign_favorite_collection_map,
-            favorites::rename_favorite_collection,
-            favorites::delete_favorite_collection,
-            favorites::set_favorite_collections,
-            favorites::share::export_favorites_share,
-            record_grenade_view,
-            get_recently_viewed_grenades,
-            get_similar_grenades,
-            get_spawn_points,
-            get_site_settings,
-            update_site_settings,
-            get_onboarding_state,
-            complete_onboarding,
-            reset_onboarding,
-        ])
+        .invoke_handler({
+            let commands: Box<dyn Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync> =
+                Box::new(tauri::generate_handler![
+                    downloader::get_demo_downloader,
+                    downloader::refresh_demo_catalog,
+                    downloader::start_demo_downloads,
+                    downloader::stop_demo_downloads,
+                    downloader::show_hltv_browser,
+                    downloader::select_demo_destination,
+                    downloader::clear_demo_queue,
+                    report_startup_timing,
+                    initialize_application,
+                    select_import_file,
+                    import_json,
+                    cancel_import,
+                    import_parser_workspace,
+                    plugin::install_nade_parser,
+                    plugin::uninstall_nade_parser,
+                    plugin::get_nade_parser_info,
+                    plugin::get_parser_profiles,
+                    plugin::install_parser_profile,
+                    plugin::uninstall_parser_profile,
+                    plugin::get_nade_parser_status,
+                    plugin::run_nade_parser,
+                    plugin::save_parser_output,
+                    plugin::select_demo_files,
+                    plugin::select_demo_folders,
+                    plugin::run_nade_parser_batch,
+                    plugin::stop_nade_parser,
+                    plugin::get_parser_workspaces,
+                    plugin::set_parser_workspace,
+                    plugin::deduplicate_parser_workspace,
+                    plugin::get_parser_workspace_counts,
+                    plugin::clear_parser_workspace,
+                    plugin::prepare_parser_import,
+                    replay::get_replay_capability,
+                    replay::start_replay,
+                    replay::list_replays,
+                    replay::get_replay,
+                    replay::get_replay_round,
+                    replay::get_replay_round_preview,
+                    replay::delete_replay,
+                    replay::save_replay_position,
+                    replay::list_replay_notes,
+                    replay::save_replay_notes,
+                    check_library_update,
+                    import_library_update,
+                    cancel_library_download,
+                    get_import_status,
+                    list_imports,
+                    get_import_teams,
+                    get_import_players,
+                    get_import_tournaments,
+                    set_active_import,
+                    update_import_label,
+                    delete_import,
+                    get_active_import,
+                    get_maps,
+                    get_map_overview,
+                    get_throw_overview,
+                    get_cluster_grenades,
+                    get_throw_cluster_grenades,
+                    get_grenade,
+                    favorites::list_favorites,
+                    favorites::get_favorite_maps,
+                    favorites::get_favorite_map_overview,
+                    favorites::get_favorite_cluster_grenades,
+                    favorites::get_favorite_filter_options,
+                    favorites::get_favorite,
+                    favorites::save_favorite,
+                    favorites::delete_favorite,
+                    favorites::clear_favorites,
+                    favorites::get_favorites_state,
+                    favorites::create_favorite_collection,
+                    favorites::assign_favorite_collection_map,
+                    favorites::rename_favorite_collection,
+                    favorites::delete_favorite_collection,
+                    favorites::set_favorite_collections,
+                    favorites::share::export_favorites_share,
+                    record_grenade_view,
+                    get_recently_viewed_grenades,
+                    get_similar_grenades,
+                    get_spawn_points,
+                    get_site_settings,
+                    update_site_settings,
+                    get_onboarding_state,
+                    complete_onboarding,
+                    reset_onboarding,
+                ]);
+            move |invoke| {
+                // The remote HLTV webview must never invoke application commands.
+                if invoke.message.webview_ref().label() != "main" {
+                    invoke
+                        .resolver
+                        .reject("This window cannot access application commands");
+                    return true;
+                }
+                commands(invoke)
+            }
+        })
         .run(tauri::generate_context!())
         .expect("error while running Nade Viewer");
 }
@@ -918,7 +945,7 @@ fn allow_asset_directories(
     Ok(())
 }
 
-fn resolve_resource_dir(app: &AppHandle) -> Result<PathBuf, Box<dyn std::error::Error>> {
+fn resource_dir_candidates(app: &AppHandle) -> Result<Vec<PathBuf>, Box<dyn std::error::Error>> {
     let mut candidates = Vec::new();
     let tauri_resource = app.path().resource_dir()?;
     candidates.push(tauri_resource.clone());
@@ -936,7 +963,14 @@ fn resolve_resource_dir(app: &AppHandle) -> Result<PathBuf, Box<dyn std::error::
         }
     }
 
-    for candidate in candidates {
+    #[cfg(debug_assertions)]
+    candidates.push(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources"));
+
+    Ok(candidates)
+}
+
+fn resolve_resource_dir(app: &AppHandle) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    for candidate in resource_dir_candidates(app)? {
         if candidate.join("maps").join("2d").exists()
             && candidate.join("radar_configs").exists()
             && candidate.join("spawn_points.json").exists()
@@ -945,7 +979,7 @@ fn resolve_resource_dir(app: &AppHandle) -> Result<PathBuf, Box<dyn std::error::
         }
     }
 
-    Ok(tauri_resource)
+    Ok(app.path().resource_dir()?)
 }
 
 fn init_schema(conn: &Connection) -> AppResult<()> {

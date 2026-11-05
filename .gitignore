@@ -1,6 +1,8 @@
 # Dependencies and frontend builds
 node_modules/
 dist/
+downloads/
+artifacts/
 
 # Rust and Tauri builds
 src-tauri/target/

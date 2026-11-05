@@ -17,6 +17,7 @@
     "check": "npm run format:check && npm run lint && npm run typecheck && npm run build && npm run cargo:fmt:check && npm run cargo:check && npm run cargo:test && npm run cargo:clippy -- --all-targets -- -D warnings",
     "test": "npm run check && npm run test:replay",
     "test:replay": "node tests/replay-ui.mjs",
+    "test:downloader": "node tests/demo-downloader-ui.mjs",
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",

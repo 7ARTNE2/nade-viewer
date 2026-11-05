@@ -70,7 +70,7 @@ export default function ToolsPage({ refreshImports }: Props) {
         >
           <Link to="/tools" className="tools-back-link">
             <ArrowLeft size={15} />
-            {tr('All plugins', 'Все плагины')}
+            {tr('All tools', 'Все инструменты')}
           </Link>
           <span aria-hidden="true">/</span>
           <span aria-current="page">
@@ -99,23 +99,23 @@ export default function ToolsPage({ refreshImports }: Props) {
     <section className="tools-view">
       <header className="tools-header tools-catalog-header">
         <div>
-          <span className="tools-kicker">TOOLS / PLUGINS</span>
+          <span className="tools-kicker">TOOLS</span>
           <h1>{tr('Tools', 'Инструменты')}</h1>
           <p>
             {tr(
-              'Choose a plugin to open its workspace or manage its installation.',
-              'Выберите плагин, чтобы открыть его рабочее пространство или управлять установкой.',
+              'Built-in tools and plugins for working with demos.',
+              'Встроенные инструменты и плагины для работы с демо.',
             )}
           </p>
         </div>
         <div className="tools-health">
           <Puzzle size={16} />
-          <span>{tr('Plugin catalog', 'Каталог плагинов')}</span>
+          <span>{tr('Tool catalog', 'Каталог инструментов')}</span>
         </div>
       </header>
       <div className="tools-catalog-heading">
         <h2>
-          {tr('Available plugins', 'Доступные плагины')}{' '}
+          {tr('Available tools', 'Доступные инструменты')}{' '}
           <span>{toolPlugins.length}</span>
         </h2>
         <button
@@ -138,7 +138,9 @@ export default function ToolsPage({ refreshImports }: Props) {
             : state?.error
               ? tr('Status unavailable', 'Статус недоступен')
               : info?.installed
-                ? tr('Installed', 'Установлен')
+                ? plugin.builtIn
+                  ? tr('Built in', 'Встроено')
+                  : tr('Installed', 'Установлен')
                 : tr('Not installed', 'Не установлен');
           return (
             <article
@@ -185,7 +187,9 @@ export default function ToolsPage({ refreshImports }: Props) {
                 <span>
                   {info?.installed && info.version
                     ? `v${info.version}`
-                    : tr('Local plugin', 'Локальный плагин')}
+                    : plugin.builtIn
+                      ? tr('Included with NadeViewer', 'В составе NadeViewer')
+                      : tr('Local plugin', 'Локальный плагин')}
                 </span>
                 <Link
                   className={`btn ${info?.installed ? '' : 'primary'}`}
