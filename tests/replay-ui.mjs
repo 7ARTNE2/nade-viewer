@@ -328,6 +328,21 @@ try {
                 round_number: entry.round_number,
                 tick: entry.tick,
               };
+            case 'get_parser_profiles':
+              return [
+                {
+                  id: 'v5',
+                  label: 'demoinfocs v5.2.0',
+                  installed: true,
+                  capabilities: ['replay_v1'],
+                },
+                {
+                  id: 'v6',
+                  label: 'demoinfocs v6.0.0-rc.1',
+                  installed: true,
+                  capabilities: ['replay_v1'],
+                },
+              ];
             case 'get_replay_round':
               return rounds.find((r) => r.round_number === args.number);
             case 'get_replay_round_preview': {
@@ -2072,6 +2087,124 @@ try {
     .getByRole('alert')
     .filter({ hasText: 'Parsing cancelled' })
     .waitFor();
+  const diagnostics = page.locator('.replay-error-report');
+  assert.match(await diagnostics.innerText(), /\[Replay parser job\]/);
+  await page.getByRole('button', { name: 'Скопировать диагностику' }).click();
+  assert.equal(
+    await page.evaluate(() => window.__copiedReplayCoordinates),
+    await diagnostics.innerText(),
+  );
+  const failedReplayPage = await context.newPage();
+  const diagnosticConsole = [];
+  failedReplayPage.on('console', (message) => {
+    if (message.type() === 'error') diagnosticConsole.push(message.text());
+  });
+  await failedReplayPage.addInitScript(() => {
+    const original = window.__TAURI_INTERNALS__.invoke;
+    window.__TAURI_INTERNALS__.invoke = (command, args) => {
+      if (command === 'get_replay')
+        return Promise.reject('Query returned no rows');
+      return original(command, args);
+    };
+  });
+  await failedReplayPage.goto('http://127.0.0.1:1428/replays/1');
+  const diagnosticReport = failedReplayPage.locator('.replay-error-report');
+  await diagnosticReport.waitFor();
+  const report = await diagnosticReport.innerText();
+  for (const expected of [
+    'command: get_replay',
+    'arguments: {"id":1}',
+    'Query returned no rows',
+  ]) {
+    assert.ok(report.includes(expected), report);
+  }
+  assert.ok(diagnosticConsole.some((message) => message.includes(report)));
+  await failedReplayPage.close();
+  const missingReplayPage = await context.newPage();
+  const missingReplayErrors = [];
+  missingReplayPage.on('pageerror', (error) => errors.push(error.message));
+  missingReplayPage.on('console', (message) => {
+    if (message.type() === 'error') missingReplayErrors.push(message.text());
+  });
+  await missingReplayPage.addInitScript(() => {
+    const original = window.__TAURI_INTERNALS__.invoke;
+    window.__TAURI_INTERNALS__.invoke = (command, args) => {
+      if (command === 'get_replay') return Promise.resolve(null);
+      return original(command, args);
+    };
+  });
+  await missingReplayPage.goto('http://127.0.0.1:1428/replays/999');
+  await missingReplayPage.waitForURL('http://127.0.0.1:1428/replays');
+  await missingReplayPage
+    .getByText('Сохранённого повтора больше нет. Открой демо заново.')
+    .waitFor();
+  assert.equal(
+    await missingReplayPage.locator('.replay-error').count(),
+    0,
+    await missingReplayPage
+      .locator('.replay-error')
+      .allTextContents()
+      .then((items) => items.join('\n')),
+  );
+  assert.deepEqual(missingReplayErrors, []);
+  await missingReplayPage.close();
+  const notesBeforeReparse = JSON.parse(JSON.stringify(storedNotes));
+  const reparsePage = await context.newPage();
+  reparsePage.on('pageerror', (error) => errors.push(error.message));
+  await reparsePage.addInitScript(() => {
+    const original = window.__TAURI_INTERNALS__.invoke;
+    let savedEntries;
+    let available = true;
+    let completed = false;
+    window.__TAURI_INTERNALS__.invoke = async (command, args) => {
+      if (command === 'list_replays') {
+        savedEntries ??= await original(command, args);
+        return available ? savedEntries : [];
+      }
+      if (command === 'get_nade_parser_status' && completed)
+        return {
+          running: false,
+          stage: 'complete',
+          output: 'replay:1',
+          error: null,
+          completed: 2,
+        };
+      if (command === 'start_replay') {
+        await original(command, args);
+        completed = true;
+        available = true;
+        return null;
+      }
+      if (command === 'delete_replay') available = false;
+      if (command === 'get_replay' && !available) return null;
+      return original(command, args);
+    };
+  });
+  await reparsePage.goto('http://127.0.0.1:1428/replays');
+  for (let attempt = 0; attempt < 2; attempt++) {
+    await reparsePage
+      .getByRole('button', { name: 'Открыть демо', exact: true })
+      .click();
+    await reparsePage.waitForURL('http://127.0.0.1:1428/replays/1');
+    await reparsePage
+      .getByRole('button', { name: 'Воспроизвести', exact: true })
+      .waitFor();
+    assert.equal(await reparsePage.locator('.replay-error').count(), 0);
+    await reparsePage.getByRole('button', { name: 'История матчей' }).click();
+    if (attempt === 0) {
+      await reparsePage
+        .getByRole('button', { name: 'Удалить матч', exact: true })
+        .click();
+      await reparsePage
+        .getByRole('button', { name: 'Удалить', exact: true })
+        .click();
+      await reparsePage
+        .getByRole('heading', { name: 'Нет сохранённых матчей' })
+        .waitFor();
+    }
+  }
+  await reparsePage.close();
+  storedNotes = notesBeforeReparse;
   const failedNotesPage = await context.newPage();
   failedNotesPage.on('pageerror', (error) => errors.push(error.message));
   await failedNotesPage.addInitScript(() => {

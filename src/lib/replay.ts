@@ -1,18 +1,31 @@
 import { invoke } from '@tauri-apps/api/core';
 import type { ReplayDetail, ReplayEntry, ReplayRound } from '../types/replay';
 
-export const listReplays = () => invoke<ReplayEntry[]>('list_replays');
+async function replayCommand<T>(
+  command: string,
+  args?: Record<string, unknown>,
+): Promise<T> {
+  try {
+    return await invoke<T>(command, args);
+  } catch (error) {
+    const report = `[Replay diagnostics]\ntime: ${new Date().toISOString()}\ncommand: ${command}\narguments: ${JSON.stringify(args ?? {})}\n${String(error)}`;
+    console.error(report);
+    throw report;
+  }
+}
+
+export const listReplays = () => replayCommand<ReplayEntry[]>('list_replays');
 export const getReplay = (id: number) =>
-  invoke<ReplayDetail>('get_replay', { id });
+  replayCommand<ReplayDetail | null>('get_replay', { id });
 export const getReplayRound = (id: number, number: number) =>
-  invoke<ReplayRound>('get_replay_round', { id, number });
+  replayCommand<ReplayRound>('get_replay_round', { id, number });
 export const getReplayRoundPreview = (id: number, number: number) =>
-  invoke<ReplayRound>('get_replay_round_preview', { id, number });
+  replayCommand<ReplayRound>('get_replay_round_preview', { id, number });
 export const startReplay = (path: string, profile: 'v5' | 'v6' = 'v5') =>
-  invoke<void>('start_replay', { path, profile });
+  replayCommand<void>('start_replay', { path, profile });
 export const deleteReplay = (id: number) =>
-  invoke<void>('delete_replay', { id });
+  replayCommand<void>('delete_replay', { id });
 export const getReplayCapability = () =>
-  invoke<boolean>('get_replay_capability');
+  replayCommand<boolean>('get_replay_capability');
 export const saveReplayPosition = (id: number, number: number, tick: number) =>
-  invoke<void>('save_replay_position', { id, number, tick });
+  replayCommand<void>('save_replay_position', { id, number, tick });

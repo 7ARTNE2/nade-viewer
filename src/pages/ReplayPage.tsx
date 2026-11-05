@@ -771,6 +771,7 @@ export default function ReplayPage() {
   const loadedRounds = useRef(new Map<number, ReplayRound>());
   const jobOwned = useRef(false),
     lastCompleted = useRef<string | null>(null);
+  const jobRevision = useRef(0);
   const position = useRef<{ id: number; number: number; tick: number } | null>(
     null,
   );
@@ -781,7 +782,10 @@ export default function ReplayPage() {
       mounted.current = false;
     };
   }, []);
-  const fail = useCallback((e: unknown) => setError(String(e)), []);
+  const fail = useCallback((e: unknown) => {
+    console.error('[Replay]', e);
+    setError(String(e));
+  }, []);
   useEffect(() => {
     let alive = true;
     void listReplays().then(
@@ -805,9 +809,10 @@ export default function ReplayPage() {
       fail,
     );
     const poll = async () => {
+      const revision = jobRevision.current;
       try {
         const status = await invoke<Job>('get_nade_parser_status');
-        if (!alive) return;
+        if (!alive || revision !== jobRevision.current) return;
         setJob(status);
         if (status.running && status.stage === 'replay')
           jobOwned.current = true;
@@ -818,19 +823,23 @@ export default function ReplayPage() {
         ) {
           lastCompleted.current = status.output;
           const list = await listReplays();
-          if (!alive) return;
+          if (!alive || revision !== jobRevision.current) return;
           setEntries(list);
           if (jobOwned.current) {
             jobOwned.current = false;
-            navigate('/replays/' + status.output.slice(7));
+            const completedId = Number(status.output.slice(7));
+            if (list.some((entry) => entry.id === completedId))
+              navigate('/replays/' + completedId);
           }
         }
         if (!status.running && status.error && jobOwned.current) {
           jobOwned.current = false;
-          setError(status.error);
+          fail(
+            `[Replay parser job]\ntime: ${new Date().toISOString()}\n${status.error}`,
+          );
         }
       } catch (e) {
-        if (alive) fail(e);
+        if (alive && revision === jobRevision.current) fail(e);
       }
     };
     void poll();
@@ -867,6 +876,16 @@ export default function ReplayPage() {
     void Promise.all([getReplay(id), loadReplayNotes(id).catch(() => [])]).then(
       ([v, notes]) => {
         if (!alive) return;
+        if (!v) {
+          showToast(
+            tr(
+              'Saved replay no longer exists. Open the demo again.',
+              'Сохранённого повтора больше нет. Открой демо заново.',
+            ),
+          );
+          navigate('/replays', { replace: true });
+          return;
+        }
         setDetail(v);
         const note = notes.find(
           (item) =>
@@ -1157,6 +1176,7 @@ export default function ReplayPage() {
     try {
       const files = await invoke<string[]>('select_demo_files');
       if (files[0]) {
+        jobRevision.current += 1;
         lastCompleted.current = null;
         await startReplay(files[0], parserProfile);
         jobOwned.current = true;
@@ -1510,7 +1530,24 @@ export default function ReplayPage() {
       </header>
       {error && (
         <div className="replay-error" role="alert">
-          <span>{error}</span>
+          <pre className="replay-error-report">{error}</pre>
+          <button
+            className="icon-btn"
+            title={tr('Copy diagnostics', 'Скопировать диагностику')}
+            aria-label={tr('Copy diagnostics', 'Скопировать диагностику')}
+            onClick={() => {
+              void navigator.clipboard.writeText(error).then(
+                () =>
+                  showToast(
+                    tr('Diagnostics copied', 'Диагностика скопирована'),
+                  ),
+                (cause: unknown) =>
+                  console.error('Unable to copy replay diagnostics', cause),
+              );
+            }}
+          >
+            <Copy size={14} />
+          </button>
           <button
             className="icon-btn"
             onClick={() => setError('')}
@@ -2249,6 +2286,7 @@ export default function ReplayPage() {
           error=""
           onCancel={() => setDeleting(null)}
           onConfirm={() => {
+            jobRevision.current += 1;
             setDeleteBusy(true);
             void deleteReplay(deleting.id)
               .then(() => {
@@ -2258,6 +2296,7 @@ export default function ReplayPage() {
                   /* The match has already been deleted. */
                 }
                 setEntries((old) => old.filter((e) => e.id !== deleting.id));
+                if (id === deleting.id) navigate('/replays', { replace: true });
                 setDeleting(null);
               }, fail)
               .finally(() => setDeleteBusy(false));

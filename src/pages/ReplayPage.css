@@ -217,7 +217,15 @@
   color: #ff8e96;
   background: #ff5e6810;
 }
-.replay-error span {
+.replay-error-report {
+  flex: 1;
+  min-width: 0;
+  max-height: 220px;
+  margin: 0;
+  overflow: auto;
+  white-space: pre-wrap;
+  font: 11px/1.5 monospace;
+  user-select: text;
   overflow-wrap: anywhere;
 }
 .replay-progress {

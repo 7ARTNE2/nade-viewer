@@ -309,15 +309,11 @@ pub(crate) fn get_replay(
     app: AppHandle,
     state: tauri::State<'_, AppState>,
     id: i64,
-) -> Result<Value> {
+) -> Result<Option<Value>> {
     let conn = database(&app)?;
-    let (raw, round, tick): (String, i64, Option<f64>) = conn
-        .query_row(
-            "SELECT metadata,round_number,tick FROM matches WHERE id=?1",
-            [id],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
-        )
-        .map_err(|e| e.to_string())?;
+    let Some((raw, round, tick)) = read_replay_metadata(&conn, id)? else {
+        return Ok(None);
+    };
     let metadata: Value = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
     let mut stmt = conn
         .prepare("SELECT summary FROM rounds WHERE match_id=?1 ORDER BY number")
@@ -335,9 +331,19 @@ pub(crate) fn get_replay(
         .radars
         .get(&crate::map_name_to_key(map))
         .map(|r| json!({"pos_x":r.pos_x,"pos_y":r.pos_y,"scale":r.scale,"split_z":r.split_z}));
-    Ok(
+    Ok(Some(
         json!({"id":id,"metadata":metadata,"rounds":summaries,"map":summary,"radar":radar,"round_number":round,"tick":tick}),
+    ))
+}
+
+fn read_replay_metadata(conn: &Connection, id: i64) -> Result<Option<(String, i64, Option<f64>)>> {
+    conn.query_row(
+        "SELECT metadata,round_number,tick FROM matches WHERE id=?1",
+        [id],
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
     )
+    .optional()
+    .map_err(|e| format!("stage: load replay metadata\nreplay_id: {id}\ncause: {e}"))
 }
 #[tauri::command]
 pub(crate) async fn get_replay_round(app: AppHandle, id: i64, number: i64) -> Result<Value> {
@@ -355,8 +361,12 @@ fn read_round(conn: &Connection, id: i64, number: i64) -> Result<Value> {
             params![id, number],
             |r| r.get(0),
         )
-        .map_err(|e| e.to_string())?;
-    decode(&bytes)
+        .map_err(|e| {
+            format!("stage: read stored round\nreplay_id: {id}\nround: {number}\ncause: {e}")
+        })?;
+    decode(&bytes).map_err(|e| {
+        format!("stage: decode stored round\nreplay_id: {id}\nround: {number}\ncause: {e}")
+    })
 }
 
 /// Return only the data needed by the round rail tooltip. Full rounds contain
@@ -458,13 +468,25 @@ pub(crate) fn start_replay(app: AppHandle, path: String, profile: String) -> Res
 }
 
 fn run(app: &AppHandle, path: &str, profile: plugin::ParserProfile) -> Result<i64> {
+    run_parser(app, path, profile).map_err(|error| {
+        let message = format!(
+            "Replay parsing failed\ndemo: {path}\nprofile: {}\nparser: {}\n{error}",
+            profile.id(),
+            plugin::parser_exe(app, profile).display()
+        );
+        eprintln!("{message}");
+        message
+    })
+}
+
+fn run_parser(app: &AppHandle, path: &str, profile: plugin::ParserProfile) -> Result<i64> {
     let control = plugin::control(app);
     let mut child = plugin::hide_console(&mut Command::new(plugin::parser_exe(app, profile)))
         .args(["--replay", "--demo", path, "--output", "-"])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| format!("stage: launch parser\ncause: {e}"))?;
     let pid = child.id();
     control.register(pid);
     if control.is_cancelled() {
@@ -492,7 +514,8 @@ fn run(app: &AppHandle, path: &str, profile: plugin::ParserProfile) -> Result<i6
     // number of pipe reads and JSON line boundary checks during ingestion.
     let stdout = BufReader::with_capacity(1 << 20, stdout);
     let result = (|| {
-        let mut conn = database(app)?;
+        let mut conn =
+            database(app).map_err(|e| format!("stage: open replay database\ncause: {e}"))?;
         ingest(
             &mut conn,
             BufReader::new(stdout),
@@ -502,10 +525,11 @@ fn run(app: &AppHandle, path: &str, profile: plugin::ParserProfile) -> Result<i6
                 plugin::state(app).lock().unwrap().completed += 1;
             },
             || {
-                if child.wait().map_err(|e| e.to_string())?.success() {
+                let status = child.wait().map_err(|e| format!("Wait for parser: {e}"))?;
+                if status.success() {
                     Ok(())
                 } else {
-                    Err("Replay parser failed".into())
+                    Err(format!("Replay parser exited with {status}"))
                 }
             },
         )
@@ -518,7 +542,7 @@ fn run(app: &AppHandle, path: &str, profile: plugin::ParserProfile) -> Result<i6
         if tail.trim().is_empty() {
             e
         } else {
-            format!("{e}: {}", tail.trim())
+            format!("{e}\nparser stderr (last 32 KiB):\n{}", tail.trim())
         }
     })
 }
@@ -531,24 +555,34 @@ fn ingest(
     mut progress: impl FnMut(),
     mut finish: impl FnMut() -> Result<()>,
 ) -> Result<i64> {
-    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    let mut stage = String::from("begin import transaction");
     let mut match_id = None;
-    let mut completed = false;
-    let mut late: Vec<Value> = Vec::new();
-    let mut size = 0i64;
-    for line in reader.lines() {
-        if cancelled() {
-            return Err("Parsing cancelled".into());
-        }
-        let value: Value =
-            serde_json::from_str(&line.map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
-        match value["type"].as_str().unwrap_or("") {
-            "metadata" => {
-                if value["format"] != FORMAT || value["version"] != 1 {
-                    return Err("Unsupported replay format".into());
-                }
-                let hash = value["file_sha256"].as_str().ok_or("Missing demo hash")?;
-                if let Some(id) = tx
+    let mut line_number = 0;
+    let mut written_rounds = std::collections::BTreeSet::new();
+    let result: Result<i64> = (|| {
+        let tx = conn.transaction().map_err(|e| e.to_string())?;
+        let mut completed = false;
+        let mut late: Vec<Value> = Vec::new();
+        let mut size = 0i64;
+        for line in reader.lines() {
+            line_number += 1;
+            stage = String::from("read NDJSON record");
+            if cancelled() {
+                return Err("Parsing cancelled".into());
+            }
+            let value: Value = serde_json::from_str(&line.map_err(|e| e.to_string())?)
+                .map_err(|e| e.to_string())?;
+            stage = format!(
+                "ingest {} record (round={})",
+                value["type"], value["round_number"]
+            );
+            match value["type"].as_str().unwrap_or("") {
+                "metadata" => {
+                    if value["format"] != FORMAT || value["version"] != 1 {
+                        return Err("Unsupported replay format".into());
+                    }
+                    let hash = value["file_sha256"].as_str().ok_or("Missing demo hash")?;
+                    if let Some(id) = tx
                     .query_row(
                         "SELECT id FROM matches WHERE hash=?1 AND version=1 AND (json_extract(metadata,'$.parser_profile')=?2 OR (json_extract(metadata,'$.parser_profile') IS NULL AND ?2='v5'))",
                         params![hash, profile],
@@ -559,127 +593,146 @@ fn ingest(
                 {
                     return Ok(id);
                 }
-                let mut metadata = value.clone();
-                metadata["parser_profile"] = Value::String(profile.to_owned());
-                tx.execute(
-                    "INSERT INTO matches(hash,version,metadata)VALUES(?1,1,?2)",
-                    params![hash, metadata.to_string()],
-                )
-                .map_err(|e| e.to_string())?;
-                match_id = Some(tx.last_insert_rowid());
-            }
-            "round" => {
-                let id = match_id.ok_or("Round before metadata")?;
-                let number = value["round_number"]
-                    .as_i64()
-                    .ok_or("Missing round number")?;
-                let mut round = value;
-                round["grenades"] = json!([]);
-                if round["events"].is_null() {
-                    round["events"] = json!([]);
+                    let mut metadata = value.clone();
+                    metadata["parser_profile"] = Value::String(profile.to_owned());
+                    tx.execute(
+                        "INSERT INTO matches(hash,version,metadata)VALUES(?1,1,?2)",
+                        params![hash, metadata.to_string()],
+                    )
+                    .map_err(|e| e.to_string())?;
+                    match_id = Some(tx.last_insert_rowid());
                 }
-                if round["frames"].is_null() {
-                    round["frames"] = json!([]);
+                "round" => {
+                    let id = match_id.ok_or("Round before metadata")?;
+                    let number = value["round_number"]
+                        .as_i64()
+                        .ok_or("Missing round number")?;
+                    let mut round = value;
+                    round["grenades"] = json!([]);
+                    if round["events"].is_null() {
+                        round["events"] = json!([]);
+                    }
+                    if round["frames"].is_null() {
+                        round["frames"] = json!([]);
+                    }
+                    let bytes = encode(&round)?;
+                    size += bytes.len() as i64;
+                    tx.execute(
+                        "INSERT INTO rounds(match_id,number,summary,data)VALUES(?1,?2,?3,?4)",
+                        params![id, number, round["round"].to_string(), bytes],
+                    )
+                    .map_err(|e| e.to_string())?;
+                    written_rounds.insert(number);
+                    progress();
                 }
-                let bytes = encode(&round)?;
-                size += bytes.len() as i64;
-                tx.execute(
-                    "INSERT INTO rounds(match_id,number,summary,data)VALUES(?1,?2,?3,?4)",
-                    params![id, number, round["round"].to_string(), bytes],
-                )
-                .map_err(|e| e.to_string())?;
-                progress();
-            }
-            "grenade" => late.push(value),
-            "complete" => {
-                let id = match_id.ok_or("Completion before metadata")?;
-                if completed {
-                    return Err("Duplicate replay completion".into());
+                "grenade" => late.push(value),
+                "complete" => {
+                    let id = match_id.ok_or("Completion before metadata")?;
+                    if completed {
+                        return Err("Duplicate replay completion".into());
+                    }
+                    tx.execute(
+                        "UPDATE matches SET metadata=?2 WHERE id=?1",
+                        params![id, value.to_string()],
+                    )
+                    .map_err(|e| e.to_string())?;
+                    completed = true;
                 }
-                tx.execute(
-                    "UPDATE matches SET metadata=?2 WHERE id=?1",
-                    params![id, value.to_string()],
-                )
-                .map_err(|e| e.to_string())?;
-                completed = true;
+                _ => return Err("Unknown replay record".into()),
             }
-            _ => return Err("Unknown replay record".into()),
         }
-    }
-    finish()?;
-    if cancelled() {
-        return Err("Parsing cancelled".into());
-    }
-    if !completed {
-        return Err("Replay parser did not complete".into());
-    }
-    let id = match_id.ok_or("Empty replay")?;
-    // Late finalization can refer to a round already written to disk.
-    let mut grouped = std::collections::BTreeMap::<i64, Vec<Value>>::new();
-    for record in late {
-        grouped
-            .entry(
-                record["round_number"]
-                    .as_i64()
-                    .ok_or("Missing grenade round")?,
-            )
-            .or_default()
-            .push(record);
-    }
-    for (number, records) in grouped {
-        let old: Vec<u8> = tx
-            .query_row(
-                "SELECT data FROM rounds WHERE match_id=?1 AND number=?2",
-                params![id, number],
-                |r| r.get(0),
-            )
-            .map_err(|e| e.to_string())?;
-        let mut round = decode(&old)?;
-        for record in records {
+        stage = String::from("wait for parser completion");
+        finish()?;
+        if cancelled() {
+            return Err("Parsing cancelled".into());
+        }
+        if !completed {
+            return Err("Replay parser did not complete".into());
+        }
+        let id = match_id.ok_or("Empty replay")?;
+        stage = String::from("group late grenades");
+        // Late finalization can refer to a round already written to disk.
+        let mut grouped = std::collections::BTreeMap::<i64, Vec<Value>>::new();
+        for record in late {
+            grouped
+                .entry(
+                    record["round_number"]
+                        .as_i64()
+                        .ok_or("Missing grenade round")?,
+                )
+                .or_default()
+                .push(record);
+        }
+        for (number, records) in grouped {
+            stage = format!(
+            "load round for late grenades (round={number}, grenades={}, first_id={}, release_tick={})",
+            records.len(), records[0]["grenade"]["id"], records[0]["grenade"]["release_tick"]
+        );
+            let old: Vec<u8> = tx
+                .query_row(
+                    "SELECT data FROM rounds WHERE match_id=?1 AND number=?2",
+                    params![id, number],
+                    |r| r.get(0),
+                )
+                .map_err(|e| e.to_string())?;
+            stage = format!("decode round for late grenades (round={number})");
+            let mut round = decode(&old)?;
+            stage = format!("merge late grenades (round={number})");
+            for record in records {
+                round["grenades"]
+                    .as_array_mut()
+                    .ok_or("Missing grenades")?
+                    .push(record["grenade"].clone());
+                if let Some(events) = record["events"].as_array() {
+                    round["events"]
+                        .as_array_mut()
+                        .ok_or("Missing events")?
+                        .extend(events.iter().cloned());
+                }
+            }
             round["grenades"]
                 .as_array_mut()
                 .ok_or("Missing grenades")?
-                .push(record["grenade"].clone());
-            if let Some(events) = record["events"].as_array() {
-                round["events"]
-                    .as_array_mut()
-                    .ok_or("Missing events")?
-                    .extend(events.iter().cloned());
-            }
+                .sort_by_key(|g| g["release_tick"].as_i64().unwrap_or(0));
+            round["events"]
+                .as_array_mut()
+                .ok_or("Missing events")?
+                .sort_by_key(|e| e["tick"].as_i64().unwrap_or(0));
+            stage = format!("save round with late grenades (round={number})");
+            let bytes = encode(&round)?;
+            size += bytes.len() as i64 - old.len() as i64;
+            tx.execute(
+                "UPDATE rounds SET data=?3 WHERE match_id=?1 AND number=?2",
+                params![id, number, bytes],
+            )
+            .map_err(|e| e.to_string())?;
         }
-        round["grenades"]
-            .as_array_mut()
-            .ok_or("Missing grenades")?
-            .sort_by_key(|g| g["release_tick"].as_i64().unwrap_or(0));
-        round["events"]
-            .as_array_mut()
-            .ok_or("Missing events")?
-            .sort_by_key(|e| e["tick"].as_i64().unwrap_or(0));
-        let bytes = encode(&round)?;
-        size += bytes.len() as i64 - old.len() as i64;
-        tx.execute(
-            "UPDATE rounds SET data=?3 WHERE match_id=?1 AND number=?2",
-            params![id, number, bytes],
-        )
-        .map_err(|e| e.to_string())?;
-    }
-    let first: i64 = tx
+        stage = String::from("select initial round");
+        let first: i64 = tx
         .query_row(
             "SELECT COALESCE(MIN(CASE WHEN number>0 THEN number END),MIN(number)) FROM rounds WHERE match_id=?1",
             [id],
             |r| r.get(0),
         )
         .map_err(|e| e.to_string())?;
-    tx.execute(
-        "UPDATE matches SET size=?2,round_number=?3 WHERE id=?1",
-        params![id, size, first],
-    )
-    .map_err(|e| e.to_string())?;
-    if cancelled() {
-        return Err("Parsing cancelled".into());
-    }
-    tx.commit().map_err(|e| e.to_string())?;
-    Ok(id)
+        stage = String::from("save replay position and size");
+        tx.execute(
+            "UPDATE matches SET size=?2,round_number=?3 WHERE id=?1",
+            params![id, size, first],
+        )
+        .map_err(|e| e.to_string())?;
+        if cancelled() {
+            return Err("Parsing cancelled".into());
+        }
+        stage = String::from("commit replay transaction");
+        tx.commit().map_err(|e| e.to_string())?;
+        Ok(id)
+    })();
+    result.map_err(|error| {
+        format!(
+            "stage: {stage}\nprofile: {profile}\nreplay_id: {match_id:?}\nNDJSON line: {line_number}\nwritten rounds: {written_rounds:?}\ncause: {error}"
+        )
+    })
 }
 
 #[cfg(test)]
@@ -824,8 +877,24 @@ mod tests {
                 .unwrap(),
             0
         );
-        assert!(ingest(&mut conn, source.as_bytes(), "v5", || true, || {}, || Ok(())).is_err());
-        let id = ingest(&mut conn, source.as_bytes(), "v5", || false, || {}, || Ok(())).unwrap();
+        assert!(ingest(
+            &mut conn,
+            source.as_bytes(),
+            "v5",
+            || true,
+            || {},
+            || Ok(())
+        )
+        .is_err());
+        let id = ingest(
+            &mut conn,
+            source.as_bytes(),
+            "v5",
+            || false,
+            || {},
+            || Ok(()),
+        )
+        .unwrap();
         let bytes: Vec<u8> = conn
             .query_row("SELECT data FROM rounds WHERE match_id=?1", [id], |r| {
                 r.get(0)
@@ -854,6 +923,81 @@ mod tests {
                 .unwrap(),
             0
         );
+        let reparsed = ingest(
+            &mut conn,
+            source.as_bytes(),
+            "v5",
+            || false,
+            || {},
+            || Ok(()),
+        )
+        .unwrap();
+        assert_eq!(reparsed, id, "SQLite may reuse the deleted replay ID");
+        assert!(read_replay_metadata(&conn, reparsed).unwrap().is_some());
+        assert_eq!(
+            read_round(&conn, reparsed, 0).unwrap()["grenades"][0]["id"],
+            "99999999999999999"
+        );
+    }
+
+    #[test]
+    fn deleted_replay_metadata_is_absent_instead_of_sql_error() {
+        let conn = open(std::path::Path::new(":memory:")).unwrap();
+        assert!(read_replay_metadata(&conn, 1).unwrap().is_none());
+        conn.execute(
+            "INSERT INTO matches(id,hash,version,metadata) VALUES(1,'deleted',1,'{}')",
+            [],
+        )
+        .unwrap();
+        assert!(read_replay_metadata(&conn, 1).unwrap().is_some());
+        conn.execute("DELETE FROM matches WHERE id=1", []).unwrap();
+        assert!(read_replay_metadata(&conn, 1).unwrap().is_none());
+        conn.execute("DROP TABLE matches", []).unwrap();
+        assert!(read_replay_metadata(&conn, 1)
+            .unwrap_err()
+            .contains("no such table"));
+    }
+
+    #[test]
+    fn missing_late_grenade_round_reports_import_context() {
+        let mut conn = open(std::path::Path::new(":memory:")).unwrap();
+        let source = concat!(
+            "{\"type\":\"metadata\",\"format\":\"nadeviewer_replay\",\"version\":1,\"file_sha256\":\"diagnostic\"}\n",
+            "{\"type\":\"round\",\"round_number\":1,\"round\":{\"number\":1}}\n",
+            "{\"type\":\"grenade\",\"round_number\":0,\"grenade\":{\"id\":\"orphan\",\"release_tick\":42}}\n",
+            "{\"type\":\"complete\"}\n"
+        );
+        let error = ingest(
+            &mut conn,
+            source.as_bytes(),
+            "v6",
+            || false,
+            || {},
+            || Ok(()),
+        )
+        .unwrap_err();
+        for detail in [
+            "load round for late grenades (round=0",
+            "first_id=\"orphan\"",
+            "release_tick=42",
+            "profile: v6",
+            "replay_id: Some(1)",
+            "NDJSON line: 4",
+            "written rounds: {1}",
+            "Query returned no rows",
+        ] {
+            assert!(error.contains(detail), "Missing {detail} in {error}");
+        }
+        assert_eq!(
+            conn.query_row("SELECT COUNT(*) FROM matches", [], |row| row
+                .get::<_, i64>(0))
+                .unwrap(),
+            0
+        );
+        let error = read_round(&conn, 7, 12).unwrap_err();
+        assert!(error.contains(
+            "stage: read stored round\nreplay_id: 7\nround: 12\ncause: Query returned no rows"
+        ));
     }
 
     #[test]
@@ -863,7 +1007,15 @@ mod tests {
         };
         let mut conn = open(std::path::Path::new(":memory:")).unwrap();
         let file = fs::File::open(path).unwrap();
-        let id = ingest(&mut conn, BufReader::new(file), "v5", || false, || {}, || Ok(())).unwrap();
+        let id = ingest(
+            &mut conn,
+            BufReader::new(file),
+            "v5",
+            || false,
+            || {},
+            || Ok(()),
+        )
+        .unwrap();
         let (rounds,size):(i64,i64)=conn.query_row("SELECT (SELECT COUNT(*) FROM rounds WHERE match_id=?1),size FROM matches WHERE id=?1",[id],|r|Ok((r.get(0)?,r.get(1)?))).unwrap();
         assert!(rounds > 0 && size > 0);
         eprintln!("replay storage: {rounds} rounds, {size} bytes");
