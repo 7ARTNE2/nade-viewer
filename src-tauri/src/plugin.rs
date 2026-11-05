@@ -259,7 +259,7 @@ pub(crate) fn exe(app: &AppHandle) -> PathBuf { parser_exe(app, ParserProfile::V
 
 fn profile_info(app: &AppHandle, profile: ParserProfile) -> ParserProfileInfo {
     let p = parser_exe(app, profile);
-    let value = Command::new(&p).arg("--plugin-info").output().ok()
+    let value = hide_console(&mut Command::new(&p)).arg("--plugin-info").output().ok()
         .filter(|o| o.status.success()).and_then(|o| serde_json::from_slice::<serde_json::Value>(&o.stdout).ok());
     let version = value.as_ref().and_then(|v| v.get("version")).and_then(|v| v.as_str()).map(str::to_owned);
     let capabilities = value.as_ref().and_then(|v| v.get("capabilities")).and_then(|v| v.as_array()).map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_owned)).collect()).unwrap_or_default();
