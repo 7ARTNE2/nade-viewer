@@ -7,7 +7,25 @@ can download a MessagePack snapshot from a configured HTTPS URL and verify its d
 It also replays local CS2 demos on a 2D radar and saves round-linked text and
 drawing notes for reviewing matches.
 
-Current application version: **0.7.2**.
+Current application version: **0.8.0**.
+
+## What's new in 0.8.0
+
+- Select either parser profile in Nade Parser and Replay. v6 is the default
+  for current CS2 demos; v5 remains available for older demos. Each profile can
+  be installed independently, including when neither parser is installed.
+  Version and capability checks run without flashing a console window.
+- Replay tracks decoy throws and their active effects. Smoke effects follow
+  recorded expiry events without the previous duration cap. Existing saved
+  replays need to be parsed again with an updated parser to gain newly recorded
+  decoy data.
+- Timeline zoom reaches 1000%. Grenade previews show the thrower, round time,
+  airtime, and throw keys; clicking a grenade marker also copies its lineup
+  coordinates for the CS2 console.
+- Radar players show defuse-kit status, and the roster highlights the bomb
+  only while it is the player's active weapon.
+- Saved replays reopen reliably, and errors include copyable diagnostics with
+  the command, arguments, and failing stage.
 
 ## What's new in 0.7.2
 
@@ -94,9 +112,17 @@ changes demo time, not that limit. Grenade detection runs on every demo tick
 through the same collector as the existing grenade export.
 
 The roster shows each player's kills, deaths, assists, health, armor, money,
-equipment, active weapon, and ammunition. On sufficiently tall windows, both
+equipment, active weapon, and ammunition. The bomb icon remains visible in the
+carrier's inventory but is highlighted only when held in hand. Radar player
+markers also show defuse-kit status. On sufficiently tall windows, both
 teams share the available pane height; smaller windows keep the roster
-scrollable. Smoke countdown text scales to the visible smoke radius.
+scrollable. Smoke countdown text scales to the visible smoke radius and follows
+the recorded smoke lifetime. Decoy effects run between their recorded start
+and expiry events when the parser output contains those events.
+
+If opening or parsing a replay fails, use **Copy diagnostics** in the error
+panel to copy the report for troubleshooting. Reports include command
+arguments and may contain local file paths; review them before sharing.
 
 Parsed matches are stored locally in a separate `replays.sqlite` database, with
 compressed round data loaded as needed. Saved matches remain playable without
@@ -116,8 +142,12 @@ the first available card.
 
 Timeline previews show kills, damage and flash assists, grenade throws,
 and bomb events. Grenade icons on the radar follow their trajectories and use
-the same type colors as the timeline. Selecting a grenade exposes its throw
-details and copyable commands.
+the same type colors as the timeline. Hover over a timeline grenade marker to
+see the thrower, round time, airtime, and recorded throw keys. Clicking it selects
+the grenade and copies its lineup coordinates. In a local CS2 practice session,
+enable `sv_cheats 1`, then paste the `setpos` / `setang` commands into the console.
+Use the timeline's zoom buttons or mouse wheel to zoom from 100% to 1000%; drag
+the zoomed timeline to pan, or reset it to show the entire round.
 
 | Control          | Action                                                  |
 | ---------------- | ------------------------------------------------------- |
@@ -253,7 +283,7 @@ limitations are documented in [Data formats](docs/data-formats.md).
 ## Technology stack
 
 Versions below are the resolved versions from `package-lock.json` and
-`src-tauri/Cargo.lock` for Nade Viewer 0.7.2.
+`src-tauri/Cargo.lock` for Nade Viewer 0.8.0.
 
 ### Application architecture
 
@@ -374,6 +404,19 @@ npm run tauri:build
 Tauri build artifacts are written below `src-tauri/target/release/`; installers
 are placed below `src-tauri/target/release/bundle/`.
 
+Release builds generate updater signatures and require
+`TAURI_SIGNING_PRIVATE_KEY`. For a local installation test without a signing key,
+disable updater artifacts with a temporary config override:
+
+```powershell
+$localBuildConfig = Join-Path $env:TEMP 'nade-viewer-local-build.json'
+Set-Content -LiteralPath $localBuildConfig -Value '{"bundle":{"createUpdaterArtifacts":false}}' -Encoding ascii
+npm run tauri:build -- --config $localBuildConfig
+```
+
+The override leaves the committed release configuration unchanged. GitHub
+Releases use the repository's signing secret and produce signed updater assets.
+
 ## GitHub Releases
 
 The repository contains a GitHub Actions workflow at
@@ -399,8 +442,8 @@ for Viewer releases.
 Create and push a semantic-version tag from the repository root:
 
 ```powershell
-git tag -a v0.7.2 -m "Nade Viewer 0.7.2"
-git push --atomic origin main v0.7.2
+git tag -a v0.8.0 -m "Nade Viewer 0.8.0"
+git push --atomic origin main v0.8.0
 ```
 
 Pushing the tag starts the `Release` workflow automatically. It builds the
@@ -520,7 +563,7 @@ To rebuild an existing tag without creating a new one:
 1. Open the repository's `Actions` tab on GitHub.
 2. Select the `Release` workflow.
 3. Click `Run workflow`.
-4. Enter an existing tag, for example `v0.7.2`.
+4. Enter an existing tag, for example `v0.8.0`.
 5. Click `Run workflow` again.
 
 The manual workflow also requires a tag in the `vMAJOR.MINOR.PATCH` format,
@@ -574,8 +617,8 @@ assists, drawing colors, wheel zoom while drawing, the shared Nuke notes editor,
 independent floor views at 1920/1280/860 pixels, note filters and links, save
 retries, and failed note reads or radar loads. Rust tests separately exercise note persistence across
 database connections, atomic writes, validation, and cascading deletion.
-CI also checks the separate Go parser with `gofmt`, `go vet`, `go test`, and
-`go build` from `plugins/nade-parser`.
+CI also checks both Go parser profiles with `gofmt`, `go vet`, `go test`, and
+`go build` from `plugins/nade-parser` and `plugins/nade-parser-v6`.
 
 Individual quality commands are also available:
 
@@ -670,6 +713,18 @@ v6.0.0-rc.1`) is the primary profile** for current CS2 demos and Replay. **v5
 manually before parsing or opening a replay. Install each executable from the
 Nade Parser screen; if v6 is selected but not installed, the run is blocked with
 an explicit installation error rather than silently switching to v5.
+
+Uninstalled profiles remain selectable so their **Install** action is available.
+Select a profile, then choose its matching executable: `nade-parser.exe` for v5
+or `nade-parser-v6.exe` for v6. The Viewer stores them independently under
+`%LOCALAPPDATA%\app.nadeviewer.desktop\plugins\nade-parser`. Removing one profile
+preserves the other profile and saved replays. Parser source and build
+instructions are in [`plugins/nade-parser/README.md`](plugins/nade-parser/README.md)
+and [`plugins/nade-parser-v6/README.md`](plugins/nade-parser-v6/README.md).
+
+Workspace cache entries record the parser profile used for each demo. Switching
+profiles reparses the demo rather than reusing output from the other profile.
+Parser checks and parsing jobs start without opening a Windows console window.
 
 ## Import workflow
 

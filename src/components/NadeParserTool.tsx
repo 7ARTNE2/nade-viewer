@@ -31,7 +31,9 @@ import { useI18n } from '../i18n';
 import DestructiveConfirmDialog from './DestructiveConfirmDialog';
 import WorkersSelect from './WorkersSelect';
 import ParserWorkspaceSelect from './ParserWorkspaceSelect';
-import ParserProfileSelect, { type ParserProfileOption } from './ParserProfileSelect';
+import ParserProfileSelect, {
+  type ParserProfileOption,
+} from './ParserProfileSelect';
 
 type Props = { refreshImports?: () => Promise<void> };
 type Status = {
@@ -123,9 +125,14 @@ export default function NadeParserTool({ refreshImports }: Props) {
     setWorkspaces(catalog.workspaces);
     const active = catalog.workspaces.find((entry) => entry.active);
     setCounts(active?.counts ?? [0, 0, 0]);
-    const nextProfiles = await invoke<ParserProfileOption[]>('get_parser_profiles');
+    const nextProfiles = await invoke<ParserProfileOption[]>(
+      'get_parser_profiles',
+    );
     setProfiles(nextProfiles);
-    setInstalled(nextProfiles.find((profile) => profile.id === parserProfile)?.installed ?? false);
+    setInstalled(
+      nextProfiles.find((profile) => profile.id === parserProfile)?.installed ??
+        false,
+    );
   };
   useEffect(() => {
     refresh().catch((e) => setError(String(e)));
@@ -365,14 +372,27 @@ export default function NadeParserTool({ refreshImports }: Props) {
           </p>
         </div>
         <div className="tools-plugin-controls">
-          <ParserProfileSelect value={parserProfile} profiles={profiles} disabled={locked} onChange={(next) => { setParserProfile(next); setInstalled(profiles.find((profile) => profile.id === next)?.installed ?? false); }} />
+          <ParserProfileSelect
+            value={parserProfile}
+            profiles={profiles}
+            disabled={locked}
+            onChange={(next) => {
+              setParserProfile(next);
+              setInstalled(
+                profiles.find((profile) => profile.id === next)?.installed ??
+                  false,
+              );
+            }}
+          />
           <button
             ref={installButtonRef}
             className={`btn ${installed ? '' : 'primary'}`}
             disabled={locked}
             onClick={() =>
               void action(async () => {
-                await invoke('install_parser_profile', { profile: parserProfile });
+                await invoke('install_parser_profile', {
+                  profile: parserProfile,
+                });
                 await refresh();
                 setMessage(
                   tr(

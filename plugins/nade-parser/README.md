@@ -1,7 +1,9 @@
-# Nade Parser Plugin
+# Nade Parser Plugin (v5 profile)
 
 Independent source copy of the Nadegrid Go parser. Building does not require
 the Nadegrid checkout. The executable is distributed separately from Viewer.
+This legacy profile uses `demoinfocs-golang v5.2.0` for older demos.
+The primary v6 profile is built separately from `../nade-parser-v6`.
 
 Build from this directory with Go 1.25 or newer:
 

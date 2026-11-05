@@ -11,11 +11,15 @@ struct ParserEnvelope {
 pub(crate) fn open(path: &Path) -> rusqlite::Result<Connection> {
     let c = Connection::open(path)?;
     c.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA temp_store=MEMORY; PRAGMA cache_size=-65536; PRAGMA busy_timeout=5000; CREATE TABLE IF NOT EXISTS demos(path TEXT PRIMARY KEY, size INTEGER NOT NULL, modified INTEGER NOT NULL, status TEXT NOT NULL, error TEXT, parser_profile TEXT NOT NULL DEFAULT 'v5'); CREATE TABLE IF NOT EXISTS throws(id INTEGER PRIMARY KEY, demo_path TEXT NOT NULL, ordinal INTEGER NOT NULL, raw_json TEXT NOT NULL, map TEXT, side TEXT, grenade_type TEXT, throw_keys TEXT, start_x REAL, start_y REAL, start_z REAL, explode_x REAL, explode_y REAL, explode_z REAL); CREATE INDEX IF NOT EXISTS throws_demo_ordinal ON throws(demo_path,ordinal); CREATE INDEX IF NOT EXISTS throws_lookup ON throws(map,side,grenade_type,throw_keys); CREATE INDEX IF NOT EXISTS throws_start ON throws(start_x,start_y,start_z); CREATE TABLE IF NOT EXISTS dedup(run INTEGER NOT NULL, ordinal INTEGER NOT NULL, raw_json TEXT NOT NULL, PRIMARY KEY(run,ordinal));")?;
-    let _ = c.execute("ALTER TABLE demos ADD COLUMN parser_profile TEXT NOT NULL DEFAULT 'v5'", []);
+    let _ = c.execute(
+        "ALTER TABLE demos ADD COLUMN parser_profile TEXT NOT NULL DEFAULT 'v5'",
+        [],
+    );
     Ok(c)
 }
 
-pub(crate) fn import_demo(
+#[cfg(test)]
+fn import_demo(
     c: &mut Connection,
     path: &str,
     size: u64,
@@ -51,7 +55,8 @@ pub(crate) fn import_demo(
     tx.commit()
 }
 
-pub(crate) fn import_demo_file(
+#[cfg(test)]
+fn import_demo_file(
     c: &mut Connection,
     path: &str,
     size: u64,
@@ -76,7 +81,24 @@ pub(crate) fn import_demo_file_profile(
     tx.execute("DELETE FROM dedup", [])?;
     tx.execute("INSERT INTO demos(path,size,modified,status,error,parser_profile) VALUES(?,?,?,'ok',NULL,?) ON CONFLICT(path) DO UPDATE SET size=excluded.size,modified=excluded.modified,status='ok',error=NULL,parser_profile=excluded.parser_profile", params![path,size as i64,modified,profile])?;
     let mut insert = tx.prepare_cached("INSERT INTO throws(demo_path,ordinal,raw_json,map,side,grenade_type,throw_keys,start_x,start_y,start_z,explode_x,explode_y,explode_z) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)")?;
-    for (ordinal, v) in envelope.canonical_grenades.iter().enumerate() { let p = |n: &str| v.get(n).and_then(Value::as_f64); insert.execute(params![path,ordinal as i64,serde_json::to_string(v).unwrap(),v.get("map").and_then(Value::as_str),v.get("side").and_then(Value::as_str),v.get("grenade_type").and_then(Value::as_str),v.get("throw_keys").and_then(Value::as_str),p("start_pos_x"),p("start_pos_y"),p("start_pos_z"),p("explode_pos_x"),p("explode_pos_y"),p("explode_pos_z")])?; }
+    for (ordinal, v) in envelope.canonical_grenades.iter().enumerate() {
+        let p = |n: &str| v.get(n).and_then(Value::as_f64);
+        insert.execute(params![
+            path,
+            ordinal as i64,
+            serde_json::to_string(v).unwrap(),
+            v.get("map").and_then(Value::as_str),
+            v.get("side").and_then(Value::as_str),
+            v.get("grenade_type").and_then(Value::as_str),
+            v.get("throw_keys").and_then(Value::as_str),
+            p("start_pos_x"),
+            p("start_pos_y"),
+            p("start_pos_z"),
+            p("explode_pos_x"),
+            p("explode_pos_y"),
+            p("explode_pos_z")
+        ])?;
+    }
     drop(insert);
     tx.commit()?;
     Ok(())
@@ -141,15 +163,6 @@ pub(crate) fn fingerprint(path: &Path) -> std::io::Result<(u64, i64)> {
         .as_secs() as i64;
     Ok((m.len(), t))
 }
-pub(crate) fn unchanged(
-    c: &Connection,
-    path: &str,
-    size: u64,
-    modified: i64,
-) -> rusqlite::Result<bool> {
-    unchanged_for_profile(c, path, size, modified, "v5")
-}
-
 pub(crate) fn unchanged_for_profile(
     c: &Connection,
     path: &str,
@@ -278,6 +291,14 @@ mod tests {
 
         import_demo_file(&mut c, "a.dem", 10, 20, &output).unwrap();
 
+        assert_eq!(counts(&c).unwrap(), (1, 1, 0));
+        assert!(unchanged_for_profile(&c, "a.dem", 10, 20, "v5").unwrap());
+        assert!(!unchanged_for_profile(&c, "a.dem", 10, 20, "v6").unwrap());
+        import_demo_file_profile(&mut c, "a.dem", 10, 20, &output, "v6").unwrap();
+        assert!(unchanged_for_profile(&c, "a.dem", 10, 20, "v6").unwrap());
+        assert!(!unchanged_for_profile(&c, "a.dem", 10, 20, "v5").unwrap());
+        assert!(!unchanged_for_profile(&c, "a.dem", 11, 20, "v6").unwrap());
+        assert!(!unchanged_for_profile(&c, "a.dem", 10, 21, "v6").unwrap());
         assert_eq!(counts(&c).unwrap(), (1, 1, 0));
         assert_eq!(
             all(&c).unwrap()[0]["trajectory"],

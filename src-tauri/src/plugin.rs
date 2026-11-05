@@ -39,12 +39,40 @@ pub(crate) enum ParserProfile {
 }
 
 impl ParserProfile {
-    pub(crate) fn id(self) -> &'static str { match self { Self::V5 => "v5", Self::V6 => "v6" } }
-    pub(crate) fn label(self) -> &'static str { match self { Self::V5 => "demoinfocs v5.2.0", Self::V6 => "demoinfocs v6.0.0-rc.1" } }
-    pub(crate) fn from_id(id: &str) -> Result<Self, String> { match id { "v5" => Ok(Self::V5), "v6" => Ok(Self::V6), _ => Err(format!("Unknown parser profile: {id}")) } }
+    pub(crate) fn id(self) -> &'static str {
+        match self {
+            Self::V5 => "v5",
+            Self::V6 => "v6",
+        }
+    }
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            Self::V5 => "demoinfocs v5.2.0",
+            Self::V6 => "demoinfocs v6.0.0-rc.1",
+        }
+    }
+    pub(crate) fn from_id(id: &str) -> Result<Self, String> {
+        match id {
+            "v5" => Ok(Self::V5),
+            "v6" => Ok(Self::V6),
+            _ => Err(format!("Unknown parser profile: {id}")),
+        }
+    }
     // Keep the original v5 filename for compatibility with installations that
     // predate parser profiles. v6 has its own profile-specific filename.
-    fn filename(self) -> &'static str { if cfg!(windows) { match self { Self::V5 => "nade-parser.exe", Self::V6 => "nade-parser-v6.exe" } } else { match self { Self::V5 => "nade-parser", Self::V6 => "nade-parser-v6" } } }
+    fn filename(self) -> &'static str {
+        if cfg!(windows) {
+            match self {
+                Self::V5 => "nade-parser.exe",
+                Self::V6 => "nade-parser-v6.exe",
+            }
+        } else {
+            match self {
+                Self::V5 => "nade-parser",
+                Self::V6 => "nade-parser-v6",
+            }
+        }
+    }
 }
 
 #[derive(Serialize, Clone)]
@@ -246,27 +274,67 @@ fn plugin_dir(app: &AppHandle) -> PathBuf {
 
 pub(crate) fn parser_exe(app: &AppHandle, profile: ParserProfile) -> PathBuf {
     let path = plugin_dir(app).join(profile.filename());
-    if path.is_file() { return path; }
+    if path.is_file() {
+        return path;
+    }
     if profile == ParserProfile::V5 {
         // Accept the temporary profile-specific name used by early v5 builds.
-        let profile_name = plugin_dir(app).join(if cfg!(windows) { "nade-parser-v5.exe" } else { "nade-parser-v5" });
-        if profile_name.is_file() { return profile_name; }
+        let profile_name = plugin_dir(app).join(if cfg!(windows) {
+            "nade-parser-v5.exe"
+        } else {
+            "nade-parser-v5"
+        });
+        if profile_name.is_file() {
+            return profile_name;
+        }
     }
     path
 }
 
-pub(crate) fn exe(app: &AppHandle) -> PathBuf { parser_exe(app, ParserProfile::V5) }
+pub(crate) fn exe(app: &AppHandle) -> PathBuf {
+    parser_exe(app, ParserProfile::V5)
+}
 
 fn profile_info(app: &AppHandle, profile: ParserProfile) -> ParserProfileInfo {
     let p = parser_exe(app, profile);
-    let value = hide_console(&mut Command::new(&p)).arg("--plugin-info").output().ok()
-        .filter(|o| o.status.success()).and_then(|o| serde_json::from_slice::<serde_json::Value>(&o.stdout).ok());
-    let version = value.as_ref().and_then(|v| v.get("version")).and_then(|v| v.as_str()).map(str::to_owned);
-    let capabilities = value.as_ref().and_then(|v| v.get("capabilities")).and_then(|v| v.as_array()).map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_owned)).collect()).unwrap_or_default();
+    let value = hide_console(&mut Command::new(&p))
+        .arg("--plugin-info")
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .and_then(|o| serde_json::from_slice::<serde_json::Value>(&o.stdout).ok());
+    let version = value
+        .as_ref()
+        .and_then(|v| v.get("version"))
+        .and_then(|v| v.as_str())
+        .map(str::to_owned);
+    let capabilities = value
+        .as_ref()
+        .and_then(|v| v.get("capabilities"))
+        .and_then(|v| v.as_array())
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().map(str::to_owned))
+                .collect()
+        })
+        .unwrap_or_default();
     let installed = p.is_file() && version.is_some();
     let path = installed.then(|| p.display().to_string());
-    let filename = installed.then(|| p.file_name().and_then(|name| name.to_str()).unwrap_or_default().to_owned());
-    ParserProfileInfo { id: profile.id().into(), label: profile.label().into(), installed, path, filename, version, capabilities }
+    let filename = installed.then(|| {
+        p.file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or_default()
+            .to_owned()
+    });
+    ParserProfileInfo {
+        id: profile.id().into(),
+        label: profile.label().into(),
+        installed,
+        path,
+        filename,
+        version,
+        capabilities,
+    }
 }
 pub(crate) fn state(app: &AppHandle) -> Arc<Mutex<ParserStatus>> {
     app.state::<Arc<Mutex<ParserStatus>>>().inner().clone()
@@ -406,25 +474,40 @@ pub(crate) fn get_nade_parser_info(app: AppHandle) -> PluginInfo {
 
 #[tauri::command]
 pub(crate) fn get_parser_profiles(app: AppHandle) -> Vec<ParserProfileInfo> {
-    [ParserProfile::V5, ParserProfile::V6].into_iter().map(|p| profile_info(&app, p)).collect()
+    [ParserProfile::V5, ParserProfile::V6]
+        .into_iter()
+        .map(|p| profile_info(&app, p))
+        .collect()
 }
 
 #[tauri::command]
-pub(crate) fn install_parser_profile(app: AppHandle, profile: String) -> Result<ParserProfileInfo, String> {
-    if state(&app).lock().unwrap().running { return Err("A parser job is already running".into()); }
+pub(crate) fn install_parser_profile(
+    app: AppHandle,
+    profile: String,
+) -> Result<ParserProfileInfo, String> {
+    if state(&app).lock().unwrap().running {
+        return Err("A parser job is already running".into());
+    }
     let profile = ParserProfile::from_id(&profile)?;
-    let source = rfd::FileDialog::new().add_filter("Executable", &["exe"]).pick_file().ok_or("Installation cancelled")?;
+    let source = rfd::FileDialog::new()
+        .add_filter("Executable", &["exe"])
+        .pick_file()
+        .ok_or("Installation cancelled")?;
     let p = plugin_dir(&app).join(profile.filename());
     std::fs::create_dir_all(p.parent().unwrap()).map_err(|e| e.to_string())?;
     std::fs::copy(source, &p).map_err(|e| e.to_string())?;
     let info = profile_info(&app, profile);
-    if !info.installed { return Err("Selected executable is not a compatible Nade Parser plugin".into()); }
+    if !info.installed {
+        return Err("Selected executable is not a compatible Nade Parser plugin".into());
+    }
     Ok(info)
 }
 
 #[tauri::command]
 pub(crate) fn uninstall_parser_profile(app: AppHandle, profile: String) -> Result<(), String> {
-    if state(&app).lock().unwrap().running { return Err("Cannot remove a parser while parsing is running".into()); }
+    if state(&app).lock().unwrap().running {
+        return Err("Cannot remove a parser while parsing is running".into());
+    }
     let profile = ParserProfile::from_id(&profile)?;
     remove_nade_parser(&parser_exe(&app, profile))
 }
@@ -969,7 +1052,14 @@ pub(crate) fn run_nade_parser(
     workers: Option<usize>,
     confirmed: bool,
 ) -> Result<(), String> {
-    run_nade_parser_batch(app, vec![demo_path], deduplicate, workers, confirmed, "v6".into())
+    run_nade_parser_batch(
+        app,
+        vec![demo_path],
+        deduplicate,
+        workers,
+        confirmed,
+        "v6".into(),
+    )
 }
 #[tauri::command]
 pub(crate) fn run_nade_parser_batch(
@@ -1027,8 +1117,14 @@ pub(crate) fn run_nade_parser_batch(
             for (ordinal, file) in files.into_iter().enumerate() {
                 let (size, modified) =
                     parser_store::fingerprint(&file).map_err(|e| e.to_string())?;
-                if parser_store::unchanged_for_profile(&store, &file.display().to_string(), size, modified, profile.id())
-                    .map_err(|e| e.to_string())?
+                if parser_store::unchanged_for_profile(
+                    &store,
+                    &file.display().to_string(),
+                    size,
+                    modified,
+                    profile.id(),
+                )
+                .map_err(|e| e.to_string())?
                 {
                     cached_ordinals.insert(ordinal);
                 } else {

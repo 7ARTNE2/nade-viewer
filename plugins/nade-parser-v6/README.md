@@ -1,21 +1,23 @@
-# Nade Parser Plugin
+# Nade Parser Plugin (v6 profile)
 
 Independent source copy of the Nadegrid Go parser. Building does not require
 the Nadegrid checkout. The executable is distributed separately from Viewer.
+This profile uses `demoinfocs-golang v6.0.0-rc.1` for current CS2 demos.
+The legacy v5 profile is built separately from `../nade-parser`.
 
-Build from this directory with Go 1.25 or newer:
+Build from this directory with Go 1.27 or newer, as required by `go.mod`:
 
 ```powershell
 go test ./...
-go build -o nade-parser.exe ./cmd/nade-parser
+go build -o nade-parser-v6.exe ./cmd/nade-parser
 ```
 
 Protocol:
 
 ```text
-nade-parser.exe --plugin-info
-nade-parser.exe --parse --demo match.dem --output result.json
-nade-parser.exe --replay --demo match.dem --output replay.ndjson
+nade-parser-v6.exe --plugin-info
+nade-parser-v6.exe --parse --demo match.dem --output result.json
+nade-parser-v6.exe --replay --demo match.dem --output replay.ndjson
 ```
 
 Nade Parser 0.3.0 advertises the `replay_v1` capability. Replay is collected in

@@ -693,7 +693,10 @@ export default function ReplayCanvas({
             ctx.lineWidth = Math.max(0.8, radius * 0.035);
             ctx.beginPath();
             ctx.moveTo(sx, sy);
-            ctx.lineTo(sx - Math.cos(angle) * tail, sy - Math.sin(angle) * tail);
+            ctx.lineTo(
+              sx - Math.cos(angle) * tail,
+              sy - Math.sin(angle) * tail,
+            );
             ctx.stroke();
           }
           ctx.restore();
