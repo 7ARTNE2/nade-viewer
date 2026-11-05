@@ -554,7 +554,7 @@ const Team = memo(
                   {(p.id === bombCarrier ||
                     (p.weapons ?? []).some(isC4Weapon)) && (
                     <span
-                      className={`replay-player-item ${p.id === bombCarrier ? 'active' : ''}`}
+                      className={`replay-player-item ${weaponMatchesActive('C4', p.active_weapon) ? 'active' : ''}`}
                       data-tip={tr('Bomb', 'Бомба')}
                     >
                       <img
