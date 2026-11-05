@@ -32,6 +32,8 @@ import { weaponIcon } from '../lib/weaponIcons';
 import { playersAt } from '../lib/replayPlayback';
 import { onReplayAnimationFrame } from '../lib/replayAnimation';
 
+const MAX_TIMELINE_ZOOM = 10;
+
 type Props = {
   round: ReplayRound;
   clock: { current: number };
@@ -119,7 +121,7 @@ export default function ReplayTimeline({
   const visibleCurrent = clamp(clock.current, boundedViewStart, viewEnd);
   const zoomAt = useCallback(
     (nextZoom: number, anchorRatio = 0.5) => {
-      const next = clamp(nextZoom, 1, 8);
+      const next = clamp(nextZoom, 1, MAX_TIMELINE_ZOOM);
       const anchor = boundedViewStart + viewDuration * anchorRatio;
       const nextDuration = totalDuration / next;
       const nextMaxStart = Math.max(timelineStart, end - nextDuration);
@@ -334,7 +336,7 @@ export default function ReplayTimeline({
       <button
         type="button"
         onClick={() => zoomAt(zoom * 1.35)}
-        disabled={zoom >= 7.99}
+        disabled={zoom >= MAX_TIMELINE_ZOOM}
         aria-label={tr('Zoom in', 'Увеличить')}
         data-tip={tr('Zoom in', 'Увеличить')}
       >
