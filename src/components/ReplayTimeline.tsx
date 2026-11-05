@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -24,6 +25,7 @@ import {
 import type { ReplayEvent, ReplayRound } from '../types/replay';
 import GrenadeMapIcon from './GrenadeMapIcon';
 import type { ReplayGrenade } from '../types/replay';
+import ReplayGrenadePreview from './ReplayGrenadePreview';
 import ReplayKillAssists from './ReplayKillAssists';
 import { deathNoticeIcon } from '../lib/deathNoticeIcons';
 import { weaponIcon } from '../lib/weaponIcons';
@@ -78,7 +80,11 @@ export default function ReplayTimeline({
     [round],
   );
   const [hoveredKill, setHoveredKill] = useState<number | null>(null);
-  const [hoveredGrenade, setHoveredGrenade] = useState<string | null>(null);
+  const grenadePreviewId = useId();
+  const [hoveredGrenade, setHoveredGrenade] = useState<{
+    id: string;
+    anchor: HTMLElement;
+  } | null>(null);
   const [zoom, setZoom] = useState(1);
   const [viewStart, setViewStart] = useState(0);
   const [dragging, setDragging] = useState(false);
@@ -388,10 +394,29 @@ export default function ReplayTimeline({
                     key={grenade.id}
                     data-tick={markerTick}
                     style={{ left: `${progress(markerTick)}%` }}
-                    onMouseEnter={() => setHoveredGrenade(grenade.id)}
-                    onMouseLeave={() => setHoveredGrenade(null)}
-                    onFocus={() => setHoveredGrenade(grenade.id)}
+                    onMouseEnter={(event) =>
+                      setHoveredGrenade({
+                        id: grenade.id,
+                        anchor: event.currentTarget,
+                      })
+                    }
+                    onMouseLeave={(event) => {
+                      if (!event.currentTarget.contains(document.activeElement))
+                        setHoveredGrenade(null);
+                    }}
+                    onFocus={(event) =>
+                      setHoveredGrenade({
+                        id: grenade.id,
+                        anchor: event.currentTarget,
+                      })
+                    }
                     onBlur={() => setHoveredGrenade(null)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Escape') {
+                        event.stopPropagation();
+                        setHoveredGrenade(null);
+                      }
+                    }}
                     onContextMenu={(event) => {
                       event.preventDefault();
                       event.stopPropagation();
@@ -401,6 +426,11 @@ export default function ReplayTimeline({
                     <button
                       type="button"
                       aria-label={`${grenade.data.thrower} · ${grenade.data.grenade_type}`}
+                      aria-describedby={
+                        hoveredGrenade?.id === grenade.id
+                          ? grenadePreviewId
+                          : undefined
+                      }
                       onClick={() => onGrenadeSelect(grenade)}
                     >
                       {copiedGrenadeId === grenade.id ? (
@@ -411,35 +441,13 @@ export default function ReplayTimeline({
                         />
                       )}
                     </button>
-                    {hoveredGrenade === grenade.id && (
-                      <span
-                        className="replay-timeline-grenade-preview"
-                        role="tooltip"
-                      >
-                        <span className="replay-timeline-grenade-preview-head">
-                          <span
-                            className={`replay-timeline-grenade-preview-icon type-${grenadeType}`}
-                          >
-                            <GrenadeMapIcon
-                              grenadeType={grenade.data.grenade_type}
-                            />
-                          </span>
-                          <strong>{grenade.data.grenade_type}</strong>
-                          <time>{labelAt(markerTick)}</time>
-                        </span>
-                        <span className="replay-timeline-grenade-preview-info">
-                          <b>
-                            {grenade.data.thrower ||
-                              tr('Unknown player', 'Неизвестный игрок')}
-                          </b>
-                          {typeof grenade.data.airtime === 'number' && (
-                            <span>
-                              {tr('Airtime', 'Полёт')}:{' '}
-                              {grenade.data.airtime.toFixed(2)} s
-                            </span>
-                          )}
-                        </span>
-                      </span>
+                    {hoveredGrenade?.id === grenade.id && (
+                      <ReplayGrenadePreview
+                        id={grenadePreviewId}
+                        grenade={grenade}
+                        anchor={hoveredGrenade.anchor}
+                        time={labelAt(markerTick)}
+                      />
                     )}
                   </span>
                 );
