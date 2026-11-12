@@ -1,7 +1,7 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { invoke } from '@tauri-apps/api/core';
-import { Copy, Download, LoaderCircle, X } from 'lucide-react';
+import { Check, Copy, Download, LoaderCircle, X } from 'lucide-react';
 import { useI18n } from '../i18n';
 import { screenshotBytes } from '../lib/replayScreenshot';
 import { useModalAccessibility } from '../lib/useModalAccessibility';
@@ -22,7 +22,15 @@ export default function ReplayScreenshotDialog({
   const { tr } = useI18n();
   const { showToast } = useToast();
   const [busy, setBusy] = useState<'copy' | 'save' | null>(null);
+  const [copied, setCopied] = useState(false);
   const [error, setError] = useState('');
+  const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (copiedTimer.current !== null) clearTimeout(copiedTimer.current);
+    },
+    [],
+  );
   const inFlight = useRef(false);
   const close = useCallback(() => {
     if (!inFlight.current) onClose();
@@ -33,6 +41,10 @@ export default function ReplayScreenshotDialog({
     inFlight.current = true;
     setBusy(action);
     setError('');
+    if (action === 'copy') {
+      if (copiedTimer.current !== null) clearTimeout(copiedTimer.current);
+      setCopied(false);
+    }
     try {
       const bytes = screenshotBytes(image);
       if (action === 'copy') {
@@ -43,6 +55,11 @@ export default function ReplayScreenshotDialog({
             'image/png': new Blob([bytes], { type: 'image/png' }),
           }),
         ]);
+        setCopied(true);
+        copiedTimer.current = setTimeout(() => {
+          setCopied(false);
+          copiedTimer.current = null;
+        }, 2000);
         showToast(
           tr(
             'Screenshot copied. Paste it into a chat.',
@@ -134,16 +151,22 @@ export default function ReplayScreenshotDialog({
             {tr('Save PNG', 'Сохранить PNG')}
           </button>
           <button
-            className="btn primary"
+            className={`btn primary replay-screenshot-copy${copied ? ' copied' : ''}`}
             disabled={Boolean(busy)}
             onClick={() => void act('copy')}
           >
             {busy === 'copy' ? (
               <LoaderCircle size={15} className="spin" />
+            ) : copied ? (
+              <Check size={15} className="replay-screenshot-copy-check" />
             ) : (
               <Copy size={15} />
             )}
-            {tr('Copy image', 'Копировать изображение')}
+            <span aria-live="polite" aria-atomic="true">
+              {copied
+                ? tr('Copied', 'Скопировано')
+                : tr('Copy image', 'Копировать изображение')}
+            </span>
           </button>
         </footer>
       </div>

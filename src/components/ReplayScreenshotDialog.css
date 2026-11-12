@@ -50,6 +50,12 @@
 .replay-screenshot-dialog .btn {
   white-space: nowrap;
 }
+.replay-screenshot-copy.copied {
+  animation: copy-confirm 0.46s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.replay-screenshot-copy-check {
+  animation: copy-icon-confirm 0.46s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
 .replay-screenshot-error {
   margin: 0;
   color: #ffabb2;
