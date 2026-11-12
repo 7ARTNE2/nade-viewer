@@ -418,7 +418,8 @@
   position: absolute;
   top: 3px;
   right: 3px;
-  color: var(--acid);
+  color: #ffc47a;
+  stroke-width: 2.5;
 }
 @media (max-width: 1150px) {
   .replay-history-with-notes {
