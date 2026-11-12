@@ -1595,7 +1595,7 @@ export default function ReplayPage() {
                     ? replayProgress === 100
                       ? tr('Finalizing replay', 'Подготовка реплея')
                       : replayProgress === null
-                        ? tr('Progress unavailable', 'Прогресс недоступен')
+                        ? tr('Preparing demo', 'Подготовка демо')
                         : tr('Reading demo', 'Чтение демо')
                     : tr(
                         'Another task is running',

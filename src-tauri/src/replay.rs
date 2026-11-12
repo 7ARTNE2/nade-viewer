@@ -449,6 +449,11 @@ pub(crate) fn start_replay(app: AppHandle, path: String, profile: String) -> Res
         }
         control.reset();
         status.start("replay");
+        // Publish the known demo size immediately so the first status poll
+        // can render a determinate 0% bar before the parser emits progress.
+        if let Ok(metadata) = std::fs::metadata(&path) {
+            status.total_bytes = metadata.len();
+        }
     }
     let worker = app.clone();
     if let Err(e) = std::thread::Builder::new()
