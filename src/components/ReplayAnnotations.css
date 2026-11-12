@@ -14,7 +14,7 @@
   z-index: 21;
   position: absolute;
   top: 12px;
-  left: 12px;
+  right: 12px;
   display: flex;
   align-items: center;
   gap: 7px;
@@ -190,12 +190,14 @@
   color: #fb7185;
 }
 .replay-note-editor {
+  contain: layout style;
   display: grid;
   gap: 5px;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
 .replay-note-editor textarea {
+  transition: none;
   width: 100%;
   min-height: 76px;
   resize: vertical;

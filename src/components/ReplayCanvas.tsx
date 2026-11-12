@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Minus, Plus, RotateCcw } from 'lucide-react';
+import { Camera, LoaderCircle, Minus, Plus, RotateCcw } from 'lucide-react';
 import c4Icon from '../assets/equipment_icons/c4.svg';
 import defuserIcon from '../assets/equipment_icons/defuser.svg';
 import { preloadImage, cachedImage } from '../lib/imageCache';
@@ -20,6 +20,9 @@ import {
 } from '../lib/replayGrenadeIcons';
 import { drawReplayInfernos } from '../lib/replayInferno';
 import ReplayAnnotations from './ReplayAnnotations';
+import ReplayScreenshotDialog from './ReplayScreenshotDialog';
+import { captureReplayScreenshot } from '../lib/replayScreenshot';
+import { useToast } from './Toast';
 import { useI18n } from '../i18n';
 import type {
   ReplayDetail,
@@ -42,6 +45,7 @@ type Props = {
   onSeekNote: (tick: number, lower: boolean) => void;
   showNotesControls?: boolean;
   notesControlsTarget?: HTMLElement | null;
+  notesPanelTarget?: HTMLElement | null;
 };
 const FLASH_FULL_RADIUS_GAME = 400;
 const FLASH_FADE_RADIUS_GAME = 1000;
@@ -118,10 +122,55 @@ export default function ReplayCanvas({
   onSeekNote,
   showNotesControls = true,
   notesControlsTarget,
+  notesPanelTarget,
 }: Props) {
   const { tr } = useI18n();
+  const { showToast } = useToast();
   const canvas = useRef<HTMLCanvasElement>(null);
   const surface = useRef<HTMLDivElement>(null);
+  const [screenshot, setScreenshot] = useState<{
+    image: string;
+    name: string;
+    description: string;
+  } | null>(null);
+  const [capturing, setCapturing] = useState(false);
+  const captureInFlight = useRef(false);
+  const capture = async () => {
+    if (!canvas.current || captureInFlight.current) return;
+    captureInFlight.current = true;
+    setCapturing(true);
+    onPause();
+    try {
+      const tick = clock.current;
+      const image = await captureReplayScreenshot(
+        canvas.current,
+        surface.current?.querySelector<SVGSVGElement>('.replay-annotations') ??
+          null,
+      );
+      const elapsed = Math.max(
+        0,
+        Math.floor((tick - round.round.start_tick) / tickrate),
+      );
+      const time = `${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, '0')}`;
+      const floor = lower ? tr('Lower', 'Нижний') : tr('Main', 'Основной');
+      setScreenshot({
+        image,
+        name: `${detail.metadata.map}-round-${round.round_number}-${lower ? 'lower' : 'main'}-tick-${Math.round(tick)}.png`,
+        description: `${detail.metadata.map} · ${tr('Round', 'Раунд')} ${round.round_number} · ${time} · ${floor}`,
+      });
+    } catch {
+      showToast(
+        tr(
+          'Unable to capture the map. Try again.',
+          'Не удалось сделать скриншот карты. Попробуйте ещё раз.',
+        ),
+        { tone: 'error' },
+      );
+    } finally {
+      captureInFlight.current = false;
+      setCapturing(false);
+    }
+  };
   const [view, setView] = useState({ s: 1, x: 0, y: 0 });
   const [failedImagePath, setFailedImagePath] = useState<string | null>(null);
   const viewRef = useRef(view);
@@ -1564,6 +1613,7 @@ export default function ReplayCanvas({
         lower={lower}
         showControls={showNotesControls}
         controlsTarget={notesControlsTarget}
+        panelTarget={notesPanelTarget}
         view={view}
         onPause={onPause}
         onSeek={onSeekNote}
@@ -1573,6 +1623,25 @@ export default function ReplayCanvas({
           {tr('Radar unavailable for this map', 'Радар этой карты недоступен')}
         </div>
       )}
+      <button
+        type="button"
+        className="replay-screenshot-button"
+        aria-label={tr('Share map screenshot', 'Поделиться скриншотом карты')}
+        data-tip={tr('Share map screenshot', 'Поделиться скриншотом карты')}
+        disabled={
+          capturing ||
+          !imagePath ||
+          !detail.radar ||
+          failedImagePath === imagePath
+        }
+        onClick={() => void capture()}
+      >
+        {capturing ? (
+          <LoaderCircle size={16} className="spin" />
+        ) : (
+          <Camera size={16} />
+        )}
+      </button>
       <div className="map-toolbar-floating replay-map-tools">
         <button
           aria-label={tr('Zoom in', 'Приблизить')}
@@ -1597,6 +1666,14 @@ export default function ReplayCanvas({
           <RotateCcw size={14} />
         </button>
       </div>
+      {screenshot && (
+        <ReplayScreenshotDialog
+          image={screenshot.image}
+          name={screenshot.name}
+          description={screenshot.description}
+          onClose={() => setScreenshot(null)}
+        />
+      )}
     </div>
   );
 }

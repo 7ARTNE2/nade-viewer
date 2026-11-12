@@ -775,6 +775,7 @@ pub fn run() {
                     plugin::clear_parser_workspace,
                     plugin::prepare_parser_import,
                     replay::get_replay_capability,
+                    replay::save_replay_screenshot,
                     replay::start_replay,
                     replay::list_replays,
                     replay::get_replay,

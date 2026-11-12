@@ -662,6 +662,8 @@ export default function ReplayPage() {
   const replayOptionsTrigger = useRef<HTMLButtonElement>(null);
   const [tick, setTick] = useState(0);
   const [lower, setLower] = useState(false);
+  const [notesPanelTarget, setNotesPanelTarget] =
+    useState<HTMLDivElement | null>(null);
   const [notesControlsTarget, setNotesControlsTarget] =
     useState<HTMLDivElement | null>(null);
   const [selected, setSelected] = useState<ReplayGrenade | null>(null);
@@ -2068,6 +2070,7 @@ export default function ReplayPage() {
                           notesControlsTarget={
                             dualRadar ? notesControlsTarget : null
                           }
+                          notesPanelTarget={notesPanelTarget}
                           selected={selected}
                           onPause={() => {
                             cancelAutoNext();
@@ -2099,6 +2102,10 @@ export default function ReplayPage() {
                   </div>
                 </ReplayAnnotationsProvider>
                 <aside className="replay-inspector">
+                  <div
+                    className="replay-notes-dock"
+                    ref={setNotesPanelTarget}
+                  />
                   {selected ? (
                     <section className="replay-grenade-detail">
                       <header>

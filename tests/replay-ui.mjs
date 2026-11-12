@@ -2,6 +2,7 @@
 // Optional real parser output: node tests/replay-ui.mjs <playwright directory> <NDJSON>
 /* global window, document, localStorage, console */
 import assert from 'node:assert/strict';
+import { Buffer } from 'node:buffer';
 import { readFile, mkdir } from 'node:fs/promises';
 import { fileURLToPath, pathToFileURL, URL } from 'node:url';
 import process from 'node:process';
@@ -154,6 +155,14 @@ try {
       }
       Object.defineProperty(window.navigator, 'clipboard', {
         value: {
+          async write(items) {
+            if (window.__failScreenshotCopy)
+              throw new Error('Clipboard denied');
+            const blob = await items[0].getType('image/png');
+            window.__copiedReplayScreenshot = Array.from(
+              new Uint8Array(await blob.arrayBuffer()),
+            );
+          },
           async writeText(text) {
             window.__copiedReplayCoordinates = text;
           },
@@ -364,6 +373,9 @@ try {
               entry.round_number = args.number;
               entry.tick = args.tick;
               return null;
+            case 'save_replay_screenshot':
+              if (window.__failScreenshotSave) throw new Error('Save failed');
+              return window.__cancelScreenshotSave ? null : 'replay-map.png';
             case 'delete_replay':
               entries = [];
               await window.__replayNotesBackend(command, args);
@@ -1105,17 +1117,88 @@ try {
     .getByRole('button', { name: 'Воспроизвести', exact: true })
     .waitFor();
   const drawing = page.locator('.replay-annotations');
+  const textareaBeforeResize = await noteText.boundingBox();
+  const mapBeforeResize = await page.locator('.replay-radars').boundingBox();
+  await page.mouse.move(
+    textareaBeforeResize.x + textareaBeforeResize.width - 3,
+    textareaBeforeResize.y + textareaBeforeResize.height - 3,
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    textareaBeforeResize.x + textareaBeforeResize.width - 3,
+    textareaBeforeResize.y + textareaBeforeResize.height + 57,
+    { steps: 12 },
+  );
+  await page.mouse.up();
+  const resizedTextarea = await noteText.boundingBox();
+  assert.ok(
+    resizedTextarea.height > textareaBeforeResize.height + 30,
+    'note text area must resize with its handle',
+  );
+  assert.deepEqual(
+    await page.locator('.replay-radars').boundingBox(),
+    mapBeforeResize,
+    'resizing note text must not resize either radar',
+  );
+  await noteText.evaluate((textarea) => {
+    textarea.style.height = '';
+  });
   const drawShape = async (tool) => {
     await page.getByRole('button', { name: tool, exact: true }).click();
+    await page.waitForFunction(
+      () => !document.querySelector('.replay-notes-panel [role="status"]'),
+    );
     await page.mouse.move(
       bounds.x + bounds.width - 90,
       bounds.y + bounds.height * 0.55,
     );
     await page.mouse.down();
+    const savesBeforeMove = await page.evaluate(() => {
+      window.__editorMutations = 0;
+      window.__editorMutationObserver = new window.MutationObserver(
+        (records) => {
+          window.__editorMutations += records.length;
+        },
+      );
+      window.__editorMutationObserver.observe(
+        document.querySelector('.replay-notes-panel'),
+        {
+          attributes: true,
+          childList: true,
+          subtree: true,
+          characterData: true,
+        },
+      );
+      return window.__replayCalls.filter(
+        (call) => call.command === 'save_replay_notes',
+      ).length;
+    });
     await page.mouse.move(
       bounds.x + bounds.width - 30,
       bounds.y + bounds.height * 0.7,
       { steps: 8 },
+    );
+    await page.evaluate(
+      () => new Promise((resolve) => window.requestAnimationFrame(resolve)),
+    );
+    const drawingWork = await page.evaluate(() => {
+      window.__editorMutationObserver.disconnect();
+      return {
+        mutations: window.__editorMutations,
+        saves: window.__replayCalls.filter(
+          (call) => call.command === 'save_replay_notes',
+        ).length,
+      };
+    });
+    assert.equal(
+      drawingWork.mutations,
+      0,
+      'pointer motion must not rebuild the note editor',
+    );
+    assert.equal(
+      drawingWork.saves,
+      savesBeforeMove,
+      'drawing previews must not save on pointer motion',
     );
     await page.mouse.up();
   };
@@ -1293,7 +1376,167 @@ try {
   await page
     .getByRole('button', { name: 'Закрыть заметки', exact: true })
     .click();
+  assert.equal(
+    await drawing.locator('polyline').count(),
+    1,
+    'closing the editor keeps the selected drawing visible',
+  );
+  assert.equal(await drawing.getAttribute('class'), 'replay-annotations ');
+  await page.getByRole('button', { name: /^Заметки/ }).click();
+  await drawing.locator('polyline').waitFor();
+  const dockLayout = await page
+    .locator('.replay-notes-panel')
+    .evaluate((panel) => {
+      const p = panel.getBoundingClientRect();
+      const map = document
+        .querySelector('.replay-radars')
+        .getBoundingClientRect();
+      return {
+        overlaps:
+          p.left < map.right &&
+          p.right > map.left &&
+          p.top < map.bottom &&
+          p.bottom > map.top,
+      };
+    });
+  assert.equal(dockLayout.overlaps, false, 'note editor stays outside the map');
+  const notesPosition = await page
+    .locator('.replay-notes-toggle')
+    .evaluate((button) => {
+      const b = button.getBoundingClientRect();
+      const map = document
+        .querySelector('.replay-radars')
+        .getBoundingClientRect();
+      return { right: map.right - b.right, top: b.top - map.top };
+    });
+  assert.ok(
+    Math.abs(notesPosition.right - 12) <= 1 &&
+      Math.abs(notesPosition.top - 12) <= 1,
+    'notes button stays at the top right of a single radar',
+  );
+  await page
+    .getByRole('button', { name: 'Показать рисунки', exact: true })
+    .click();
   assert.equal(await drawing.locator('polyline').count(), 0);
+  await page
+    .getByRole('button', { name: 'Показать рисунки', exact: true })
+    .click();
+  assert.equal(await drawing.locator('polyline').count(), 1);
+  const shareScreenshot = page.getByRole('button', {
+    name: 'Поделиться скриншотом карты',
+    exact: true,
+  });
+  assert.equal(
+    await shareScreenshot.evaluate(
+      (button) =>
+        button.parentElement.classList.contains('replay-map') &&
+        !button.closest('.map-toolbar-floating'),
+    ),
+    true,
+    'screenshot button must be a standalone canvas control outside all toolbars',
+  );
+  await shareScreenshot.click();
+  const screenshotDialog = page.getByRole('dialog', {
+    name: 'Поделиться скриншотом карты',
+  });
+  await screenshotDialog.waitFor();
+  const screenshotPixels = await screenshotDialog
+    .locator('img')
+    .evaluate(async (image) => {
+      await image.decode();
+      const base = document.querySelector('.replay-map canvas');
+      const canvas = document.createElement('canvas');
+      canvas.width = image.naturalWidth;
+      canvas.height = image.naturalHeight;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(image, 0, 0);
+      const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+      const original = base
+        .getContext('2d')
+        .getImageData(0, 0, base.width, base.height).data;
+      let changed = 0;
+      for (let i = 0; i < pixels.length; i += 4)
+        if (
+          pixels[i] !== original[i] ||
+          pixels[i + 1] !== original[i + 1] ||
+          pixels[i + 2] !== original[i + 2]
+        )
+          changed++;
+      return {
+        changed,
+        width: canvas.width,
+        height: canvas.height,
+        baseWidth: base.width,
+        baseHeight: base.height,
+      };
+    });
+  assert.equal(screenshotPixels.width, screenshotPixels.baseWidth);
+  assert.equal(screenshotPixels.height, screenshotPixels.baseHeight);
+  assert.ok(
+    screenshotPixels.changed > 10,
+    'screenshot includes the visible drawing overlay',
+  );
+  const frozenImage = await screenshotDialog.locator('img').getAttribute('src');
+  await screenshotDialog
+    .getByRole('button', { name: 'Копировать изображение', exact: true })
+    .click();
+  await page.waitForFunction(
+    () => window.__copiedReplayScreenshot?.length > 100,
+  );
+  assert.deepEqual(
+    await page.evaluate(() => window.__copiedReplayScreenshot.slice(0, 8)),
+    [137, 80, 78, 71, 13, 10, 26, 10],
+  );
+  await page.evaluate(() => {
+    window.__failScreenshotCopy = true;
+  });
+  await screenshotDialog
+    .getByRole('button', { name: 'Копировать изображение', exact: true })
+    .click();
+  await screenshotDialog.getByRole('alert').waitFor();
+  await page.evaluate(() => {
+    window.__failScreenshotSave = true;
+  });
+  await screenshotDialog
+    .getByRole('button', { name: 'Сохранить PNG', exact: true })
+    .click();
+  await screenshotDialog
+    .getByRole('alert')
+    .filter({ hasText: 'Не удалось сохранить' })
+    .waitFor();
+  await page.evaluate(() => {
+    window.__failScreenshotSave = false;
+    window.__cancelScreenshotSave = true;
+  });
+  await screenshotDialog
+    .getByRole('button', { name: 'Сохранить PNG', exact: true })
+    .click();
+  await screenshotDialog.getByRole('alert').waitFor({ state: 'hidden' });
+  await page.evaluate(() => {
+    window.__cancelScreenshotSave = false;
+  });
+  await screenshotDialog
+    .getByRole('button', { name: 'Сохранить PNG', exact: true })
+    .click();
+  const savedScreenshot = await page.evaluate(
+    () =>
+      window.__replayCalls
+        .filter((call) => call.command === 'save_replay_screenshot')
+        .at(-1).args,
+  );
+  assert.match(savedScreenshot.name, /-round-1-main-tick-\d+\.png$/);
+  assert.equal(
+    Buffer.from(savedScreenshot.png).toString('base64'),
+    frozenImage.split(',')[1],
+  );
+  await screenshotDialog.screenshot({
+    path: 'dist/replay-checks/share-map.png',
+  });
+  await page.keyboard.press('Escape');
+  await screenshotDialog.waitFor({ state: 'hidden' });
+  await page
+    .getByRole('button', { name: 'Закрыть заметки', exact: true })
+    .click();
   if (!records) {
     for (const [index, file] of [
       'smokegrenade',
@@ -2571,6 +2814,35 @@ try {
     );
     assert.equal(storedNotes.length, 2);
     const lowerNote = storedNotes.find((item) => item.note.lower).note;
+    await lowerRadar
+      .getByRole('button', { name: 'Поделиться скриншотом карты', exact: true })
+      .click();
+    const lowerScreenshot = nukePage.getByRole('dialog', {
+      name: 'Поделиться скриншотом карты',
+    });
+    await lowerScreenshot.waitFor();
+    assert.match(
+      await lowerScreenshot
+        .locator('#replay-screenshot-description')
+        .textContent(),
+      /Нижний/,
+    );
+    const floorPixels = await lowerScreenshot
+      .locator('img')
+      .evaluate(async (image) => {
+        await image.decode();
+        const lower = document.querySelector('[data-floor="lower"] canvas');
+        return {
+          width: image.naturalWidth,
+          height: image.naturalHeight,
+          lowerWidth: lower.width,
+          lowerHeight: lower.height,
+        };
+      });
+    assert.equal(floorPixels.width, floorPixels.lowerWidth);
+    assert.equal(floorPixels.height, floorPixels.lowerHeight);
+    await nukePage.keyboard.press('Escape');
+    await lowerScreenshot.waitFor({ state: 'hidden' });
     assert.equal(
       storedNotes.find((item) => !item.note.lower).note.text,
       'Верхний этаж Nuke',
@@ -2607,6 +2879,11 @@ try {
       0,
       'closing shared notes stops drawing on both floors',
     );
+    assert.equal(
+      await mainRadar.locator('.replay-annotations polyline').count(),
+      1,
+      'closing the shared editor keeps the selected floor drawing visible',
+    );
     const burstStart = first.round.freeze_end_tick + metadata.tickrate * 30;
     await seekNuke(burstStart + metadata.tickrate);
     const burstRows = nukePage.locator('.replay-killfeed-row');
@@ -2642,19 +2919,55 @@ try {
       assert.ok(Math.abs(upper.width - lower.width) <= 1);
       assert.ok(Math.abs(upper.y - lower.y) <= 1 && upper.x < lower.x);
       assert.ok(upper.width > 100 && upper.height > 200);
+      const rightCanvasBounds = await lowerRadar
+        .locator('canvas')
+        .boundingBox();
       for (const pane of [mainRadar, lowerRadar]) {
         const notesButton = await nukePage
           .locator('.replay-notes-toggle')
           .boundingBox();
         const zoomTools = await pane.locator('.replay-map-tools').boundingBox();
+        const screenshotTools = await pane
+          .locator('.replay-screenshot-button')
+          .boundingBox();
+        const canvasBounds = await pane.locator('canvas').boundingBox();
         const feed = await nukePage.locator('.replay-killfeed').boundingBox();
         assert.ok(
-          notesButton.y >= feed.y + feed.height,
+          notesButton.y + notesButton.height <= feed.y,
           'notes controls must clear the killfeed',
         );
         assert.ok(
-          notesButton.x + notesButton.width <= zoomTools.x,
+          Math.abs(
+            rightCanvasBounds.x +
+              rightCanvasBounds.width -
+              notesButton.x -
+              notesButton.width -
+              12,
+          ) <= 1 && Math.abs(notesButton.y - rightCanvasBounds.y - 12) <= 1,
+          'Nuke notes button stays at the top right of the radar area',
+        );
+        assert.ok(
+          notesButton.x + notesButton.width <= zoomTools.x ||
+            notesButton.y + notesButton.height <= zoomTools.y,
           'notes and zoom controls must not overlap',
+        );
+        assert.ok(
+          notesButton.y + notesButton.height <= screenshotTools.y,
+          'notes and screenshot controls must not overlap',
+        );
+        assert.ok(
+          Math.abs(screenshotTools.x - canvasBounds.x - 14) <= 1,
+          'screenshot button stays at the left edge of each canvas',
+        );
+        assert.ok(
+          Math.abs(
+            canvasBounds.y +
+              canvasBounds.height -
+              screenshotTools.y -
+              screenshotTools.height -
+              14,
+          ) <= 1,
+          'screenshot button stays at the bottom edge of each canvas',
         );
       }
       assert.equal(

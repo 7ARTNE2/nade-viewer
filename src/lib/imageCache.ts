@@ -14,6 +14,7 @@ export function preloadImage(
   if (cached) return cached.promise;
   const request = new Promise<HTMLImageElement>((resolve, reject) => {
     const image = new Image();
+    image.crossOrigin = 'anonymous';
     image.onload = () => {
       const entry = images.get(key);
       if (entry) entry.image = image;

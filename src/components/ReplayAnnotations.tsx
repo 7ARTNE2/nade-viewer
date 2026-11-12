@@ -2,6 +2,7 @@ import {
   createContext,
   useContext,
   useEffect,
+  memo,
   useRef,
   useState,
   type ReactNode,
@@ -10,6 +11,8 @@ import { createPortal } from 'react-dom';
 import { useSearchParams } from 'react-router-dom';
 import {
   Circle,
+  Eye,
+  EyeOff,
   MoveUpRight,
   Palette,
   Pencil,
@@ -39,6 +42,7 @@ type Props = {
   lower: boolean;
   showControls?: boolean;
   controlsTarget?: HTMLElement | null;
+  panelTarget?: HTMLElement | null;
   view: { s: number; x: number; y: number };
   onPause: () => void;
   onSeek: (tick: number, lower: boolean) => void;
@@ -63,6 +67,7 @@ function useAnnotationState() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [tool, setTool] = useState<Stroke['tool']>('pen');
   const [color, setColor] = useState<string>(colors[0][0]);
+  const [drawingsVisible, setDrawingsVisible] = useState(true);
   return {
     open,
     setOpen,
@@ -72,6 +77,8 @@ function useAnnotationState() {
     setTool,
     color,
     setColor,
+    drawingsVisible,
+    setDrawingsVisible,
   };
 }
 
@@ -92,7 +99,18 @@ export function ReplayAnnotationsProvider({
   );
 }
 
-function Shape({ stroke }: { stroke: Stroke }) {
+function arrowPath(stroke: Stroke) {
+  const [start] = stroke.points;
+  const end = stroke.points[stroke.points.length - 1];
+  const angle = Math.atan2(end[1] - start[1], end[0] - start[0]);
+  const size = Math.min(
+    20,
+    Math.hypot(end[0] - start[0], end[1] - start[1]) / 2,
+  );
+  return `M${start} L${end} M${end[0] - Math.cos(angle - 0.5) * size},${end[1] - Math.sin(angle - 0.5) * size} L${end} L${end[0] - Math.cos(angle + 0.5) * size},${end[1] - Math.sin(angle + 0.5) * size}`;
+}
+
+const Shape = memo(function Shape({ stroke }: { stroke: Stroke }) {
   const [start] = stroke.points;
   const end = stroke.points[stroke.points.length - 1];
   if (stroke.tool === 'circle')
@@ -104,19 +122,10 @@ function Shape({ stroke }: { stroke: Stroke }) {
       />
     );
   if (stroke.tool === 'arrow') {
-    const angle = Math.atan2(end[1] - start[1], end[0] - start[0]);
-    const size = Math.min(
-      20,
-      Math.hypot(end[0] - start[0], end[1] - start[1]) / 2,
-    );
-    return (
-      <path
-        d={`M${start} L${end} M${end[0] - Math.cos(angle - 0.5) * size},${end[1] - Math.sin(angle - 0.5) * size} L${end} L${end[0] - Math.cos(angle + 0.5) * size},${end[1] - Math.sin(angle + 0.5) * size}`}
-      />
-    );
+    return <path d={arrowPath(stroke)} />;
   }
   return <polyline points={stroke.points.map((p) => p.join(',')).join(' ')} />;
-}
+});
 
 export default function ReplayAnnotations({
   detail,
@@ -125,6 +134,7 @@ export default function ReplayAnnotations({
   lower,
   showControls = true,
   controlsTarget,
+  panelTarget,
   view,
   onPause,
   onSeek,
@@ -148,14 +158,18 @@ export default function ReplayAnnotations({
     setTool,
     color,
     setColor,
+    drawingsVisible,
+    setDrawingsVisible,
   } = state;
   const [searchParams] = useSearchParams();
   const requestedNoteId = searchParams.get('note');
   const openedRequest = useRef<string | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const palette = useRef<HTMLDivElement>(null);
-  const [draft, setDraft] = useState<Stroke | null>(null);
   const gesture = useRef<Stroke | null>(null);
+  const preview = useRef<SVGGElement>(null);
+  const previewFrame = useRef(0);
+  const gestureBounds = useRef<DOMRect | null>(null);
   const svg = useRef<SVGSVGElement>(null);
   const [size, setSize] = useState({ width: 1, height: 1 });
   const currentNotes = notes.filter((n) => n.round === round.round_number);
@@ -194,8 +208,11 @@ export default function ReplayAnnotations({
   }, []);
   useEffect(() => {
     gesture.current = null;
-    setDraft(null);
+    cancelAnimationFrame(previewFrame.current);
+    previewFrame.current = 0;
+    preview.current?.replaceChildren();
     setPaletteOpen(false);
+    return () => cancelAnimationFrame(previewFrame.current);
   }, [round.round_number, lower, open, selectedId]);
   useEffect(() => {
     if (!paletteOpen) return;
@@ -229,7 +246,8 @@ export default function ReplayAnnotations({
     );
   };
   const position = (e: React.PointerEvent<SVGSVGElement>): Point => {
-    const bounds = e.currentTarget.getBoundingClientRect();
+    const bounds =
+      gestureBounds.current ?? e.currentTarget.getBoundingClientRect();
     return [
       (e.clientX - bounds.left - ox) / unit,
       (e.clientY - bounds.top - oy) / unit,
@@ -237,7 +255,45 @@ export default function ReplayAnnotations({
   };
   const cancel = () => {
     gesture.current = null;
-    setDraft(null);
+    gestureBounds.current = null;
+    cancelAnimationFrame(previewFrame.current);
+    previewFrame.current = 0;
+    preview.current?.replaceChildren();
+  };
+  // Pointer motion only changes the preview SVG, never the editor or saved notes.
+  const paintPreview = () => {
+    previewFrame.current = 0;
+    const stroke = gesture.current;
+    const group = preview.current;
+    if (!stroke || !group) return;
+    let shape = group.firstElementChild;
+    if (!shape) {
+      shape = document.createElementNS(
+        'http://www.w3.org/2000/svg',
+        stroke.tool === 'pen'
+          ? 'polyline'
+          : stroke.tool === 'arrow'
+            ? 'path'
+            : 'circle',
+      );
+      group.append(shape);
+    }
+    group.setAttribute('stroke', stroke.color);
+    const [start] = stroke.points;
+    const end = stroke.points[stroke.points.length - 1];
+    if (stroke.tool === 'arrow') shape.setAttribute('d', arrowPath(stroke));
+    else if (stroke.tool === 'circle') {
+      shape.setAttribute('cx', String(start[0]));
+      shape.setAttribute('cy', String(start[1]));
+      shape.setAttribute(
+        'r',
+        String(Math.hypot(end[0] - start[0], end[1] - start[1])),
+      );
+    } else
+      shape.setAttribute(
+        'points',
+        stroke.points.map((point) => point.join(',')).join(' '),
+      );
   };
   const timeLabel = (tick: number) => {
     const freezeEnd = round.round.freeze_end_tick;
@@ -263,10 +319,12 @@ export default function ReplayAnnotations({
         if (!open || !detail.radar || !ready || e.button !== 0) return;
         e.preventDefault();
         onPause();
+        setDrawingsVisible(true);
         e.currentTarget.setPointerCapture(e.pointerId);
+        gestureBounds.current = e.currentTarget.getBoundingClientRect();
         const start = position(e);
         gesture.current = { tool, color, points: [start, start] };
-        setDraft(gesture.current);
+        paintPreview();
       }}
       onPointerMove={(e) => {
         const stroke = gesture.current;
@@ -274,18 +332,17 @@ export default function ReplayAnnotations({
         const end = position(e);
         const last = stroke.points[stroke.points.length - 1];
         if (Math.hypot(end[0] - last[0], end[1] - last[1]) * unit < 1) return;
-        gesture.current = {
-          ...stroke,
-          points:
-            stroke.tool === 'pen'
-              ? [...stroke.points, end]
-              : [stroke.points[0], end],
-        };
-        setDraft(gesture.current);
+        if (stroke.tool === 'pen') stroke.points.push(end);
+        else stroke.points[1] = end;
+        if (!previewFrame.current)
+          previewFrame.current = requestAnimationFrame(paintPreview);
       }}
       onPointerUp={(e) => {
         const stroke = gesture.current;
         if (!stroke) return;
+        const end = position(e);
+        if (stroke.tool === 'pen') stroke.points.push(end);
+        else stroke.points[1] = end;
         updateNote((n) => ({ ...n, strokes: [...n.strokes, stroke] }), true);
         cancel();
         e.currentTarget.releasePointerCapture(e.pointerId);
@@ -293,7 +350,7 @@ export default function ReplayAnnotations({
       onPointerCancel={cancel}
       onLostPointerCapture={cancel}
     >
-      {open && (
+      {drawingsVisible && (
         <g
           transform={`translate(${ox} ${oy}) scale(${unit})`}
           fill="none"
@@ -301,248 +358,259 @@ export default function ReplayAnnotations({
           strokeLinecap="round"
           strokeLinejoin="round"
         >
-          {[...visibleStrokes, ...(draft ? [draft] : [])].map((stroke, i) => (
+          {visibleStrokes.map((stroke, i) => (
             <g key={i} stroke={stroke.color}>
               <Shape stroke={stroke} />
             </g>
           ))}
+          <g ref={preview} />
         </g>
       )}
     </svg>
   );
-  const controls = (
-    <>
-      <button
-        className={`replay-notes-toggle ${open ? 'active' : ''}`}
-        aria-pressed={open}
-        onClick={() => {
-          if (!open) onPause();
-          setOpen(!open);
-        }}
-      >
-        <NotebookPen size={15} />
-        {tr('Notes', 'Заметки')}
-        {currentNotes.length > 0 && <small>{currentNotes.length}</small>}
-      </button>
-      {open && (
-        <section
-          className="replay-notes-panel"
-          aria-label={tr('Replay notes', 'Заметки реплея')}
-          onKeyDown={(e) => {
-            e.stopPropagation();
-            if (e.key === 'Escape') setOpen(false);
-          }}
+  const toggle = (
+    <button
+      className={`replay-notes-toggle ${open ? 'active' : ''}`}
+      aria-pressed={open}
+      onClick={() => {
+        if (!open) onPause();
+        setOpen(!open);
+      }}
+    >
+      <NotebookPen size={15} />
+      {tr('Notes', 'Заметки')}
+      {currentNotes.length > 0 && <small>{currentNotes.length}</small>}
+    </button>
+  );
+  const panel = open && (
+    <section
+      className="replay-notes-panel"
+      aria-label={tr('Replay notes', 'Заметки реплея')}
+      onKeyDown={(e) => {
+        e.stopPropagation();
+        if (e.key === 'Escape') setOpen(false);
+      }}
+    >
+      <header>
+        <strong>
+          {tr('Notes', 'Заметки')} · R{round.round_number}
+        </strong>
+        <button
+          aria-label={tr('Show drawings', 'Показать рисунки')}
+          aria-pressed={drawingsVisible}
+          data-tip={
+            drawingsVisible
+              ? tr('Hide drawings', 'Скрыть рисунки')
+              : tr('Show drawings', 'Показать рисунки')
+          }
+          onClick={() => setDrawingsVisible(!drawingsVisible)}
         >
-          <header>
-            <strong>
-              {tr('Notes', 'Заметки')} · R{round.round_number}
-            </strong>
-            <button
-              aria-label={tr('Close notes', 'Закрыть заметки')}
-              data-tip={tr('Close notes', 'Закрыть заметки')}
-              onClick={() => setOpen(false)}
-            >
-              <X size={15} />
-            </button>
-          </header>
-          <div
-            className="replay-drawing-tools"
-            role="group"
-            aria-label={tr('Drawing tools', 'Инструменты рисования')}
+          {drawingsVisible ? <Eye size={15} /> : <EyeOff size={15} />}
+        </button>
+        <button
+          aria-label={tr('Close notes', 'Закрыть заметки')}
+          data-tip={tr('Close notes', 'Закрыть заметки')}
+          onClick={() => setOpen(false)}
+        >
+          <X size={15} />
+        </button>
+      </header>
+      <div
+        className="replay-drawing-tools"
+        role="group"
+        aria-label={tr('Drawing tools', 'Инструменты рисования')}
+      >
+        {(
+          [
+            ['pen', Pencil, tr('Pen', 'Карандаш')],
+            ['arrow', MoveUpRight, tr('Arrow', 'Стрелка')],
+            ['circle', Circle, tr('Circle', 'Круг')],
+          ] as const
+        ).map(([value, Icon, label]) => (
+          <button
+            key={value}
+            aria-label={label}
+            data-tip={label}
+            aria-pressed={tool === value}
+            onClick={() => setTool(value)}
           >
-            {(
-              [
-                ['pen', Pencil, tr('Pen', 'Карандаш')],
-                ['arrow', MoveUpRight, tr('Arrow', 'Стрелка')],
-                ['circle', Circle, tr('Circle', 'Круг')],
-              ] as const
-            ).map(([value, Icon, label]) => (
-              <button
-                key={value}
-                aria-label={label}
-                data-tip={label}
-                aria-pressed={tool === value}
-                onClick={() => setTool(value)}
-              >
-                <Icon size={16} />
-              </button>
-            ))}
-            <button
-              aria-label={tr('Undo drawing', 'Отменить рисунок')}
-              data-tip={tr('Undo drawing', 'Отменить рисунок')}
-              disabled={!selected?.strokes.length}
-              onClick={() =>
-                updateNote((n) => ({ ...n, strokes: n.strokes.slice(0, -1) }))
-              }
-            >
-              <Undo2 size={16} />
-            </button>
-            <div className="replay-palette-control" ref={palette}>
-              <button
-                className="replay-palette-toggle"
-                aria-label={tr('Color palette', 'Палитра цветов')}
-                data-tip={tr('Color palette', 'Палитра цветов')}
-                aria-expanded={paletteOpen}
-                onClick={() => setPaletteOpen((value) => !value)}
-              >
-                <Palette size={16} />
-                <span
-                  className="replay-color-swatch"
-                  style={{ background: color }}
-                />
-              </button>
-              {paletteOpen && (
-                <div
-                  className="replay-color-palette"
-                  role="group"
-                  aria-label={tr('Drawing color', 'Цвет рисования')}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Escape') {
-                      e.stopPropagation();
-                      setPaletteOpen(false);
-                      palette.current?.querySelector('button')?.focus();
-                    }
-                  }}
-                >
-                  <div className="replay-palette-heading">
-                    <strong>{tr('Drawing color', 'Цвет рисования')}</strong>
-                    <code>{color.toUpperCase()}</code>
-                  </div>
-                  <div className="replay-color-presets">
-                    {colors.map(([value, english, russian]) => (
-                      <button
-                        key={value}
-                        className="replay-drawing-color"
-                        aria-label={tr(english, russian)}
-                        data-tip={tr(english, russian)}
-                        aria-pressed={color.toLowerCase() === value}
-                        onClick={() => {
-                          setColor(value);
-                          setPaletteOpen(false);
-                        }}
-                      >
-                        <span
-                          className="replay-color-swatch"
-                          style={{ background: value }}
-                        />
-                      </button>
-                    ))}
-                  </div>
-                  <label className="replay-custom-color">
-                    <input
-                      type="color"
-                      value={color}
-                      aria-label={tr('Custom color', 'Свой цвет')}
-                      data-tip={tr('Custom color', 'Свой цвет')}
-                      onChange={(e) => setColor(e.target.value.toLowerCase())}
-                    />
-                    <span>{tr('Custom color', 'Свой цвет')}</span>
-                  </label>
-                </div>
-              )}
-            </div>
-          </div>
-          <p>
-            {tr(
-              'Draw on the radar. Scroll to zoom. Notes are saved automatically.',
-              'Рисуйте на радаре. Колесо — масштаб. Заметки сохраняются автоматически.',
-            )}
-          </p>
-          <div className="replay-note-actions">
-            <button
-              disabled={!ready}
-              onClick={() => {
-                onPause();
-                const note = makeNote(selected?.lower ?? lower);
-                setNotes((all) => [...all, note]);
-                setSelectedId(note.id);
+            <Icon size={16} />
+          </button>
+        ))}
+        <button
+          aria-label={tr('Undo drawing', 'Отменить рисунок')}
+          data-tip={tr('Undo drawing', 'Отменить рисунок')}
+          disabled={!selected?.strokes.length}
+          onClick={() =>
+            updateNote((n) => ({ ...n, strokes: n.strokes.slice(0, -1) }))
+          }
+        >
+          <Undo2 size={16} />
+        </button>
+        <div className="replay-palette-control" ref={palette}>
+          <button
+            className="replay-palette-toggle"
+            aria-label={tr('Color palette', 'Палитра цветов')}
+            data-tip={tr('Color palette', 'Палитра цветов')}
+            aria-expanded={paletteOpen}
+            onClick={() => setPaletteOpen((value) => !value)}
+          >
+            <Palette size={16} />
+            <span
+              className="replay-color-swatch"
+              style={{ background: color }}
+            />
+          </button>
+          {paletteOpen && (
+            <div
+              className="replay-color-palette"
+              role="group"
+              aria-label={tr('Drawing color', 'Цвет рисования')}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') {
+                  e.stopPropagation();
+                  setPaletteOpen(false);
+                  palette.current?.querySelector('button')?.focus();
+                }
               }}
             >
-              <Plus size={14} />
-              {tr('New note', 'Новая заметка')}
+              <div className="replay-palette-heading">
+                <strong>{tr('Drawing color', 'Цвет рисования')}</strong>
+                <code>{color.toUpperCase()}</code>
+              </div>
+              <div className="replay-color-presets">
+                {colors.map(([value, english, russian]) => (
+                  <button
+                    key={value}
+                    className="replay-drawing-color"
+                    aria-label={tr(english, russian)}
+                    data-tip={tr(english, russian)}
+                    aria-pressed={color.toLowerCase() === value}
+                    onClick={() => {
+                      setColor(value);
+                      setPaletteOpen(false);
+                    }}
+                  >
+                    <span
+                      className="replay-color-swatch"
+                      style={{ background: value }}
+                    />
+                  </button>
+                ))}
+              </div>
+              <label className="replay-custom-color">
+                <input
+                  type="color"
+                  value={color}
+                  aria-label={tr('Custom color', 'Свой цвет')}
+                  data-tip={tr('Custom color', 'Свой цвет')}
+                  onChange={(e) => setColor(e.target.value.toLowerCase())}
+                />
+                <span>{tr('Custom color', 'Свой цвет')}</span>
+              </label>
+            </div>
+          )}
+        </div>
+      </div>
+      <p>
+        {tr(
+          'Draw on the radar. Notes save automatically. Close this editor to move the map; your drawing stays visible.',
+          'Рисуйте на радаре. Заметки сохраняются автоматически. Закройте редактор, чтобы двигать карту — рисунок останется.',
+        )}
+      </p>
+      <div className="replay-note-actions">
+        <button
+          disabled={!ready}
+          onClick={() => {
+            onPause();
+            const note = makeNote(selected?.lower ?? lower);
+            setNotes((all) => [...all, note]);
+            setSelectedId(note.id);
+          }}
+        >
+          <Plus size={14} />
+          {tr('New note', 'Новая заметка')}
+        </button>
+        {selected && (
+          <button
+            aria-label={tr('Delete note', 'Удалить заметку')}
+            data-tip={tr('Delete note', 'Удалить заметку')}
+            onClick={() => {
+              setNotes((all) => all.filter((n) => n.id !== selected.id));
+              setSelectedId(null);
+            }}
+          >
+            <Trash2 size={14} />
+          </button>
+        )}
+      </div>
+      <label className="replay-note-editor">
+        <span>
+          {selected
+            ? timeLabel(selected.tick)
+            : tr('Current moment', 'Текущий момент')}
+          {selected?.lower ? ` · ${tr('Lower', 'Нижний')}` : ''}
+        </span>
+        <textarea
+          disabled={!ready}
+          aria-label={tr('Note text', 'Текст заметки')}
+          placeholder={tr(
+            'Add a note about this moment…',
+            'Добавьте заметку к этому моменту…',
+          )}
+          value={selected?.text ?? ''}
+          onFocus={onPause}
+          onChange={(e) => updateNote((n) => ({ ...n, text: e.target.value }))}
+        />
+      </label>
+      <div className="replay-note-list">
+        {currentNotes
+          .slice()
+          .sort((a, b) => a.tick - b.tick)
+          .map((note) => (
+            <button
+              key={note.id}
+              aria-pressed={selected?.id === note.id}
+              onClick={() => {
+                onPause();
+                setSelectedId(note.id);
+                setDrawingsVisible(true);
+                onSeek(note.tick, note.lower);
+              }}
+            >
+              <time>{timeLabel(note.tick)}</time>
+              <span>
+                {note.text.trim() || tr('Drawing', 'Рисунок')}
+                {note.lower ? ` · ${tr('Lower', 'Нижний')}` : ''}
+              </span>
             </button>
-            {selected && (
-              <button
-                aria-label={tr('Delete note', 'Удалить заметку')}
-                data-tip={tr('Delete note', 'Удалить заметку')}
-                onClick={() => {
-                  setNotes((all) => all.filter((n) => n.id !== selected.id));
-                  setSelectedId(null);
-                }}
-              >
-                <Trash2 size={14} />
-              </button>
-            )}
-          </div>
-          <label className="replay-note-editor">
-            <span>
-              {selected
-                ? timeLabel(selected.tick)
-                : tr('Current moment', 'Текущий момент')}
-              {selected?.lower ? ` · ${tr('Lower', 'Нижний')}` : ''}
-            </span>
-            <textarea
-              disabled={!ready}
-              aria-label={tr('Note text', 'Текст заметки')}
-              placeholder={tr(
-                'Add a note about this moment…',
-                'Добавьте заметку к этому моменту…',
-              )}
-              value={selected?.text ?? ''}
-              onFocus={onPause}
-              onChange={(e) =>
-                updateNote((n) => ({ ...n, text: e.target.value }))
-              }
-            />
-          </label>
-          <div className="replay-note-list">
-            {currentNotes
-              .slice()
-              .sort((a, b) => a.tick - b.tick)
-              .map((note) => (
-                <button
-                  key={note.id}
-                  aria-pressed={selected?.id === note.id}
-                  onClick={() => {
-                    onPause();
-                    setSelectedId(note.id);
-                    onSeek(note.tick, note.lower);
-                  }}
-                >
-                  <time>{timeLabel(note.tick)}</time>
-                  <span>
-                    {note.text.trim() || tr('Drawing', 'Рисунок')}
-                    {note.lower ? ` · ${tr('Lower', 'Нижний')}` : ''}
-                  </span>
-                </button>
-              ))}
-          </div>
-          {saveError && (
-            <p role="alert">
-              {tr(
-                'Unable to load or save notes.',
-                'Не удалось загрузить или сохранить заметки.',
-              )}{' '}
-              <button onClick={() => retryReplayNotes(detail.id)}>
-                {tr('Retry', 'Повторить')}
-              </button>
-            </p>
-          )}
-          {notesState.loading && (
-            <p role="status">{tr('Loading notes…', 'Загрузка заметок…')}</p>
-          )}
-          {!saveError && notesState.saving.includes(detail.id) && (
-            <p role="status">{tr('Saving…', 'Сохранение…')}</p>
-          )}
-        </section>
+          ))}
+      </div>
+      {saveError && (
+        <p role="alert">
+          {tr(
+            'Unable to load or save notes.',
+            'Не удалось загрузить или сохранить заметки.',
+          )}{' '}
+          <button onClick={() => retryReplayNotes(detail.id)}>
+            {tr('Retry', 'Повторить')}
+          </button>
+        </p>
       )}
-    </>
+      {notesState.loading && (
+        <p role="status">{tr('Loading notes…', 'Загрузка заметок…')}</p>
+      )}
+      {!saveError && notesState.saving.includes(detail.id) && (
+        <p role="status">{tr('Saving…', 'Сохранение…')}</p>
+      )}
+    </section>
   );
   return (
     <>
       {drawing}
       {showControls &&
-        (controlsTarget ? createPortal(controls, controlsTarget) : controls)}
+        (controlsTarget ? createPortal(toggle, controlsTarget) : toggle)}
+      {showControls && (panelTarget ? createPortal(panel, panelTarget) : panel)}
     </>
   );
 }

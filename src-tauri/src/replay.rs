@@ -13,6 +13,33 @@ use tauri::{AppHandle, Manager};
 type Result<T> = std::result::Result<T, String>;
 const FORMAT: &str = "nadeviewer_replay";
 
+#[tauri::command]
+pub(crate) async fn save_replay_screenshot(png: Vec<u8>, name: String) -> Result<Option<String>> {
+    if png.len() < 33 || png.len() > 32 * 1024 * 1024 || !png.starts_with(b"\x89PNG\r\n\x1a\n") {
+        return Err("Invalid PNG screenshot".into());
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        let name: String = name
+            .chars()
+            .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+            .take(160)
+            .collect();
+        let stem = name.trim_end_matches(".png").trim_matches('.');
+        let filename = format!("{}.png", if stem.is_empty() { "replay-map" } else { stem });
+        let Some(path) = rfd::FileDialog::new()
+            .add_filter("PNG image", &["png"])
+            .set_file_name(filename)
+            .save_file()
+        else {
+            return Ok(None);
+        };
+        fs::write(&path, png).map_err(|e| e.to_string())?;
+        Ok(Some(path.to_string_lossy().into_owned()))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 fn database(app: &AppHandle) -> Result<Connection> {
     let dir = app.path().app_local_data_dir().map_err(|e| e.to_string())?;
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;

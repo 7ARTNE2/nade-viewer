@@ -1070,7 +1070,7 @@
 .replay-killfeed {
   position: absolute;
   z-index: 20;
-  top: 10px;
+  top: 54px;
   right: 10px;
   display: flex;
   width: min(420px, calc(100% - 20px));
@@ -1244,12 +1244,10 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 .replay-radars.is-dual .replay-notes-toggle {
-  top: auto;
-  bottom: 12px;
+  top: 38px;
 }
-.replay-radars.is-dual .replay-notes-panel {
-  top: auto;
-  bottom: 54px;
+.replay-radars.is-dual .replay-killfeed {
+  top: 80px;
 }
 .replay-radar-pane {
   display: flex;
@@ -1295,6 +1293,37 @@
 .replay-map-tools {
   border-radius: 8px;
 }
+.replay-screenshot-button {
+  position: absolute;
+  z-index: 40;
+  left: 14px;
+  bottom: 14px;
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(17, 20, 25, 0.9);
+  color: var(--muted);
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
+  cursor: var(--cursor-pointer);
+  transition:
+    color 150ms ease,
+    border-color 150ms ease;
+}
+.replay-screenshot-button:hover:not(:disabled) {
+  color: var(--acid);
+  border-color: var(--acid);
+}
+.replay-screenshot-button:focus-visible {
+  outline: 2px solid var(--acid);
+  outline-offset: 2px;
+}
+.replay-screenshot-button:disabled {
+  opacity: 0.4;
+}
 .replay-map-missing {
   position: absolute;
   inset: 0;
@@ -1305,10 +1334,41 @@
   font-size: 12px;
 }
 .replay-inspector {
+  contain: strict;
   overflow: auto;
   min-width: 0;
   border-left: 1px solid var(--line-soft);
   background: var(--surface);
+}
+.replay-inspector:has(.replay-notes-panel) > :not(.replay-notes-dock) {
+  display: none;
+}
+.replay-notes-dock:empty {
+  display: none;
+}
+.replay-notes-dock .replay-notes-panel {
+  position: static;
+  width: 100%;
+  max-height: none;
+  min-width: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  animation: none;
+}
+.replay-notes-dock .replay-notes-panel header > strong {
+  margin-right: auto;
+}
+.replay-notes-dock .replay-color-palette {
+  position: static;
+  width: 100%;
+  margin-top: 7px;
+}
+.replay-notes-dock .replay-drawing-tools:has(.replay-color-palette) {
+  flex-wrap: wrap;
+}
+.replay-notes-dock .replay-palette-control:has(.replay-color-palette) {
+  flex-basis: 100%;
 }
 .replay-inspector h2 {
   color: var(--muted);
