@@ -1,6 +1,17 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowUpRight, Pencil, Search, StickyNote, X } from 'lucide-react';
+import {
+  ArrowDownWideNarrow,
+  ArrowUpRight,
+  Film,
+  Hash,
+  Map as MapIcon,
+  NotebookPen,
+  Pencil,
+  Search,
+  Shapes,
+  X,
+} from 'lucide-react';
 import { useI18n } from '../i18n';
 import {
   replayNoteTime,
@@ -90,7 +101,9 @@ export default function ReplayNotesPanel({
     >
       <header>
         <h2>
-          <StickyNote size={17} />
+          <span className="replay-notes-heading-icon">
+            <NotebookPen size={18} aria-hidden="true" />
+          </span>
           {tr('Notes', 'Заметки')}
         </h2>
         <span className="replay-count" aria-live="polite">
@@ -104,17 +117,27 @@ export default function ReplayNotesPanel({
         )}
       </p>
       <label className="replay-history-notes-search">
-        <Search size={14} />
+        <Search size={15} aria-hidden="true" />
         <input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           aria-label={tr('Search notes', 'Поиск заметок')}
           placeholder={tr('Text, map or match…', 'Текст, карта или матч…')}
         />
+        {query && (
+          <button
+            type="button"
+            aria-label={tr('Clear search', 'Очистить поиск')}
+            onClick={() => setQuery('')}
+          >
+            <X size={13} />
+          </button>
+        )}
       </label>
       <div className="replay-notes-filters">
         <FilterSelect
           {...filterProps}
+          icon={<Film size={13} />}
           label={tr('Replay', 'Реплей')}
           value={selectedId === null ? [] : [String(selectedId)]}
           options={[
@@ -132,6 +155,7 @@ export default function ReplayNotesPanel({
         />
         <FilterSelect
           {...filterProps}
+          icon={<MapIcon size={13} />}
           label={tr('Map', 'Карта')}
           value={map ? [map] : []}
           options={[
@@ -147,6 +171,7 @@ export default function ReplayNotesPanel({
         />
         <FilterSelect
           {...filterProps}
+          icon={<Hash size={13} />}
           label={tr('Round', 'Раунд')}
           value={round ? [round] : []}
           options={[
@@ -160,6 +185,7 @@ export default function ReplayNotesPanel({
         />
         <FilterSelect
           {...filterProps}
+          icon={<Shapes size={13} />}
           label={tr('Note type', 'Тип заметки')}
           value={kind ? [kind] : []}
           options={[
@@ -173,8 +199,19 @@ export default function ReplayNotesPanel({
           ]}
           onChange={(value) => setKind(value[0] ?? '')}
         />
+        {filtered && (
+          <button className="replay-notes-reset" onClick={reset}>
+            <X size={12} />
+            {tr('Reset filters', 'Сбросить фильтры')}
+          </button>
+        )}
+      </div>
+      <div className="replay-notes-results-toolbar">
+        <span>{tr('Sort by', 'Порядок')}</span>
         <FilterSelect
           {...filterProps}
+          icon={<ArrowDownWideNarrow size={13} />}
+          className="replay-note-sort replay-note-filter"
           label={tr('Sort notes', 'Сортировка заметок')}
           value={order ? [order] : []}
           options={[
@@ -186,12 +223,6 @@ export default function ReplayNotesPanel({
           ]}
           onChange={(value) => setOrder(value[0] ?? '')}
         />
-        {filtered && (
-          <button className="replay-notes-reset" onClick={reset}>
-            <X size={13} />
-            {tr('Reset filters', 'Сбросить фильтры')}
-          </button>
-        )}
       </div>
       {(loadError || Object.keys(saveErrors).length > 0) && (
         <p className="replay-notes-error" role="alert">
@@ -210,7 +241,7 @@ export default function ReplayNotesPanel({
         </p>
       ) : !all.length && !loadError ? (
         <div className="replay-history-notes-empty">
-          <StickyNote size={25} />
+          <NotebookPen size={28} strokeWidth={1.5} aria-hidden="true" />
           <strong>{tr('No notes yet', 'Пока нет заметок')}</strong>
           <p>
             {tr(

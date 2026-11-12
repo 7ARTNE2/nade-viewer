@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { FolderOpen, Play, StickyNote, Trash2 } from 'lucide-react';
+import { FolderOpen, NotebookPen, Play, Trash2 } from 'lucide-react';
 import { useI18n } from '../i18n';
 import { useReplayNotes } from '../lib/replayNotes';
 import ReplayNotesPanel from './ReplayNotesPanel';
@@ -26,7 +26,7 @@ function NotesButton({
       data-tip={tr('View notes', 'Посмотреть заметки')}
       onClick={onSelect}
     >
-      <StickyNote size={15} />
+      <NotebookPen size={15} />
       <span>{notes.length}</span>
     </button>
   );
