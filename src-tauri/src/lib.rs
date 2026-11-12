@@ -781,6 +781,8 @@ pub fn run() {
                     replay::get_replay_round,
                     replay::get_replay_round_preview,
                     replay::delete_replay,
+                    replay::delete_replays,
+                    replay::clear_replays,
                     replay::save_replay_position,
                     replay::list_replay_notes,
                     replay::save_replay_notes,

@@ -84,6 +84,13 @@ try {
         storedNotes = storedNotes.filter((item) => item.replay_id !== args.id);
         return null;
       }
+      if (command === 'delete_replays' || command === 'clear_replays') {
+        storedNotes = storedNotes.filter(
+          (item) =>
+            command !== 'clear_replays' && !args.ids.includes(item.replay_id),
+        );
+        return null;
+      }
       const previous = storedNotes.filter(
         (item) => item.replay_id === args.replayId,
       );
@@ -358,6 +365,14 @@ try {
               entry.tick = args.tick;
               return null;
             case 'delete_replay':
+              entries = [];
+              await window.__replayNotesBackend(command, args);
+              return null;
+            case 'delete_replays':
+              entries = entries.filter((item) => !args.ids.includes(item.id));
+              await window.__replayNotesBackend(command, args);
+              return null;
+            case 'clear_replays':
               entries = [];
               await window.__replayNotesBackend(command, args);
               return null;
@@ -2148,6 +2163,112 @@ try {
   );
   assert.deepEqual(missingReplayErrors, []);
   await missingReplayPage.close();
+  const notesBeforeBulkDelete = JSON.parse(JSON.stringify(storedNotes));
+  const bulkDeletePage = await context.newPage();
+  bulkDeletePage.on('pageerror', (error) => errors.push(error.message));
+  await bulkDeletePage.addInitScript(() => {
+    window.__setSecondReplay(true);
+    const original = window.__TAURI_INTERNALS__.invoke;
+    let failOnce = true;
+    window.__TAURI_INTERNALS__.invoke = async (command, args) => {
+      if (command === 'delete_replays' && failOnce) {
+        failOnce = false;
+        throw new Error('Test deletion failed');
+      }
+      return original(command, args);
+    };
+  });
+  await bulkDeletePage.goto('http://127.0.0.1:1428/replays');
+  await bulkDeletePage.locator('.replay-match-row').nth(1).waitFor();
+  const selectAll = bulkDeletePage.getByRole('button', {
+    name: 'Выбрать все матчи',
+    exact: true,
+  });
+  await selectAll.click();
+  assert.equal(
+    await bulkDeletePage
+      .locator('.replay-match-select[aria-pressed="true"]')
+      .count(),
+    2,
+  );
+  await selectAll.click();
+  assert.equal(
+    await bulkDeletePage
+      .locator('.replay-match-select[aria-pressed="true"]')
+      .count(),
+    0,
+  );
+  await bulkDeletePage
+    .getByRole('button', {
+      name: 'Выбрать матч second-replay.dem',
+      exact: true,
+    })
+    .click();
+  await bulkDeletePage
+    .getByRole('button', { name: /^Удалить выбранные/ })
+    .click();
+  const bulkDialog = bulkDeletePage.getByRole('dialog');
+  await bulkDialog
+    .getByRole('heading', { name: 'Удалить выбранные матчи?' })
+    .waitFor();
+  await bulkDialog
+    .getByRole('button', { name: 'Удалить', exact: true })
+    .click();
+  await bulkDialog
+    .getByRole('alert')
+    .filter({ hasText: 'Test deletion failed' })
+    .waitFor();
+  assert.equal(await bulkDeletePage.locator('.replay-match-row').count(), 2);
+  await bulkDialog
+    .getByRole('button', { name: 'Удалить', exact: true })
+    .click();
+  await bulkDeletePage.waitForFunction(
+    () => document.querySelectorAll('.replay-match-row').length === 1,
+  );
+  assert.deepEqual(
+    await bulkDeletePage.evaluate(() =>
+      window.__replayCalls
+        .filter((call) => call.command === 'delete_replays')
+        .map((call) => call.args.ids),
+    ),
+    [[2]],
+  );
+  assert.equal(
+    await bulkDeletePage
+      .locator('.replay-match-select[aria-pressed="true"]')
+      .count(),
+    0,
+  );
+  await bulkDeletePage
+    .getByRole('button', { name: 'Очистить базу', exact: true })
+    .click();
+  await bulkDialog
+    .getByRole('heading', { name: 'Очистить базу реплеев?' })
+    .waitFor();
+  await bulkDialog.getByRole('button', { name: 'Отмена', exact: true }).click();
+  assert.equal(await bulkDeletePage.locator('.replay-match-row').count(), 1);
+  await bulkDeletePage
+    .getByRole('button', { name: 'Очистить базу', exact: true })
+    .click();
+  await bulkDialog
+    .getByRole('button', { name: 'Очистить базу', exact: true })
+    .click();
+  await bulkDeletePage
+    .getByRole('heading', { name: 'Нет сохранённых матчей' })
+    .waitFor();
+  assert.equal(
+    await bulkDeletePage.evaluate(
+      () =>
+        window.__replayCalls.filter((call) => call.command === 'clear_replays')
+          .length,
+    ),
+    1,
+  );
+  await bulkDeletePage.evaluate(() =>
+    localStorage.removeItem('replay-test-second-match'),
+  );
+  await bulkDeletePage.close();
+  storedNotes = notesBeforeBulkDelete;
   const notesBeforeReparse = JSON.parse(JSON.stringify(storedNotes));
   const reparsePage = await context.newPage();
   reparsePage.on('pageerror', (error) => errors.push(error.message));

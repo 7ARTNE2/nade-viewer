@@ -431,6 +431,49 @@ pub(crate) fn delete_replay(app: AppHandle, id: i64) -> Result<()> {
 }
 
 #[tauri::command]
+pub(crate) async fn delete_replays(app: AppHandle, ids: Vec<i64>) -> Result<()> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = plugin::state(&app);
+        let status = state.lock().unwrap();
+        if status.running {
+            return Err("Stop parsing before deleting replays".into());
+        }
+        delete_stored_replays(&mut database(&app)?, Some(&ids))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+fn delete_stored_replays(conn: &mut Connection, ids: Option<&[i64]>) -> Result<()> {
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    if let Some(ids) = ids {
+        for id in ids {
+            tx.execute("DELETE FROM matches WHERE id=?1", [id])
+                .map_err(|e| e.to_string())?;
+        }
+    } else {
+        tx.execute("DELETE FROM matches", [])
+            .map_err(|e| e.to_string())?;
+    }
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub(crate) async fn clear_replays(app: AppHandle) -> Result<()> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = plugin::state(&app);
+        let status = state.lock().unwrap();
+        if status.running {
+            return Err("Stop parsing before deleting replays".into());
+        }
+        delete_stored_replays(&mut database(&app)?, None)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
 pub(crate) fn start_replay(app: AppHandle, path: String, profile: String) -> Result<()> {
     if !std::path::Path::new(&path).is_file() {
         return Err("Demo file does not exist".into());
@@ -790,6 +833,52 @@ mod tests {
         assert_eq!(parse_replay_progress(b"REPLAY_PROGRESS 1 2 extra\n"), None);
         assert_eq!(parse_replay_progress(b"parser error\n"), None);
     }
+    #[test]
+    fn bulk_replay_deletion_is_atomic_and_cascades() {
+        let mut conn = open(std::path::Path::new(":memory:")).unwrap();
+        for id in 1..=3 {
+            conn.execute(
+                "INSERT INTO matches(id,hash,version,metadata) VALUES(?1,?1,1,'{}')",
+                [id],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO rounds(match_id,number,summary,data) VALUES(?1,1,'{}',x'00')",
+                [id],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO replay_notes(match_id,id,round_number,tick,lower_radar,text,strokes,updated_at) VALUES(?1,'note',1,0,0,'text','[]',0)",
+                [id],
+            ).unwrap();
+        }
+        conn.execute_batch(
+            "CREATE TRIGGER reject_delete BEFORE DELETE ON matches WHEN OLD.id=2 BEGIN SELECT RAISE(ABORT,'test failure'); END;"
+        ).unwrap();
+        assert!(delete_stored_replays(&mut conn, Some(&[1, 2])).is_err());
+        assert_eq!(read_notes(&conn, None).unwrap().len(), 3);
+        conn.execute_batch("DROP TRIGGER reject_delete").unwrap();
+        delete_stored_replays(&mut conn, Some(&[])).unwrap();
+        assert_eq!(read_notes(&conn, None).unwrap().len(), 3);
+        delete_stored_replays(&mut conn, Some(&[1, 2, 2, 999])).unwrap();
+        let ids: Vec<i64> = conn
+            .prepare("SELECT id FROM matches")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<std::result::Result<_, _>>()
+            .unwrap();
+        assert_eq!(ids, vec![3]);
+        assert_eq!(read_notes(&conn, None).unwrap().len(), 1);
+        delete_stored_replays(&mut conn, None).unwrap();
+        for table in ["matches", "rounds", "replay_notes"] {
+            let count: i64 = conn
+                .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |r| r.get(0))
+                .unwrap();
+            assert_eq!(count, 0, "{table} must be empty");
+        }
+    }
+
     #[test]
     fn notes_persist_validate_atomically_and_cascade() {
         let path = std::env::temp_dir().join(format!(

@@ -63,6 +63,8 @@ import { useI18n } from '../i18n';
 import { useToast } from '../components/Toast';
 import {
   deleteReplay,
+  deleteReplays,
+  clearReplays,
   getReplay,
   getReplayCapability,
   getReplayRound,
@@ -722,7 +724,13 @@ export default function ReplayPage() {
     };
   }, [selected?.id]);
   const [deleting, setDeleting] = useState<ReplayEntry | null>(null);
+  const [selectedReplayIds, setSelectedReplayIds] = useState<Set<number>>(
+    new Set(),
+  );
+  const [bulkDelete, setBulkDelete] = useState<'selected' | 'all' | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
+  const deleteInFlight = useRef(false);
   const clock = useRef(0),
     resume = useRef<number | null>(null);
   const autoNextRoundRef = useRef(false);
@@ -1673,7 +1681,35 @@ export default function ReplayPage() {
         <ReplayHistory
           entries={entries}
           capability={capability}
-          onDelete={setDeleting}
+          onDelete={(entry) => {
+            setDeleteError('');
+            setDeleting(entry);
+          }}
+          selectedIds={selectedReplayIds}
+          disabled={deleteBusy || Boolean(job?.running) || starting}
+          onToggleSelected={(replayId) => {
+            setSelectedReplayIds((current) => {
+              const next = new Set(current);
+              if (next.has(replayId)) next.delete(replayId);
+              else next.add(replayId);
+              return next;
+            });
+          }}
+          onToggleAll={() => {
+            setSelectedReplayIds((current) =>
+              entries.every((entry) => current.has(entry.id))
+                ? new Set()
+                : new Set(entries.map((entry) => entry.id)),
+            );
+          }}
+          onDeleteSelected={() => {
+            setDeleteError('');
+            setBulkDelete('selected');
+          }}
+          onClearAll={() => {
+            setDeleteError('');
+            setBulkDelete('all');
+          }}
         />
       ) : detail ? (
         <div className="replay-workspace">
@@ -2365,35 +2401,89 @@ export default function ReplayPage() {
           )}
         </div>
       )}
-      {deleting && (
+      {(deleting || bulkDelete) && (
         <DestructiveConfirmDialog
           eyebrow={tr('Replay history', 'История матчей')}
-          title={tr('Delete match?', 'Удалить матч?')}
-          description={tr(
-            'Saved replay data will be deleted.',
-            'Сохранённые данные повтора будут удалены.',
-          )}
-          metadata={<span>{deleting.metadata.demo_filename}</span>}
-          confirmLabel={tr('Delete', 'Удалить')}
+          title={
+            bulkDelete === 'all'
+              ? tr('Clear replay database?', 'Очистить базу реплеев?')
+              : bulkDelete === 'selected'
+                ? tr('Delete selected matches?', 'Удалить выбранные матчи?')
+                : tr('Delete match?', 'Удалить матч?')
+          }
+          description={
+            bulkDelete === 'all'
+              ? tr(
+                  'All saved replays, rounds and notes will be deleted. Original .dem files will remain on disk.',
+                  'Все сохранённые реплеи, раунды и заметки будут удалены. Исходные файлы .dem останутся на диске.',
+                )
+              : tr(
+                  'The selected replay data and notes will be deleted. Original .dem files will remain on disk.',
+                  'Данные выбранных реплеев и заметки будут удалены. Исходные файлы .dem останутся на диске.',
+                )
+          }
+          metadata={
+            deleting ? (
+              <span>{deleting.metadata.demo_filename}</span>
+            ) : (
+              <>
+                <span>{tr('Matches to delete', 'Матчей к удалению')}</span>
+                <strong>
+                  {bulkDelete === 'all'
+                    ? entries.length
+                    : entries.filter((entry) => selectedReplayIds.has(entry.id))
+                        .length}
+                </strong>
+              </>
+            )
+          }
+          confirmLabel={
+            bulkDelete === 'all'
+              ? tr('Clear database', 'Очистить базу')
+              : tr('Delete', 'Удалить')
+          }
           pendingLabel={tr('Deleting', 'Удаление')}
           busy={deleteBusy}
-          error=""
-          onCancel={() => setDeleting(null)}
-          onConfirm={() => {
+          error={deleteError}
+          onCancel={() => {
+            setDeleting(null);
+            setBulkDelete(null);
+          }}
+          onConfirm={async () => {
+            if (deleteInFlight.current) return;
+            deleteInFlight.current = true;
+            const targets = deleting
+              ? [deleting]
+              : entries.filter(
+                  (entry) =>
+                    bulkDelete === 'all' || selectedReplayIds.has(entry.id),
+                );
+            const targetIds = new Set(targets.map((entry) => entry.id));
             jobRevision.current += 1;
             setDeleteBusy(true);
-            void deleteReplay(deleting.id)
-              .then(() => {
-                try {
-                  deleteReplayNotes(deleting);
-                } catch {
-                  /* The match has already been deleted. */
-                }
-                setEntries((old) => old.filter((e) => e.id !== deleting.id));
-                if (id === deleting.id) navigate('/replays', { replace: true });
-                setDeleting(null);
-              }, fail)
-              .finally(() => setDeleteBusy(false));
+            setDeleteError('');
+            try {
+              if (bulkDelete === 'all') await clearReplays();
+              else if (deleting) await deleteReplay(deleting.id);
+              else await deleteReplays([...targetIds]);
+              for (const entry of targets) deleteReplayNotes(entry);
+              setEntries((old) =>
+                old.filter((entry) => !targetIds.has(entry.id)),
+              );
+              setSelectedReplayIds(
+                (old) =>
+                  new Set([...old].filter((value) => !targetIds.has(value))),
+              );
+              if (id !== null && targetIds.has(id))
+                navigate('/replays', { replace: true });
+              setDeleting(null);
+              setBulkDelete(null);
+            } catch (cause) {
+              setDeleteError(String(cause));
+            } finally {
+              deleteInFlight.current = false;
+              setDeleteBusy(false);
+            }
           }}
         />
       )}

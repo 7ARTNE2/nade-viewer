@@ -25,6 +25,9 @@ export const startReplay = (path: string, profile: 'v5' | 'v6' = 'v5') =>
   replayCommand<void>('start_replay', { path, profile });
 export const deleteReplay = (id: number) =>
   replayCommand<void>('delete_replay', { id });
+export const deleteReplays = (ids: number[]) =>
+  replayCommand<void>('delete_replays', { ids });
+export const clearReplays = () => replayCommand<void>('clear_replays');
 export const getReplayCapability = () =>
   replayCommand<boolean>('get_replay_capability');
 export const saveReplayPosition = (id: number, number: number, tick: number) =>

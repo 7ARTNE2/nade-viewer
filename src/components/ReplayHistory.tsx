@@ -1,6 +1,13 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { FolderOpen, NotebookPen, Play, Trash2 } from 'lucide-react';
+import {
+  CheckSquare,
+  FolderOpen,
+  NotebookPen,
+  Play,
+  Square,
+  Trash2,
+} from 'lucide-react';
 import { useI18n } from '../i18n';
 import { useReplayNotes } from '../lib/replayNotes';
 import ReplayNotesPanel from './ReplayNotesPanel';
@@ -36,10 +43,22 @@ export default function ReplayHistory({
   entries,
   capability,
   onDelete,
+  selectedIds,
+  disabled,
+  onToggleSelected,
+  onToggleAll,
+  onDeleteSelected,
+  onClearAll,
 }: {
   entries: ReplayEntry[];
   capability: boolean;
   onDelete: (entry: ReplayEntry) => void;
+  selectedIds: Set<number>;
+  disabled: boolean;
+  onToggleSelected: (id: number) => void;
+  onToggleAll: () => void;
+  onDeleteSelected: () => void;
+  onClearAll: () => void;
 }) {
   const { tr, locale } = useI18n();
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -50,6 +69,55 @@ export default function ReplayHistory({
         <div className="replay-section-title">
           <h2>{tr('Matches', 'Матчи')}</h2>
           <span className="replay-count">{entries.length}</span>
+          {entries.length > 0 && (
+            <div className="replay-history-actions">
+              <button
+                type="button"
+                className="replay-history-action"
+                onClick={onToggleAll}
+                disabled={disabled}
+                aria-pressed={entries.every((entry) =>
+                  selectedIds.has(entry.id),
+                )}
+                aria-label={tr('Select all matches', 'Выбрать все матчи')}
+              >
+                {entries.every((entry) => selectedIds.has(entry.id)) ? (
+                  <CheckSquare size={14} />
+                ) : (
+                  <Square size={14} />
+                )}
+                {tr('Select all', 'Выбрать все')}
+              </button>
+              {entries.some((entry) => selectedIds.has(entry.id)) && (
+                <button
+                  type="button"
+                  className="replay-history-action danger"
+                  onClick={onDeleteSelected}
+                  disabled={disabled}
+                >
+                  <Trash2 size={14} />
+                  {tr('Delete selected', 'Удалить выбранные')}
+                  <span>
+                    {
+                      entries.filter((entry) => selectedIds.has(entry.id))
+                        .length
+                    }
+                  </span>
+                </button>
+              )}
+              {entries.length > 0 && (
+                <button
+                  type="button"
+                  className="replay-history-action danger"
+                  onClick={onClearAll}
+                  disabled={disabled}
+                >
+                  <Trash2 size={14} />
+                  {tr('Clear database', 'Очистить базу')}
+                </button>
+              )}
+            </div>
+          )}
         </div>
         {!entries.length ? (
           <div className="replay-empty">
@@ -68,9 +136,23 @@ export default function ReplayHistory({
           <div className="replay-match-list">
             {entries.map((entry) => (
               <article
-                className={`replay-match-row ${selected?.id === entry.id ? 'has-selected-notes' : ''}`}
+                className={`replay-match-row ${selected?.id === entry.id ? 'has-selected-notes' : ''} ${selectedIds.has(entry.id) ? 'is-selected' : ''}`}
                 key={entry.id}
               >
+                <button
+                  type="button"
+                  className={`replay-match-select ${selectedIds.has(entry.id) ? 'is-selected' : ''}`}
+                  aria-label={`${tr('Select match', 'Выбрать матч')} ${entry.metadata.demo_filename}`}
+                  aria-pressed={selectedIds.has(entry.id)}
+                  onClick={() => onToggleSelected(entry.id)}
+                  disabled={disabled}
+                >
+                  {selectedIds.has(entry.id) ? (
+                    <CheckSquare size={16} />
+                  ) : (
+                    <Square size={16} />
+                  )}
+                </button>
                 <Link to={`/replays/${entry.id}`} className="replay-match-open">
                   <span className="replay-map-code">
                     {entry.metadata.map.replace('de_', '')}
@@ -125,6 +207,7 @@ export default function ReplayHistory({
                   aria-label={tr('Delete match', 'Удалить матч')}
                   data-tip={tr('Delete match', 'Удалить матч')}
                   onClick={() => onDelete(entry)}
+                  disabled={disabled}
                 >
                   <Trash2 size={16} />
                 </button>
