@@ -460,10 +460,14 @@ pub(crate) fn start_replay(app: AppHandle, path: String, profile: String) -> Res
         .name("replay-parser".into())
         .spawn(move || {
             let result = run(&worker, &path, profile);
-            plugin::state(&worker)
-                .lock()
-                .unwrap()
-                .finish(result.map(|id| Some(PathBuf::from(format!("replay:{id}")))));
+            let control = plugin::control(&worker);
+            let state = plugin::state(&worker);
+            let mut status = state.lock().unwrap();
+            if control.is_cancelled() {
+                status.cancelled();
+            } else {
+                status.finish(result.map(|id| Some(PathBuf::from(format!("replay:{id}")))));
+            }
         })
     {
         status.lock().unwrap().finish(Err(e.to_string()));

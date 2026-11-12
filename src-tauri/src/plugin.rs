@@ -234,6 +234,17 @@ impl ParserStatus {
             }
         }
     }
+
+    pub(crate) fn cancelled(&mut self) {
+        self.update_elapsed();
+        self.started_at = None;
+        self.running = false;
+        self.active_parsers = 0;
+        self.current = None;
+        self.stage = "cancelled".into();
+        self.error = None;
+        self.output = None;
+    }
 }
 /// Counts every cached or committed demo while independently tracking gaps in
 /// discovery order for the final completeness check.
@@ -1300,14 +1311,7 @@ pub(crate) fn run_nade_parser_batch(
         })();
         let mut status = worker_state.lock().unwrap();
         if worker_control.is_cancelled() {
-            status.update_elapsed();
-            status.started_at = None;
-            status.running = false;
-            status.active_parsers = 0;
-            status.current = None;
-            status.stage = "cancelled".into();
-            status.error = None;
-            status.output = None;
+            status.cancelled();
         } else {
             status.finish(result.map(Some));
         }
@@ -1620,6 +1624,31 @@ mod tests {
         assert_eq!(progress.next_missing, 1);
         assert_eq!(progress.record_commit(1), 5);
         assert_eq!(progress.next_missing, 5);
+    }
+
+    #[test]
+    fn parser_status_cancellation_finishes_without_error() {
+        let mut status = ParserStatus::default();
+        status.start("replay");
+        status.active_parsers = 1;
+        status.current = Some("demo.dem".into());
+        status.error = Some("parser process terminated".into());
+        status.output = Some("partial output".into());
+
+        status.cancelled();
+
+        assert!(!status.running);
+        assert_eq!(status.stage, "cancelled");
+        assert_eq!(status.active_parsers, 0);
+        assert!(status.current.is_none());
+        assert!(status.error.is_none());
+        assert!(status.output.is_none());
+        assert!(status.started_at.is_none());
+
+        status.start("replay");
+        status.finish(Err("invalid demo".into()));
+        assert_eq!(status.stage, "failed");
+        assert_eq!(status.error.as_deref(), Some("invalid demo"));
     }
 
     #[test]
