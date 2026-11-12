@@ -65,7 +65,7 @@ jobs:
           REPOSITORY: ${{ github.repository }}
         run: |
           $previousTag = git tag --merged HEAD --sort=-version:refname |
-            Where-Object { $_ -ne $env:RELEASE_TAG } |
+            Where-Object { $_ -match '^v\d+\.\d+\.\d+$' -and $_ -ne $env:RELEASE_TAG } |
             Select-Object -First 1
           $commitRange = if ($previousTag) { "$previousTag..$env:RELEASE_TAG" } else { $env:RELEASE_TAG }
           $commits = git log $commitRange --format="- [%h](https://github.com/$env:REPOSITORY/commit/%H) %s"

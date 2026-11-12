@@ -3,7 +3,13 @@ import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   {
-    ignores: ['.agents/', '.opencode/', 'dist/', 'src-tauri/target/'],
+    ignores: [
+      '.agents/',
+      '.opencode/',
+      'artifacts/',
+      'dist/',
+      'src-tauri/target/',
+    ],
   },
   eslint.configs.recommended,
   ...tseslint.configs.recommended,

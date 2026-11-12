@@ -89,7 +89,7 @@ if ($releaseExists) {
     throw "Release $releaseTag already exists. Use a new library version rather than replacing an immutable asset."
 }
 
-& gh release create $releaseTag $compressedPath --repo $Repository --title "Library $Version" --notes 'Nade Viewer Zstd MessagePack snapshot'
+& gh release create $releaseTag $compressedPath --repo $Repository --title "Library $Version" --notes 'Nade Viewer Zstd MessagePack snapshot' --latest=false
 if ($LASTEXITCODE -ne 0) {
     throw "Unable to create release $releaseTag"
 }

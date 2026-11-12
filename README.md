@@ -7,7 +7,23 @@ can download a MessagePack snapshot from a configured HTTPS URL and verify its d
 It also replays local CS2 demos on a 2D radar and saves round-linked text and
 drawing notes for reviewing matches.
 
-Current application version: **0.8.0**.
+Current application version: **0.9.0**.
+
+## What's new in 0.9.0
+
+- Built-in **Demo Downloader** browses HLTV tournaments, queues match demos,
+  and extracts them automatically with bundled 7-Zip.
+- Replay shows parsing progress from startup, separates parsed-round counts
+  from finalization, and treats a manual cancellation as a normal stop.
+- Select multiple saved matches to delete them together, or clear the replay
+  database after confirmation. Original demo files remain on disk.
+- Capture a radar screenshot from its separate bottom-left camera button,
+  preview it, copy the image, or save a PNG.
+- The notes editor opens beside the radar. Selected drawings remain visible
+  after closing it; arrows, circles, and text-area resizing are smoother.
+- Compact windows retain team names, replay-settings labels, and long note
+  text. Tools and Replay use consistent headings and notes icons, with amber
+  round-note badges and clearer search and filters.
 
 ## What's new in 0.8.0
 
@@ -89,10 +105,30 @@ Current application version: **0.8.0**.
 - Uses a responsive map workspace, persistent view settings, onboarding, and
   localized animated notifications.
 - Stores imported lineups, Favorites, parsed replays, and replay notes locally in SQLite.
+- Downloads and extracts HLTV match demos through the built-in Demo Downloader.
+- Shares replay radar screenshots as clipboard images or PNG files and supports
+  deleting selected saved replays or clearing replay history.
 - Saves independent grenade snapshots to Favorites and organizes them into named
   collections. Saved data, trajectories, statistics, and screenshots remain
   available after switching or deleting libraries, including the last library.
 - Provides English and Russian interfaces.
+
+### HLTV Demo Downloader
+
+Open **Tools → Demo Downloader** to browse the tournament catalog. The tool is
+built in and needs no separate plugin installation. Filter by name, event type,
+status, prize pool, or date, and choose a sort order. Date ranges apply to the
+tournament's final day.
+
+Select tournaments or paste HLTV tournament/match links, choose a destination
+folder, and start the queue. You can stop downloads, retry jobs, or clear the
+queue. If HLTV requests a browser check, complete it in the separate browser
+window opened by the tool, then continue the download.
+
+Bundled 7-Zip extracts downloaded archives and validates CS2 demo headers.
+Archives are removed after successful extraction; extraction failures retain
+the archive for retry. Saved `.dem` files remain in the selected folder and can
+be opened from Replay or processed with Nade Parser.
 
 ### Replay / Повторы
 
@@ -124,10 +160,17 @@ If opening or parsing a replay fails, use **Copy diagnostics** in the error
 panel to copy the report for troubleshooting. Reports include command
 arguments and may contain local file paths; review them before sharing.
 
+Parsing reports its current stage, parsed rounds, and available percentage.
+Preparing and finalizing are shown separately from round counts. Pressing the
+cancel button stops parsing without showing an error for that manual stop.
+
 Parsed matches are stored locally in a separate `replays.sqlite` database, with
 compressed round data loaded as needed. Saved matches remain playable without
 the original demo or the parser plugin. The history supports deletion and resumes
-the last viewed round and position. Removing a match does not delete its demo.
+the last viewed round and position. Use **Select all**, **Delete selected**, or
+**Clear database** to manage history. Bulk deletion requires confirmation and
+removes the affected rounds and notes together; deletion is disabled during
+parsing. Removing a match does not delete its original `.dem` file.
 Replay does not automatically import grenades into a library or Favorites.
 
 #### Playback and previews
@@ -178,9 +221,22 @@ feed at the selected position. Names use the application's orange T and blue
 CT colors and existing font; damage and flash assists and special-kill icons
 remain visible.
 
+#### Radar screenshots
+
+Use the separate camera button at the **bottom left of each radar** to pause
+playback and capture that floor. The screenshot preserves the current zoom and
+pan, players, grenade effects, and visible note drawings. On Nuke, each radar
+has its own capture button.
+
+The preview offers **Copy image** for pasting into another application and
+**Save PNG** through the native file dialog. Cancelling the dialog is a normal
+action. If copying fails, the preview remains available so you can save instead.
+
 #### Notes and drawings
 
 Open **Notes** in the player to pause playback and annotate the current moment.
+Its button sits at the top right of the radar area, including on Nuke. The
+editor opens in the right inspector, leaving the map available for drawing.
 Write text, draw freehand, or use arrows and circles. The palette provides
 preset and custom colors, and Undo removes the last stroke. Notes belong to a
 specific match, round, tick, and radar level; a round badge marks rounds with
@@ -196,7 +252,11 @@ and require no conversion.
 
 Zooming preserves completed drawing coordinates. If the wheel is used while a
 stroke is still in progress, only that unfinished stroke is discarded. Closing
-Notes exits drawing mode on both Nuke radars.
+Notes exits drawing mode on both Nuke radars while keeping the selected note's
+drawings visible. Use the eye button to show or hide drawings independently.
+Freehand, arrow, and circle previews update on animation frames; completed
+strokes are saved when the pointer is released. Resizing the text area stays
+inside the editor, and timestamped notes wrap long text and preserve line breaks.
 
 The panel next to the match list initially shows **all notes from all saved
 matches**. Search by text, demo filename, map, team, or round, and combine the
@@ -283,7 +343,7 @@ limitations are documented in [Data formats](docs/data-formats.md).
 ## Technology stack
 
 Versions below are the resolved versions from `package-lock.json` and
-`src-tauri/Cargo.lock` for Nade Viewer 0.8.0.
+`src-tauri/Cargo.lock` for Nade Viewer 0.9.0.
 
 ### Application architecture
 
@@ -442,8 +502,8 @@ for Viewer releases.
 Create and push a semantic-version tag from the repository root:
 
 ```powershell
-git tag -a v0.8.0 -m "Nade Viewer 0.8.0"
-git push --atomic origin main v0.8.0
+git tag -a v0.9.0 -m "Nade Viewer 0.9.0"
+git push --atomic origin main v0.9.0
 ```
 
 Pushing the tag starts the `Release` workflow automatically. It builds the
@@ -474,6 +534,12 @@ MessagePack asset, verifies the exact size and SHA-256 digest of both the
 compressed asset and the unpacked MessagePack, then imports it through the same
 SQLite transaction used by local imports. The active library and installed data
 version change only when the complete import commits successfully.
+
+The current published library is **2026.11.12.1**, with **775,452 records across
+9 maps**. Its compressed download is 132,869,869 bytes (about 126.7 MiB), and
+the unpacked MessagePack is 770,163,114 bytes. Library versions are independent
+of application releases; existing installations receive this data through the
+same update mechanism.
 
 The manifest format is shown in
 [`docs/library-manifest.example.json`](docs/library-manifest.example.json):
@@ -522,8 +588,8 @@ One-time manifest release creation and subsequent publication can be done with
 GitHub CLI:
 
 ```powershell
-gh release create library --title "Nade Viewer library manifest" --notes "Stable update manifest endpoint"
-gh release create data-2026.09.17.1 ".\library.msgpack.zst" --title "Library 2026.09.17.1" --notes "Nade Viewer data snapshot"
+gh release create library --title "Nade Viewer library manifest" --notes "Stable update manifest endpoint" --latest=false
+gh release create data-2026.09.17.1 ".\library.msgpack.zst" --title "Library 2026.09.17.1" --notes "Nade Viewer data snapshot" --latest=false
 gh release upload library ".\library-manifest.json" --clobber
 ```
 
@@ -539,6 +605,12 @@ manifest. Add `-Publish` only after inspecting the generated files:
 The script uses the installed `zstd` command-line tool when available; otherwise
 it uses the bundled Rust compressor. Publishing requires an authenticated
 GitHub CLI session. It refuses to replace an existing immutable data release.
+Data releases use `--latest=false` so the application release remains Latest.
+Before replacing the stable manifest, back up its current asset, fully verify
+the unpacked file, and trial-import it into a temporary database. Download the
+published archive and compare its size and SHA-256 before uploading the new
+manifest. Fetch the public manifest again afterward and check every field;
+restore the previous manifest if that check fails.
 
 For another repository or manifest location, set
 `NADE_VIEWER_LIBRARY_MANIFEST_URL` while building the Tauri application. The
@@ -563,7 +635,7 @@ To rebuild an existing tag without creating a new one:
 1. Open the repository's `Actions` tab on GitHub.
 2. Select the `Release` workflow.
 3. Click `Run workflow`.
-4. Enter an existing tag, for example `v0.8.0`.
+4. Enter an existing tag, for example `v0.9.0`.
 5. Click `Run workflow` again.
 
 The manual workflow also requires a tag in the `vMAJOR.MINOR.PATCH` format,
@@ -602,9 +674,9 @@ Run the same check through the test aggregator:
 npm test
 ```
 
-`npm test` also runs the replay browser regressions with deterministic fixtures
+`npm test` also runs replay and demo-downloader browser regressions with deterministic fixtures
 and mocked Tauri IPC. Install the test browser once with `npx playwright install chromium`.
-Run just these regressions with `npm run test:replay`; an existing Chromium binary
+Run them separately with `npm run test:replay` and `npm run test:downloader`; an existing Chromium binary
 can be selected with `NADE_VIEWER_TEST_BROWSER_PATH`.
 The replay checks cover shared animation scheduling at simulated 60, 120, 144,
 165, and 240 Hz, clock-before-render ordering, and the Full HD roster layout.
@@ -617,6 +689,11 @@ assists, drawing colors, wheel zoom while drawing, the shared Nuke notes editor,
 independent floor views at 1920/1280/860 pixels, note filters and links, save
 retries, and failed note reads or radar loads. Rust tests separately exercise note persistence across
 database connections, atomic writes, validation, and cascading deletion.
+Replay checks also cover screenshot preview/copy/save/cancel, bulk deletion,
+compact settings, long notes, and editor resizing. Downloader checks cover
+catalog filtering, selection, destination selection, start/stop, and narrow
+layouts. Browser fixtures mock native commands; actual clipboard integration,
+file dialogs, and live HLTV downloads require desktop verification.
 CI also checks both Go parser profiles with `gofmt`, `go vet`, `go test`, and
 `go build` from `plugins/nade-parser` and `plugins/nade-parser-v6`.
 
@@ -667,6 +744,17 @@ import in the UI deletes that import's local data; it does not delete the source
 Favorites and collection membership are stored in the same database, while their
 independent screenshots are stored in the adjacent `favorites/` directory. Include
 that directory when backing up saved lineups.
+
+### Demo Downloader data
+
+The tournament catalog and download queue are stored at:
+
+```text
+%APPDATA%\app.nadeviewer.desktop\demo-downloader\catalog.sqlite
+```
+
+Downloaded demos are saved separately in the destination folder you select.
+Clearing the queue does not remove those saved demo files.
 
 ### Replay data and notes
 
