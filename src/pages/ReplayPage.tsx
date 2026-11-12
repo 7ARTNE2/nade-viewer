@@ -26,6 +26,7 @@ import {
   Crosshair,
   Eye,
   EyeOff,
+  Film,
   Menu,
   FolderOpen,
   Pause,
@@ -1451,8 +1452,15 @@ export default function ReplayPage() {
       : null;
   return (
     <div className="replay-page">
-      <header className="replay-header">
+      <header
+        className={`replay-header${id === null ? ' replay-library-header' : ''}`}
+      >
         <div className="replay-heading">
+          {id === null && (
+            <span className="replay-library-icon" aria-hidden="true">
+              <Film size={22} />
+            </span>
+          )}
           {id !== null && (
             <button
               type="button"
@@ -1475,11 +1483,30 @@ export default function ReplayPage() {
             {detail && (
               <span className="replay-eyebrow">{detail.metadata.map}</span>
             )}
-            <h1>
-              {detail
-                ? tr('Match replay', 'Повтор матча')
-                : tr('Replay', 'Повторы')}
-            </h1>
+            <div className="replay-title-row">
+              <h1>
+                {detail
+                  ? tr('Match replay', 'Повтор матча')
+                  : tr('Replay', 'Повторы')}
+              </h1>
+              {id === null && (
+                <span
+                  className="replay-library-count"
+                  aria-label={`${tr('Saved matches', 'Сохранённые матчи')}: ${entries.length}`}
+                  data-tip={tr('Saved matches', 'Сохранённые матчи')}
+                >
+                  {entries.length}
+                </span>
+              )}
+            </div>
+            {id === null && (
+              <p className="replay-library-description">
+                {tr(
+                  'Review rounds, grenade throws and your match notes.',
+                  'Разбирайте раунды, броски гранат и заметки к матчам.',
+                )}
+              </p>
+            )}
             {detail && (
               <small
                 className="replay-source-name"
