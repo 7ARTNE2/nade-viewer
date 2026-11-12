@@ -1585,22 +1585,23 @@ export default function ReplayPage() {
                     : tr('Nade Parser is busy', 'Nade Parser занят')}
                 </strong>
                 <span className="replay-progress-detail">
+                  <span className="replay-progress-phase">
+                    {job.stage === 'replay'
+                      ? replayProgress === 100
+                        ? tr('Finalizing replay', 'Подготовка реплея')
+                        : replayProgress === null
+                          ? tr('Preparing demo', 'Подготовка демо')
+                          : tr('Reading demo', 'Чтение демо')
+                      : tr(
+                          'Another task is running',
+                          'Выполняется другая задача',
+                        )}
+                  </span>
                   {job.stage === 'replay' && (
-                    <>
-                      · {job.completed}{' '}
-                      {tr('rounds parsed', 'раундов спарсено')}{' '}
-                    </>
+                    <span className="replay-progress-rounds">
+                      {job.completed} {tr('rounds parsed', 'раундов спарсено')}
+                    </span>
                   )}
-                  {job.stage === 'replay'
-                    ? replayProgress === 100
-                      ? tr('Finalizing replay', 'Подготовка реплея')
-                      : replayProgress === null
-                        ? tr('Preparing demo', 'Подготовка демо')
-                        : tr('Reading demo', 'Чтение демо')
-                    : tr(
-                        'Another task is running',
-                        'Выполняется другая задача',
-                      )}
                 </span>
               </div>
               {job.stage === 'replay' && replayProgress !== null && (

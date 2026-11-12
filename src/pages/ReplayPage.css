@@ -252,8 +252,18 @@
   font-weight: 600;
 }
 .replay-progress-detail {
-  margin-left: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 4px;
   font-size: 11px;
+}
+.replay-progress-phase {
+  color: var(--muted, #89929f);
+}
+.replay-progress-rounds {
+  color: #b6c0b0;
+  font-variant-numeric: tabular-nums;
 }
 .replay-progress-percent {
   color: #c7e978;
