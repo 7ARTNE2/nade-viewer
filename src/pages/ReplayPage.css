@@ -2143,7 +2143,10 @@
     font-size: 9px;
   }
   .replay-match-score > span:not(.replay-clocks) {
-    display: none;
+    display: block;
+    min-width: 0;
+    max-width: 82px;
+    font-size: 8px;
   }
   .replay-match-score strong {
     font-size: 14px;

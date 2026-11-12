@@ -1523,6 +1523,24 @@ try {
   assert.equal(timelineCopyAnimation.ring, 'coordinates-copy-ring');
   await page.setViewportSize({ width: 760, height: 560 });
   await page.screenshot({ path: 'dist/replay-checks/compact.png' });
+  const compactTeamLabels = await page
+    .locator(
+      '.replay-match-score > .replay-side-t, .replay-match-score > .replay-side-ct',
+    )
+    .evaluateAll((labels) =>
+      labels.map((label) => ({
+        text: label.textContent?.trim(),
+        display: window.getComputedStyle(label).display,
+        width: label.getBoundingClientRect().width,
+      })),
+    );
+  assert.equal(compactTeamLabels.length, 2);
+  assert.ok(
+    compactTeamLabels.every(
+      (label) => label.display !== 'none' && label.text && label.width > 0,
+    ),
+    JSON.stringify(compactTeamLabels),
+  );
   const layout = await page.evaluate(() => {
     const c = document.querySelector('canvas').getBoundingClientRect();
     const footer = document
