@@ -215,12 +215,16 @@
 }
 .replay-note-list {
   display: grid;
+  min-width: 0;
   gap: 3px;
 }
 .replay-note-list button {
+  align-items: flex-start;
   justify-content: flex-start;
+  min-width: 0;
   padding: 6px;
   text-align: left;
+  line-height: 1.5;
 }
 .replay-note-list time {
   flex: none;
@@ -228,9 +232,9 @@
   font-variant-numeric: tabular-nums;
 }
 .replay-note-list span {
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 @keyframes replay-notes-enter {
   from {

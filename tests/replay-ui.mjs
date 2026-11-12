@@ -1117,6 +1117,37 @@ try {
     .getByRole('button', { name: 'Воспроизвести', exact: true })
     .waitFor();
   const drawing = page.locator('.replay-annotations');
+  const longNote =
+    'Проверить выход на плент после флешки и дождаться поддержки команды.\n' +
+    'ДлиннаяЗаметкаБезПробелов'.repeat(12);
+  await noteText.fill(longNote);
+  const longNoteLayout = await page
+    .locator('.replay-note-list button[aria-pressed="true"] span')
+    .evaluate((text) => {
+      const button = text.closest('button');
+      return {
+        text: text.textContent,
+        height: text.clientHeight,
+        lineHeight: Number.parseFloat(window.getComputedStyle(text).lineHeight),
+        clipped:
+          text.scrollHeight > text.clientHeight + 1 ||
+          button.scrollWidth > button.clientWidth + 1,
+      };
+    });
+  assert.equal(longNoteLayout.text, longNote);
+  assert.ok(
+    longNoteLayout.height > longNoteLayout.lineHeight * 2,
+    'timestamped notes must wrap onto multiple lines',
+  );
+  assert.equal(
+    longNoteLayout.clipped,
+    false,
+    'long timestamped notes must fit without clipping',
+  );
+  await noteText.fill('Занять плент после флешки');
+  await page.waitForFunction(
+    () => !document.querySelector('.replay-notes-panel [role="status"]'),
+  );
   const textareaBeforeResize = await noteText.boundingBox();
   const mapBeforeResize = await page.locator('.replay-radars').boundingBox();
   await page.mouse.move(
@@ -1765,6 +1796,20 @@ try {
   assert.ok(timelineCopyAnimation.duration >= 0.4);
   assert.equal(timelineCopyAnimation.ring, 'coordinates-copy-ring');
   await page.setViewportSize({ width: 760, height: 560 });
+  const compactSettings = await settings.boundingBox();
+  assert.ok(
+    compactSettings.x >= 0 && compactSettings.x + compactSettings.width <= 750,
+    'replay settings button must fit fully inside the compact window',
+  );
+  await settings.click();
+  await page.getByRole('menu').waitFor();
+  for (const label of ['Фризтайм', 'Автоследующий раунд']) {
+    await page
+      .getByRole('menu')
+      .getByText(label, { exact: true })
+      .waitFor({ state: 'visible' });
+  }
+  await page.keyboard.press('Escape');
   await page.screenshot({ path: 'dist/replay-checks/compact.png' });
   const compactTeamLabels = await page
     .locator(
@@ -2996,6 +3041,53 @@ try {
       1,
       'Vertigo keeps its floor switch',
     );
+    await nukePage.addInitScript(() => {
+      const original = window.__TAURI_INTERNALS__.invoke;
+      window.__TAURI_INTERNALS__.invoke = async (command, args) => {
+        const result = await original(command, args);
+        if (command === 'get_replay' && result) {
+          result.metadata.incomplete = true;
+          result.rounds = Array.from({ length: 40 }, (_, index) => ({
+            ...result.rounds[1],
+            number: index + 1,
+          }));
+        }
+        return result;
+      };
+    });
+    await nukePage.reload();
+    await nukePage
+      .locator('.replay-round-rail-list button')
+      .nth(39)
+      .waitFor({ state: 'attached' });
+    for (const width of [1280, 860, 760]) {
+      await nukePage.setViewportSize({ width, height: 720 });
+      const settingsButton = nukePage.getByRole('button', {
+        name: 'Настройки реплея',
+        exact: true,
+      });
+      const bounds = await settingsButton.boundingBox();
+      assert.ok(
+        bounds.x >= 0 && bounds.x + bounds.width <= width - 10,
+        `settings must fit with 40 rounds, incomplete badge and floor switch at ${width}px`,
+      );
+      await settingsButton.click();
+      const menu = nukePage.getByRole('menu');
+      await menu.waitFor();
+      const menuBounds = await menu.boundingBox();
+      assert.ok(menuBounds.x >= 0 && menuBounds.x + menuBounds.width <= width);
+      for (const label of ['Фризтайм', 'Автоследующий раунд']) {
+        const text = menu.getByText(label, { exact: true });
+        await text.waitFor({ state: 'visible' });
+        const textBounds = await text.boundingBox();
+        assert.ok(
+          textBounds.width > 0 &&
+            textBounds.x + textBounds.width <= menuBounds.x + menuBounds.width,
+          `setting label must fit at ${width}px`,
+        );
+      }
+      await nukePage.keyboard.press('Escape');
+    }
     await nukePage.evaluate(() => localStorage.removeItem('replay-test-map'));
     await nukePage.close();
   }
