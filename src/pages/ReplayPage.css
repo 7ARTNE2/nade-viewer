@@ -86,12 +86,6 @@
   gap: 8px;
   flex-shrink: 0;
 }
-.replay-title-row {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 12px;
-}
 .replay-library-header {
   padding: 24px;
   gap: 24px;
@@ -115,15 +109,6 @@
   border-radius: 12px;
   background: var(--surface);
   color: var(--acid);
-}
-.replay-library-count {
-  padding: 4px 8px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
 }
 .replay-library-description {
   max-width: 460px;

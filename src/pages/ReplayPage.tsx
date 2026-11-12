@@ -1483,22 +1483,11 @@ export default function ReplayPage() {
             {detail && (
               <span className="replay-eyebrow">{detail.metadata.map}</span>
             )}
-            <div className="replay-title-row">
-              <h1>
-                {detail
-                  ? tr('Match replay', 'Повтор матча')
-                  : tr('Replay', 'Повторы')}
-              </h1>
-              {id === null && (
-                <span
-                  className="replay-library-count"
-                  aria-label={`${tr('Saved matches', 'Сохранённые матчи')}: ${entries.length}`}
-                  data-tip={tr('Saved matches', 'Сохранённые матчи')}
-                >
-                  {entries.length}
-                </span>
-              )}
-            </div>
+            <h1>
+              {detail
+                ? tr('Match replay', 'Повтор матча')
+                : tr('Replay', 'Повторы')}
+            </h1>
             {id === null && (
               <p className="replay-library-description">
                 {tr(
