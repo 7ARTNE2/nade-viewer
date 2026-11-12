@@ -86,12 +86,18 @@
 .replay-history-notes-search input {
   width: 100%;
   min-width: 0;
+  padding: 0;
   border: 0;
   outline: none;
+  box-shadow: none;
   background: transparent;
   color: var(--text);
   font: inherit;
   font-size: 11px;
+}
+.replay-history-notes-search input:focus-visible {
+  outline: none;
+  box-shadow: none;
 }
 .replay-history-notes-search > svg {
   flex-shrink: 0;
