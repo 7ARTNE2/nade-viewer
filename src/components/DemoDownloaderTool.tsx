@@ -175,13 +175,21 @@ export default function DemoDownloaderTool() {
 
   return (
     <section
-      className="demo-tool"
+      className="tools-plugin-view demo-tool"
       aria-label={tr('Demo downloads', 'Скачивание демо')}
     >
-      <header className="demo-header">
+      <header className="tools-header tools-plugin-header">
         <div>
-          <span className="tools-kicker">HLTV / COUNTER-STRIKE 2</span>
-          <h1>{tr('Demo downloads', 'Скачивание демо')}</h1>
+          <span className="tools-kicker">
+            {tr('Tools / Demo downloads', 'Инструменты / Скачивание демо')}
+          </span>
+          <div className="tools-plugin-heading-row">
+            <h1>{tr('Demo downloads', 'Скачивание демо')}</h1>
+            <span className="tools-health ok">
+              <Check size={13} aria-hidden="true" />
+              {tr('Built in', 'Встроено')}
+            </span>
+          </div>
           <p>
             {tr(
               'Choose tournaments. Keep the demos you need.',
@@ -189,10 +197,6 @@ export default function DemoDownloaderTool() {
             )}
           </p>
         </div>
-        <span className="demo-builtin">
-          <Check size={14} />
-          {tr('Built in', 'Встроено')}
-        </span>
       </header>
       {!isTauri && (
         <p className="demo-notice">

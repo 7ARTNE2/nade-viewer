@@ -346,12 +346,12 @@ export default function NadeParserTool({ refreshImports }: Props) {
           : tr('Standby', 'Ожидание');
   return (
     <section className="tools-plugin-view nade-parser" aria-label="Nade Parser">
-      <header className="tools-header parser-header">
+      <header className="tools-header tools-plugin-header">
         <div>
           <span className="tools-kicker">
             {tr('Tools / Demo analysis', 'Инструменты / Анализ демо')}
           </span>
-          <div className="parser-heading-row">
+          <div className="tools-plugin-heading-row">
             <h1>Nade Parser</h1>
             <span className={`tools-health ${installed ? 'ok' : 'warn'}`}>
               {installed ? (
