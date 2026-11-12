@@ -7,10 +7,12 @@ import {
   Package,
   Puzzle,
   RefreshCw,
+  Wrench,
   XCircle,
 } from 'lucide-react';
 import { useI18n } from '../i18n';
 import { toolPlugins, type ToolPluginInfo } from '../lib/toolPlugins';
+import './ToolsPage.css';
 
 type Props = { refreshImports?: () => Promise<void> };
 type PluginState = { info?: ToolPluginInfo; error?: string };
@@ -98,15 +100,19 @@ export default function ToolsPage({ refreshImports }: Props) {
   return (
     <section className="tools-view">
       <header className="tools-header tools-catalog-header">
-        <div>
-          <span className="tools-kicker">TOOLS</span>
-          <h1>{tr('Tools', 'Инструменты')}</h1>
-          <p>
-            {tr(
-              'Built-in tools and plugins for working with demos.',
-              'Встроенные инструменты и плагины для работы с демо.',
-            )}
-          </p>
+        <div className="tools-catalog-title">
+          <span className="tools-catalog-title-icon" aria-hidden="true">
+            <Wrench size={22} />
+          </span>
+          <div className="tools-catalog-title-copy">
+            <h1>{tr('Tools', 'Инструменты')}</h1>
+            <p>
+              {tr(
+                'Built-in tools and plugins for working with demos.',
+                'Встроенные инструменты и плагины для работы с демо.',
+              )}
+            </p>
+          </div>
         </div>
         <div className="tools-health">
           <Puzzle size={16} />
