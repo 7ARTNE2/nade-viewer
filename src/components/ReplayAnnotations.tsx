@@ -14,7 +14,7 @@ import {
   Palette,
   Pencil,
   Plus,
-  StickyNote,
+  NotebookPen,
   Trash2,
   Undo2,
   X,
@@ -320,7 +320,7 @@ export default function ReplayAnnotations({
           setOpen(!open);
         }}
       >
-        <StickyNote size={15} />
+        <NotebookPen size={15} />
         {tr('Notes', 'Заметки')}
         {currentNotes.length > 0 && <small>{currentNotes.length}</small>}
       </button>

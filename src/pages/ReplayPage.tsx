@@ -34,7 +34,7 @@ import {
   Repeat2,
   SkipBack,
   SkipForward,
-  StickyNote,
+  NotebookPen,
   Timer,
   X,
 } from 'lucide-react';
@@ -320,7 +320,7 @@ const RoundRailCards = memo(function RoundRailCards({
         >
           <span>R{item.number}</span>
           {noteCount > 0 && (
-            <StickyNote
+            <NotebookPen
               className="replay-round-note-badge"
               size={10}
               aria-hidden="true"
