@@ -1472,9 +1472,9 @@ export default function ReplayPage() {
             </button>
           )}
           <div>
-            <span className="replay-eyebrow">
-              {detail ? detail.metadata.map : 'NADE VIEWER'}
-            </span>
+            {detail && (
+              <span className="replay-eyebrow">{detail.metadata.map}</span>
+            )}
             <h1>
               {detail
                 ? tr('Match replay', 'Повтор матча')
