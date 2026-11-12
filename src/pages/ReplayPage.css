@@ -230,8 +230,79 @@
 }
 .replay-progress {
   color: var(--muted, #89929f);
-  background: #c8f43d08;
+  background: linear-gradient(90deg, #c8f43d0d, transparent 80%);
   border-bottom: 1px solid var(--line, #272c34);
+  padding-block: 16px;
+  align-items: flex-start;
+}
+.replay-progress-content {
+  width: min(100%, 620px);
+  min-width: 0;
+}
+.replay-progress-heading,
+.replay-progress-footer {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+.replay-progress-heading strong {
+  color: var(--text, #edf0e8);
+  font-size: 13px;
+  font-weight: 600;
+}
+.replay-progress-detail {
+  margin-left: 12px;
+  font-size: 11px;
+}
+.replay-progress-percent {
+  color: #c7e978;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+.replay-progress-track {
+  height: 7px;
+  overflow: hidden;
+  margin: 10px 0 8px;
+  border-radius: 4px;
+  background: #ffffff12;
+}
+.replay-progress-fill {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  background: #b8db62;
+  transform-origin: left;
+  transition: transform 250ms ease-out;
+}
+.replay-progress-track.is-indeterminate .replay-progress-fill {
+  width: 35%;
+  animation: replay-progress-sweep 1.4s ease-in-out infinite alternate;
+}
+.replay-progress-footer {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.replay-progress-footer b {
+  margin-left: 4px;
+  color: #d9e0d0;
+  font-weight: 600;
+}
+@keyframes replay-progress-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(285%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .replay-progress-fill {
+    transition: none;
+  }
+  .replay-progress-track.is-indeterminate .replay-progress-fill {
+    animation: none;
+  }
 }
 .replay-error .icon-btn,
 .replay-progress .icon-btn {

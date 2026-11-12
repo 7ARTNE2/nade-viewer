@@ -66,14 +66,14 @@ func ParseReplayFileStreaming(path string, options ReplayOptions, out io.Writer)
 	encoder := json.NewEncoder(buffered)
 	err := collectReplay(path, options, func(line models.ReplayStreamLine) error {
 		return encoder.Encode(line)
-	})
+	}, os.Stderr)
 	if flushErr := buffered.Flush(); err == nil {
 		err = flushErr
 	}
 	return err
 }
 
-func collectReplay(path string, options ReplayOptions, emit func(models.ReplayStreamLine) error) error {
+func collectReplay(path string, options ReplayOptions, emit func(models.ReplayStreamLine) error, progress ...io.Writer) error {
 	if options.SampleFPS <= 0 {
 		options.SampleFPS = 16
 	}
@@ -89,7 +89,17 @@ func collectReplay(path string, options ReplayOptions, emit func(models.ReplaySt
 		return err
 	}
 	defer file.Close()
-	p := demoinfocs.NewParser(file)
+	var input io.Reader = file
+	if len(progress) > 0 && progress[0] != nil {
+		info, statErr := file.Stat()
+		if statErr != nil {
+			return statErr
+		}
+		tracked := newReplayProgressReader(file, progress[0], info.Size())
+		defer tracked.finish()
+		input = tracked
+	}
+	p := demoinfocs.NewParser(input)
 	defer p.Close()
 	nades := NewDemoParser(path)
 	airtime := registerAirtimeTracker(p)

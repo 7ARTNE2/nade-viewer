@@ -153,6 +153,8 @@ pub(crate) struct ParserStatus {
     pub error: Option<String>,
     pub completed: usize,
     pub total: usize,
+    pub progress_bytes: u64,
+    pub total_bytes: u64,
     pub current: Option<String>,
     pub elapsed_ms: u64,
     pub workers: usize,
@@ -174,6 +176,8 @@ impl ParserStatus {
         self.error = None;
         self.completed = 0;
         self.total = 0;
+        self.progress_bytes = 0;
+        self.total_bytes = 0;
         self.current = None;
         self.elapsed_ms = 0;
         self.active_parsers = 0;

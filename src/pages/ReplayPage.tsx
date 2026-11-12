@@ -101,9 +101,21 @@ type Job = {
   running: boolean;
   stage: string;
   completed: number;
+  progress_bytes?: number;
+  total_bytes?: number;
+  elapsed_ms?: number;
   output: string | null;
   error: string | null;
 };
+function formatParseTime(milliseconds: number) {
+  const seconds = Math.floor(Math.max(0, milliseconds) / 1000);
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const remainder = String(seconds % 60).padStart(2, '0');
+  return hours > 0
+    ? `${hours}:${String(minutes).padStart(2, '0')}:${remainder}`
+    : `${minutes}:${remainder}`;
+}
 function grenadeLabel(type: string, locale: string) {
   const labels: Record<string, [string, string]> = {
     smoke: ['Smoke', 'Дым'],
@@ -1432,6 +1444,11 @@ export default function ReplayPage() {
       window.removeEventListener('resize', update);
     };
   }, [detail?.rounds.length]);
+  const replayBytesTotal = job?.total_bytes ?? 0;
+  const replayProgress =
+    replayBytesTotal > 0
+      ? clamp(((job?.progress_bytes ?? 0) / replayBytesTotal) * 100, 0, 100)
+      : null;
   return (
     <div className="replay-page">
       <header className="replay-header">
@@ -1558,14 +1575,74 @@ export default function ReplayPage() {
         </div>
       )}
       {job?.running && (
-        <div className="replay-progress" role="status">
-          <span className="spinner" />
-          <span>
-            {job.stage === 'replay'
-              ? tr('Parsing match', 'Разбор матча')
-              : tr('Nade Parser is busy', 'Nade Parser занят')}{' '}
-            · {job.completed} {tr('rounds', 'раундов')}
-          </span>
+        <div className="replay-progress">
+          <div className="replay-progress-content">
+            <div className="replay-progress-heading">
+              <div>
+                <strong>
+                  {job.stage === 'replay'
+                    ? tr('Parsing match', 'Разбор матча')
+                    : tr('Nade Parser is busy', 'Nade Parser занят')}
+                </strong>
+                <span className="replay-progress-detail">
+                  {job.stage === 'replay' && (
+                    <>
+                      · {job.completed}{' '}
+                      {tr('rounds parsed', 'раундов спарсено')}{' '}
+                    </>
+                  )}
+                  {job.stage === 'replay'
+                    ? replayProgress === 100
+                      ? tr('Finalizing replay', 'Подготовка реплея')
+                      : replayProgress === null
+                        ? tr('Progress unavailable', 'Прогресс недоступен')
+                        : tr('Reading demo', 'Чтение демо')
+                    : tr(
+                        'Another task is running',
+                        'Выполняется другая задача',
+                      )}
+                </span>
+              </div>
+              {job.stage === 'replay' && replayProgress !== null && (
+                <b className="replay-progress-percent">
+                  {replayProgress.toFixed(1)}%
+                </b>
+              )}
+            </div>
+            <div
+              className={`replay-progress-track${job.stage !== 'replay' || replayProgress === null ? ' is-indeterminate' : ''}`}
+              role="progressbar"
+              aria-label={tr('Demo reading progress', 'Прогресс чтения демо')}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={
+                job.stage === 'replay' && replayProgress !== null
+                  ? replayProgress
+                  : undefined
+              }
+            >
+              <div
+                className="replay-progress-fill"
+                style={
+                  job.stage === 'replay' && replayProgress !== null
+                    ? { transform: `scaleX(${replayProgress / 100})` }
+                    : undefined
+                }
+              />
+            </div>
+            <div className="replay-progress-footer">
+              <span>
+                {tr('Elapsed', 'Прошло')}{' '}
+                <b>{formatParseTime(job.elapsed_ms ?? 0)}</b>
+              </span>
+              {job.stage === 'replay' && replayBytesTotal > 0 && (
+                <span>
+                  {((job.progress_bytes ?? 0) / 1048576).toFixed(1)} /{' '}
+                  {(replayBytesTotal / 1048576).toFixed(1)} MB
+                </span>
+              )}
+            </div>
+          </div>
           <button
             className="icon-btn"
             aria-label={tr('Cancel parsing', 'Отменить разбор')}

@@ -479,6 +479,19 @@ fn run(app: &AppHandle, path: &str, profile: plugin::ParserProfile) -> Result<i6
     })
 }
 
+fn parse_replay_progress(line: &[u8]) -> Option<(u64, u64)> {
+    let mut parts = std::str::from_utf8(line).ok()?.split_whitespace();
+    if parts.next()? != "REPLAY_PROGRESS" {
+        return None;
+    }
+    let progress = parts.next()?.parse::<u64>().ok()?;
+    let total = parts.next()?.parse::<u64>().ok()?;
+    if parts.next().is_some() || total == 0 || progress > total {
+        return None;
+    }
+    Some((progress, total))
+}
+
 fn run_parser(app: &AppHandle, path: &str, profile: plugin::ParserProfile) -> Result<i64> {
     let control = plugin::control(app);
     let mut child = plugin::hide_console(&mut Command::new(plugin::parser_exe(app, profile)))
@@ -493,19 +506,38 @@ fn run_parser(app: &AppHandle, path: &str, profile: plugin::ParserProfile) -> Re
         control.cancel()
     }
     let stderr = child.stderr.take().ok_or("Missing parser stderr")?;
-    // Drain stderr concurrently; retain only a bounded diagnostic tail.
+    // Drain stderr concurrently, separating progress reports from diagnostics.
+    let progress_app = app.clone();
     let diagnostic = std::thread::spawn(move || {
         let mut tail = Vec::new();
+        let mut pending = Vec::new();
         let mut buffer = [0u8; 8192];
         let mut reader = stderr;
         while let Ok(n) = reader.read(&mut buffer) {
             if n == 0 {
                 break;
             }
-            tail.extend_from_slice(&buffer[..n]);
-            if tail.len() > 32768 {
-                tail.drain(..tail.len() - 32768);
+            for &byte in &buffer[..n] {
+                pending.push(byte);
+                if byte == b'\n' || pending.len() >= 32768 {
+                    if let Some((progress, total)) = parse_replay_progress(&pending) {
+                        let state = plugin::state(&progress_app);
+                        let mut status = state.lock().unwrap();
+                        status.progress_bytes = progress;
+                        status.total_bytes = total;
+                    } else {
+                        tail.extend_from_slice(&pending);
+                        if tail.len() > 32768 {
+                            tail.drain(..tail.len() - 32768);
+                        }
+                    }
+                    pending.clear();
+                }
             }
+        }
+        tail.extend_from_slice(&pending);
+        if tail.len() > 32768 {
+            tail.drain(..tail.len() - 32768);
         }
         String::from_utf8_lossy(&tail).into_owned()
     });
@@ -738,6 +770,17 @@ fn ingest(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn replay_progress_requires_valid_bounded_values() {
+        assert_eq!(
+            parse_replay_progress(b"REPLAY_PROGRESS 123 456\n"),
+            Some((123, 456))
+        );
+        assert_eq!(parse_replay_progress(b"REPLAY_PROGRESS 457 456\n"), None);
+        assert_eq!(parse_replay_progress(b"REPLAY_PROGRESS 0 0\n"), None);
+        assert_eq!(parse_replay_progress(b"REPLAY_PROGRESS 1 2 extra\n"), None);
+        assert_eq!(parse_replay_progress(b"parser error\n"), None);
+    }
     #[test]
     fn notes_persist_validate_atomically_and_cascade() {
         let path = std::env::temp_dir().join(format!(
